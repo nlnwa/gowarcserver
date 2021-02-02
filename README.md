@@ -1,4 +1,4 @@
-![Docker](https://github.com/nlnwa/gowarc/workflows/Docker/badge.svg)
+![Docker](https://github.com/nlnwa/gowarcserver/workflows/Docker/badge.svg)
 
 # gowarcserver
 
