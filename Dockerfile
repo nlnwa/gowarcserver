@@ -15,7 +15,7 @@ RUN go test ./... && \
 
 # Now copy it into our base image.
 FROM gcr.io/distroless/base
-COPY --from=build /go/bin/warc /
+COPY --from=build /go/bin/warcserver /
 EXPOSE 9999
 
 ENTRYPOINT ["/warcserver"]
