@@ -1,8 +1,8 @@
 ![Docker](https://github.com/nlnwa/gowarc/workflows/Docker/badge.svg)
 
-# go-warc
+# gowarcserver
 
-A tool for handling everything warc, written in go.
+The gowarc server module. This tool can be used to index and serve warc files
 
 # Requirements
 
@@ -10,11 +10,11 @@ go 1.13 or newer
 
 # Build
 
-Run `go build ./cmd/warc/`
+Run `go build ./cmd/warcserver/`
 
 # Config file
 
-You can configure certain aspect of gowarc with a config file. Here are all posible fields. These can also be overwritten by enviournment variables with same name
+You can configure certain aspect of gowarcserver with a config file. Here are all posible fields. These can also be overwritten by environment variables with same name
 
 
 | Name          | Type           | Description                                                                          | Default   |
