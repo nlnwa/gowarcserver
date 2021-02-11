@@ -4,7 +4,7 @@ on:
   push:
     # Publish `master` as Docker `latest` image.
     branches:
-      - docker-reg-test # test github registry on test branch
+      - master
 
     # Publish `v1.2.3` tags as releases.
     tags:
