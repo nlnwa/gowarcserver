@@ -27,7 +27,8 @@ import (
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	"github.com/nlnwa/gowarcserver/pkg/surt"
-	"github.com/sirupsen/logrus"
+	whatwg "github.com/nlnwa/whatwg-url/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 type searchHandler struct {
@@ -45,10 +46,10 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logrus.Infof("request url: %v, key: %v", uri, key)
-	h.db.Search(key, false, func(item *badger.Item) bool {
+	log.Infof("request url: %v, key: %v", uri, key)
+
+	perItemFn := func(item *badger.Item) bool {
 		result := &cdx.Cdx{}
-		//k := item.Key()
 		err := item.Value(func(v []byte) error {
 			proto.Unmarshal(v, result)
 
@@ -61,19 +62,30 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 		if err != nil {
-			//return err
+			log.Error("perItemFn error: %s", err)
 		}
 		return false
-	}, func(txn *badger.Txn) error {
+	}
+	afterIterFn := func(txn *badger.Txn) error {
 		return nil
-	})
-
+	}
+	h.db.Search(key, false, perItemFn, afterIterFn)
 }
 
 func (h *searchHandler) handleError(err error, w http.ResponseWriter) {
-	if err != nil {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(404)
-		fmt.Fprintf(w, "Error: %v\n", err)
+	if err == nil {
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprint(w, err)
+
+	// if the error is from a malformed url being parsed, then the url is invalid
+	if _, ok := err.(*whatwg.UrlError); ok {
+		// 422: the url is unprocessanble.
+		w.WriteHeader(http.StatusUnprocessableEntity)
+	} else {
+		// 500: unexpected error receved
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
