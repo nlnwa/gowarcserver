@@ -62,7 +62,7 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 		if err != nil {
-			log.Error("perItemFn error: %s", err)
+			log.Errorf("perItemFn error: %s", err)
 		}
 		return false
 	}
