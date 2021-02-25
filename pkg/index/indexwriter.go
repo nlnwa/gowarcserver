@@ -22,11 +22,9 @@ import (
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/nlnwa/gowarc/warcrecord"
-	"github.com/spf13/viper"
 )
 
 type CdxWriter interface {
-	Init() error
 	Close()
 	Write(wr warcrecord.WarcRecord, fileName string, offset int64) error
 }
@@ -43,15 +41,14 @@ type CdxDb struct {
 	db *Db
 }
 
-func (c *CdxDb) Init() (err error) {
-	dbDir := viper.GetString("indexdir")
-	c.db, err = NewIndexDb(dbDir)
-	if err != nil {
-		return err
+func NewCdxDb(db *Db) *CdxDb {
+	return &CdxDb{
+		db: db,
 	}
-	return nil
 }
 
+// TODO: unfortunate to have a interface method only used in one type.
+//		 maybe find an alternative
 func (c *CdxDb) Close() {
 	c.db.Flush()
 	c.db.Close()
@@ -61,19 +58,10 @@ func (c *CdxDb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) e
 	return c.db.Add(wr, fileName, offset)
 }
 
-func (c *CdxLegacy) Init() (err error) {
-	return nil
-}
-
 func (c *CdxLegacy) Close() {
 }
 
 func (c *CdxLegacy) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
-	return nil
-}
-
-func (c *CdxJ) Init() (err error) {
-	c.jsonMarshaler = &jsonpb.Marshaler{}
 	return nil
 }
 

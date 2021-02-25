@@ -24,3 +24,4 @@ You can configure certain aspect of gowarcserver with a config file. Here are al
 | autoindex     |  bool          | Whether gowarc should index from the warcdir(s) when serving automatically or not    | true      |
 | warcport      |  int           | The port that the serve command will use if not overridden as argument to serve      | 9999      |
 | loglevel      |  string        | Change the application log level manually                                            | "info"    |
+| compression   |  string        | Change the db table compression. Legal values are: 'none', 'snappy', 'zstd'          | "none"    |

@@ -24,6 +24,7 @@ import (
 
 	"github.com/nlnwa/gowarc/warcoptions"
 	"github.com/nlnwa/gowarc/warcreader"
+	"github.com/nlnwa/gowarcserver/pkg/dbfromviper"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/spf13/cobra"
 )
@@ -37,7 +38,11 @@ func parseFormat(format string) (index.CdxWriter, error) {
 	case "cdxpb":
 		return &index.CdxPb{}, nil
 	case "db":
-		return &index.CdxDb{}, nil
+		db, err := dbfromviper.DbFromViper()
+		if err != nil {
+			return nil, err
+		}
+		return index.NewCdxDb(db), nil
 	}
 	return nil, fmt.Errorf("unknwon format %v, valid formats are: 'cdx', 'cdxj', 'cdxpb', 'db'", format)
 }
@@ -54,10 +59,15 @@ func NewCommand() *cobra.Command {
 		Use:   "index",
 		Short: "Index a given warc file",
 		Long:  ``,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return errors.New("missing file name")
 			}
+			// TODO: maybe try to open file/directory here?
+			// 	     default return should be an error case
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c.fileName = args[0]
 
 			var err error
@@ -76,28 +86,27 @@ func NewCommand() *cobra.Command {
 }
 
 func runE(c *conf) error {
+	defer c.writer.Close()
 	fmt.Printf("Format: %v\n", c.writerFormat)
 
-	err := c.writer.Init()
-	if err != nil {
-		return err
-	}
-	defer c.writer.Close()
-
-	readFile(c)
-	return nil
+	return readFile(c)
 }
 
-// TODO: return error
-func readFile(c *conf) {
+func readFile(c *conf) error {
 	opts := &warcoptions.WarcOptions{Strict: false}
 	wf, err := warcreader.NewWarcFilename(c.fileName, 0, opts)
 	if err != nil {
-		return
+		return err
 	}
 	defer wf.Close()
 
 	count := 0
+
+	// avoid defer copy value by using a anonymous function
+	// At the end, print count even if an error occurs
+	defer func() {
+		fmt.Fprintln(os.Stdout, "Count: ", count)
+	}()
 
 	for {
 		wr, currentOffset, err := wf.Next()
@@ -105,12 +114,11 @@ func readFile(c *conf) {
 			break
 		}
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Error: %v, rec num: %v, Offset %v\n", err.Error(), strconv.Itoa(count), currentOffset)
-			break
+			return fmt.Errorf("Error: %v, rec num: %v, Offset %v\n", err.Error(), strconv.Itoa(count), currentOffset)
 		}
 		count++
 
 		c.writer.Write(wr, c.fileName, currentOffset)
 	}
-	fmt.Fprintln(os.Stderr, "Count: ", count)
+	return nil
 }

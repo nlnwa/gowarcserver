@@ -16,6 +16,7 @@
 package serve
 
 import (
+	"github.com/nlnwa/gowarcserver/pkg/dbfromviper"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/server"
 	log "github.com/sirupsen/logrus"
@@ -56,10 +57,9 @@ func runE(c *conf) error {
 		c.port = viper.GetInt("warcport")
 	}
 
-	dbDir := viper.GetString("indexdir")
-	db, err := index.NewIndexDb(dbDir)
+	db, err := dbfromviper.DbFromViper()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer db.Close()
 

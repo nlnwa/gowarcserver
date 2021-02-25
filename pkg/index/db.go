@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v2/options"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	gowarcpb "github.com/nlnwa/gowarc/proto"
@@ -55,7 +56,7 @@ type Db struct {
 	batchFlushChan chan []*record
 }
 
-func NewIndexDb(dbDir string) (*Db, error) {
+func NewIndexDb(dbDir string, compression options.CompressionType) (*Db, error) {
 	dbDir = path.Join(dbDir, "warcdb")
 	idIndexDir := path.Join(dbDir, "id-index")
 	fileIndexDir := path.Join(dbDir, "file-index")
@@ -93,17 +94,17 @@ func NewIndexDb(dbDir string) (*Db, error) {
 	// Open db
 	var err error
 
-	d.idIndex, err = openIndex(idIndexDir)
+	d.idIndex, err = openIndex(idIndexDir, compression)
 	if err != nil {
 		return nil, err
 	}
 
-	d.fileIndex, err = openIndex(fileIndexDir)
+	d.fileIndex, err = openIndex(fileIndexDir, compression)
 	if err != nil {
 		return nil, err
 	}
 
-	d.cdxIndex, err = openIndex(cdxIndexDir)
+	d.cdxIndex, err = openIndex(cdxIndexDir, compression)
 	if err != nil {
 		return nil, err
 	}
@@ -117,12 +118,14 @@ func NewIndexDb(dbDir string) (*Db, error) {
 	return d, nil
 }
 
-func openIndex(indexDir string) (db *badger.DB, err error) {
+func openIndex(indexDir string, compression options.CompressionType) (db *badger.DB, err error) {
 	if err := os.MkdirAll(indexDir, 0777); err != nil {
 		return nil, err
 	}
-	opts := badger.DefaultOptions(indexDir)
-	opts.Logger = log.StandardLogger()
+	opts := badger.DefaultOptions(indexDir).WithLogger(log.StandardLogger())
+	opts.Compression = compression
+	// Currently always use zstd level 5
+	opts.ZSTDCompressionLevel = 5
 	db, err = badger.Open(opts)
 	return
 }
