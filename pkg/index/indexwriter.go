@@ -25,43 +25,31 @@ import (
 )
 
 type CdxWriter interface {
+	Init() error
 	Close()
 	Write(wr warcrecord.WarcRecord, fileName string, offset int64) error
 }
 
 type CdxLegacy struct {
 }
-type CdxJ struct {
-	jsonMarshaler *jsonpb.Marshaler
-}
-type CdxPb struct {
-	jsonMarshaler *jsonpb.Marshaler
-}
-type CdxDb struct {
-	db *Db
-}
 
-func NewCdxDb(db *Db) *CdxDb {
-	return &CdxDb{
-		db: db,
-	}
-}
-
-// TODO: unfortunate to have a interface method only used in one type.
-//		 maybe find an alternative
-func (c *CdxDb) Close() {
-	c.db.Flush()
-	c.db.Close()
-}
-
-func (c *CdxDb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
-	return c.db.Add(wr, fileName, offset)
+func (c *CdxLegacy) Init() error {
+	return nil
 }
 
 func (c *CdxLegacy) Close() {
 }
 
 func (c *CdxLegacy) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
+	return nil
+}
+
+type CdxJ struct {
+	jsonMarshaler *jsonpb.Marshaler
+}
+
+func (c *CdxJ) Init() (err error) {
+	c.jsonMarshaler = &jsonpb.Marshaler{}
 	return nil
 }
 
@@ -80,7 +68,12 @@ func (c *CdxJ) Write(wr warcrecord.WarcRecord, fileName string, offset int64) er
 	return nil
 }
 
+type CdxPb struct {
+	jsonMarshaler *jsonpb.Marshaler
+}
+
 func (c *CdxPb) Init() (err error) {
+	c.jsonMarshaler = &jsonpb.Marshaler{}
 	return nil
 }
 
@@ -97,4 +90,26 @@ func (c *CdxPb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) e
 		fmt.Printf("%s %s %s %s\n", rec.Ssu, rec.Sts, rec.Srt, cdxpb)
 	}
 	return nil
+}
+
+type CdxDb struct {
+	db *Db
+}
+
+func (cdxdb *CdxDb) Init() error {
+	db, err := DbFromViper()
+	if err != nil {
+		return err
+	}
+	cdxdb.db = db
+	return nil
+}
+
+func (c *CdxDb) Close() {
+	c.db.Flush()
+	c.db.Close()
+}
+
+func (c *CdxDb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
+	return c.db.Add(wr, fileName, offset)
 }

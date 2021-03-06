@@ -24,7 +24,6 @@ import (
 
 	"github.com/nlnwa/gowarc/warcoptions"
 	"github.com/nlnwa/gowarc/warcreader"
-	"github.com/nlnwa/gowarcserver/pkg/dbfromviper"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/spf13/cobra"
 )
@@ -38,11 +37,7 @@ func parseFormat(format string) (index.CdxWriter, error) {
 	case "cdxpb":
 		return &index.CdxPb{}, nil
 	case "db":
-		db, err := dbfromviper.DbFromViper()
-		if err != nil {
-			return nil, err
-		}
-		return index.NewCdxDb(db), nil
+		return &index.CdxDb{}, nil
 	}
 	return nil, fmt.Errorf("unknwon format %v, valid formats are: 'cdx', 'cdxj', 'cdxpb', 'db'", format)
 }
@@ -75,6 +70,7 @@ func NewCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			c.writer.Init()
 
 			return runE(c)
 		},
