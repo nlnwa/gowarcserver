@@ -18,12 +18,7 @@ package index
 import (
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"strconv"
 
-	"github.com/nlnwa/gowarc/warcoptions"
-	"github.com/nlnwa/gowarc/warcreader"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/spf13/cobra"
 )
@@ -84,33 +79,6 @@ func runE(c *conf) error {
 	}
 	defer c.writer.Close()
 
-	readFile(c)
+	ReadFile(c)
 	return nil
-}
-
-// TODO: return error
-func readFile(c *conf) {
-	opts := &warcoptions.WarcOptions{Strict: false}
-	wf, err := warcreader.NewWarcFilename(c.fileName, 0, opts)
-	if err != nil {
-		return
-	}
-	defer wf.Close()
-
-	count := 0
-
-	for {
-		wr, currentOffset, err := wf.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Error: %v, rec num: %v, Offset %v\n", err.Error(), strconv.Itoa(count), currentOffset)
-			break
-		}
-		count++
-
-		c.writer.Write(wr, c.fileName, currentOffset)
-	}
-	fmt.Fprintln(os.Stderr, "Count: ", count)
 }
