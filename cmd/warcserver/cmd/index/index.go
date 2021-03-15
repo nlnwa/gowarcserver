@@ -45,7 +45,6 @@ func parseFormat(format string) (index.CdxWriter, error) {
 type conf struct {
 	fileName     string
 	writerFormat string
-	writer       index.CdxWriter
 }
 
 func NewCommand() *cobra.Command {
@@ -65,14 +64,16 @@ func NewCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c.fileName = args[0]
 
-			var err error
-			c.writer, err = parseFormat(c.writerFormat)
+			writer, err := parseFormat(c.writerFormat)
 			if err != nil {
 				return err
 			}
-			c.writer.Init()
 
-			return runE(c)
+			writer.Init()
+			defer writer.Close()
+			fmt.Printf("Format: %v\n", c.writerFormat)
+
+			return readFile(c.fileName, writer)
 		},
 	}
 
@@ -81,16 +82,9 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func runE(c *conf) error {
-	defer c.writer.Close()
-	fmt.Printf("Format: %v\n", c.writerFormat)
-
-	return readFile(c)
-}
-
-func readFile(c *conf) error {
+func readFile(fileName string, writer index.CdxWriter) error {
 	opts := &warcoptions.WarcOptions{Strict: false}
-	wf, err := warcreader.NewWarcFilename(c.fileName, 0, opts)
+	wf, err := warcreader.NewWarcFilename(fileName, 0, opts)
 	if err != nil {
 		return err
 	}
@@ -114,7 +108,7 @@ func readFile(c *conf) error {
 		}
 		count++
 
-		c.writer.Write(wr, c.fileName, currentOffset)
+		writer.Write(wr, fileName, currentOffset)
 	}
 	return nil
 }
