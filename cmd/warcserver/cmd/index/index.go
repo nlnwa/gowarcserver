@@ -21,6 +21,7 @@ import (
 
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func parseFormat(format string) (index.CdxWriter, error) {
@@ -72,8 +73,8 @@ func NewCommand() *cobra.Command {
 
 func runE(c *conf) error {
 	fmt.Printf("Format: %v\n", c.writerFormat)
-
-	err := c.writer.Init()
+	dbDir := viper.GetString("indexdir")
+	err := c.writer.Init(dbDir)
 	if err != nil {
 		return err
 	}

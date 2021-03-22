@@ -126,7 +126,7 @@ Content-Length: 0`)
 				tt.writerFormat,
 				tt.writer,
 			}
-			c.writer.Init()
+			c.writer.Init(t.TempDir())
 			defer c.writer.Close()
 
 			err := ReadFile(c)
