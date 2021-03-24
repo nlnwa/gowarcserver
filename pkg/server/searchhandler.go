@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	cdx "github.com/nlnwa/gowarc/proto"

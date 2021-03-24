@@ -17,7 +17,7 @@
 package warcserver
 
 import (
-	"github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/gorilla/mux"
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/whatwg-url/url"

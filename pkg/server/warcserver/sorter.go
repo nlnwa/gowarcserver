@@ -21,7 +21,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/nlnwa/gowarc/pkg/timestamp"
 	"github.com/nlnwa/gowarc/pkg/utils"
 )
