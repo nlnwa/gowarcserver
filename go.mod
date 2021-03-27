@@ -15,3 +15,7 @@ require (
 	github.com/spf13/viper v1.7.1
 	google.golang.org/protobuf v1.26.0
 )
+
+// HACK: as there are issues with sum value of v1.12.0, make sure to update this when badger updates its dependencies 
+// See issue: https://github.com/google/flatbuffers/issues/6466 
+replace github.com/google/flatbuffers v1.12.0 => github.com/google/flatbuffers v1.12.1
