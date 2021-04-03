@@ -32,7 +32,7 @@ type autoindexer struct {
 	watchDepth  int
 }
 
-func NewAutoIndexer(db *Db, warcdirs []string, watchDepth int) *autoindexer {
+func NewAutoIndexer(db *DB, warcdirs []string, watchDepth int) *autoindexer {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(err)

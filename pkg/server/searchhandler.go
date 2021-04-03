@@ -33,7 +33,7 @@ import (
 
 type searchHandler struct {
 	loader *loader.Loader
-	db     *index.Db
+	db     *index.DB
 }
 
 var jsonMarshaler = &jsonpb.Marshaler{}

@@ -27,7 +27,7 @@ import (
 
 type fileHandler struct {
 	loader *loader.Loader
-	db     *index.Db
+	db     *index.DB
 }
 
 func (h *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

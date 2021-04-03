@@ -40,12 +40,13 @@ type CdxPb struct {
 	jsonMarshaler *jsonpb.Marshaler
 }
 type CdxDb struct {
-	db *Db
+	db *DB
 }
 
 func (c *CdxDb) Init() (err error) {
 	dbDir := viper.GetString("indexdir")
-	c.db, err = NewIndexDb(dbDir)
+	// index for all databases when you index offline
+	c.db, err = NewIndexDb(dbDir, ALL_MASK)
 	if err != nil {
 		return err
 	}

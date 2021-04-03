@@ -27,6 +27,9 @@ type conf struct {
 	port       int
 	warcDirs   []string
 	watchDepth int
+	noIdDB     bool
+	noFileDB   bool
+	noCdxDB    bool
 }
 
 func NewCommand() *cobra.Command {
@@ -47,6 +50,9 @@ func NewCommand() *cobra.Command {
 
 	cmd.Flags().IntVarP(&c.port, "port", "p", -1, "the port that should be used to serve, will use config value otherwise")
 	cmd.Flags().IntVarP(&c.watchDepth, "watch-depth", "w", 4, "The maximum depth when indexing warc")
+	cmd.Flags().BoolVarP(&c.noIdDB, "id-db", "i", false, "Turn off id db")
+	cmd.Flags().BoolVarP(&c.noFileDB, "file-db", "f", false, "Turn off file db")
+	cmd.Flags().BoolVarP(&c.noCdxDB, "cdx-db", "c", false, "Turn off cdx db")
 
 	return cmd
 }
@@ -57,7 +63,8 @@ func runE(c *conf) error {
 	}
 
 	dbDir := viper.GetString("indexdir")
-	db, err := index.NewIndexDb(dbDir)
+	dbMask := ConfigToDBMask(c.noIdDB, c.noFileDB, c.noCdxDB)
+	db, err := index.NewIndexDb(dbDir, dbMask)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,4 +79,20 @@ func runE(c *conf) error {
 	log.Infof("Starting web server at http://localhost:%v", c.port)
 	server.Serve(db, c.port)
 	return nil
+}
+
+func ConfigToDBMask(noIdDB bool, noFileDB bool, noCdxDB bool) int32 {
+	masker := func(excludeDB bool, v int32) int32 {
+		if !excludeDB {
+			return v
+		} else {
+			return index.NONE_MASK
+		}
+	}
+
+	cdxMask := masker(noCdxDB, index.CDX_DB_MASK)
+	fileMask := masker(noFileDB, index.FILE_DB_MASK)
+	idMask := masker(noIdDB, index.ID_DB_MASK)
+
+	return cdxMask | fileMask | idMask
 }

@@ -34,7 +34,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func Serve(db *index.Db, port int) {
+func Serve(db *index.DB, port int) {
 	l := &loader.Loader{
 		Resolver: &storageRefResolver{db: db},
 		Loader: &loader.FileStorageLoader{FilePathResolver: func(fileName string) (filePath string, err error) {
@@ -75,7 +75,7 @@ func Serve(db *index.Db, port int) {
 }
 
 type storageRefResolver struct {
-	db *index.Db
+	db *index.DB
 }
 
 func (m *storageRefResolver) Resolve(warcId string) (storageRef string, err error) {
