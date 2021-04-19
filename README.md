@@ -19,8 +19,8 @@ You can configure certain aspect of gowarcserver with a config file. Here are al
 
 | Name          | Type           | Description                                                                          | Default   |
 | ------------- | -------------  | -----------                                                                          | -------   |
-| warcdir       |  List of paths | The path to directories where warcs that should be auto indexed                      | ["."]     |
-| indexdir      |  path          | The root directory for index files                                                   | "."       |
-| autoindex     |  bool          | Whether gowarc should index from the warcdir(s) when serving automatically or not    | true      |
-| warcport      |  int           | The port that the serve command will use if not overridden as argument to serve      | 9999      |
-| loglevel      |  string        | Change the application log level manually                                            | "info"    |
+| warcDir       |  List of paths | The path to directories where warcs that should be auto indexed                      | ["."]     |
+| indexDir      |  path          | The root directory for index files                                                   | "."       |
+| autoIndex     |  bool          | Whether gowarc should index from the warcdir(s) when serving automatically or not    | true      |
+| warcPort      |  int           | The port that the serve command will use if not overridden as argument to serve      | 9999      |
+| logLevel      |  string        | Change the application log level manually                                            | "info"    |
