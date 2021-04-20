@@ -27,17 +27,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-type conf struct {
-	cfgFile  string
-	logLevel string
-
-	// DB settings
-	compression string
-}
-
 // NewCommand returns a new cobra.Command implementing the root command for warc
 func NewCommand() *cobra.Command {
-	c := &conf{}
+	cobra.OnInitialize(func() { initConfig() })
+
 	cmd := &cobra.Command{
 		Use:   "warcserver",
 		Short: "Server capable of indexing and serving warc files",
@@ -48,27 +41,32 @@ func NewCommand() *cobra.Command {
 			// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
 			runtime.GOMAXPROCS(128)
 
-			level, err := log.ParseLevel(c.logLevel)
+			logLevel := viper.GetString("logLevel")
+			level, err := log.ParseLevel(logLevel)
 			if err != nil {
-				return fmt.Errorf("'%s' is not part of the valid levels: 'panic', 'fatal', 'error', 'warn', 'warning', 'info', 'debug', 'trace'", c.logLevel)
+				return fmt.Errorf("'%s' is not part of the valid levels: 'panic', 'fatal', 'error', 'warn', 'warning', 'info', 'debug', 'trace'", logLevel)
 			}
-
 			log.SetLevel(level)
+
 			return nil
 		},
 	}
 
-	cobra.OnInitialize(func() { c.initConfig() })
+	// Stub to store cobra variables
+	c := &struct {
+		cfgFile     string
+		logLevel    string
+		compression string
+	}{}
 
 	// Flags
 	cmd.PersistentFlags().StringVarP(&c.compression, "compression", "c", "none", "DB compression type: 'none', 'snappy', 'zstd'")
-	cmd.PersistentFlags().StringVarP(&c.logLevel, "loglevel", "l", "info", "set the log level of gowarc, it will take precedence over config 'loglevel'")
+	cmd.PersistentFlags().StringVarP(&c.logLevel, "logLevel", "l", "info", "set the log level of gowarc, it will take precedence over config 'loglevel'")
 	cmd.PersistentFlags().StringVar(&c.cfgFile, "config", "", "config file. If not set, /etc/warc/, $HOME/.warc/ and current working dir will be searched for file config.yaml")
 
-	// bind flags and config
-	viper.BindPFlag("compression", cmd.PersistentFlags().Lookup("compression"))
-	viper.BindPFlag("loglevel", cmd.PersistentFlags().Lookup("loglevel"))
-	viper.BindPFlag("config", cmd.PersistentFlags().Lookup("config"))
+	if err := viper.BindPFlags(cmd.PersistentFlags()); err != nil {
+		log.Fatalf("Failed to bind root flags, err: %v", err)
+	}
 
 	// Subcommands
 	cmd.AddCommand(serve.NewCommand())
@@ -78,14 +76,10 @@ func NewCommand() *cobra.Command {
 }
 
 // initConfig reads in config file and ENV variables if set.
-func (c *conf) initConfig() {
+func initConfig() {
 	viper.SetTypeByDefaultValue(true)
-	viper.SetDefault("warcdir", []string{"."})
-	viper.SetDefault("indexdir", ".")
-	viper.SetDefault("autoindex", true)
-	viper.SetDefault("warcport", 9999)
-	viper.SetDefault("loglevel", "info")
-	viper.SetDefault("compression", "none")
+	viper.SetDefault("warcDir", []string{"."})
+	viper.SetDefault("indexDir", ".")
 
 	viper.AutomaticEnv() // read in environment variables that match
 

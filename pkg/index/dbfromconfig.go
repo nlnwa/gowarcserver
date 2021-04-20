@@ -8,20 +8,26 @@ package index
 import (
 	"github.com/dgraph-io/badger/v2/options"
 	"github.com/nlnwa/gowarcserver/pkg/compressiontype"
-	"github.com/spf13/viper"
 )
+
+type DbConfig struct {
+	compression string
+	dir         string
+}
+
+func NewDbConfig(compresion string, dir string) *DbConfig {
+	return &DbConfig{compression: compresion, dir: dir}
+}
 
 // TODO: test somehow?
 // Create a database based on the viper settings set by the user
-func DbFromViper() (*Db, error) {
-	compressionString := viper.GetString("compression")
-	compression, cErr := compressiontype.FromString(compressionString)
+func DbFromConfig(config *DbConfig) (*Db, error) {
+	compression, cErr := compressiontype.FromString(config.compression)
 	if cErr != nil {
 		return nil, cErr
 	}
 
-	dbDir := viper.GetString("indexdir")
-	db, dbErr := NewIndexDb(dbDir, options.CompressionType(compression))
+	db, dbErr := NewIndexDb(config.dir, options.CompressionType(compression))
 	if dbErr != nil {
 		return nil, dbErr
 	}

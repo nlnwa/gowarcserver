@@ -25,15 +25,42 @@ import (
 )
 
 type CdxWriter interface {
-	Init() error
+	Init(config *DbConfig) error
 	Close()
 	Write(wr warcrecord.WarcRecord, fileName string, offset int64) error
 }
 
 type CdxLegacy struct {
 }
+type CdxJ struct {
+	jsonMarshaler *jsonpb.Marshaler
+}
+type CdxPb struct {
+	jsonMarshaler *jsonpb.Marshaler
+}
+type CdxDb struct {
+	db *Db
+}
 
-func (c *CdxLegacy) Init() error {
+func (c *CdxDb) Init(config *DbConfig) (err error) {
+	db, err := DbFromConfig(config)
+	if err != nil {
+		return err
+	}
+	c.db = db
+	return nil
+}
+
+func (c *CdxDb) Close() {
+	c.db.Flush()
+	c.db.Close()
+}
+
+func (c *CdxDb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
+	return c.db.Add(wr, fileName, offset)
+}
+
+func (c *CdxLegacy) Init(config *DbConfig) (err error) {
 	return nil
 }
 
@@ -44,11 +71,7 @@ func (c *CdxLegacy) Write(wr warcrecord.WarcRecord, fileName string, offset int6
 	return nil
 }
 
-type CdxJ struct {
-	jsonMarshaler *jsonpb.Marshaler
-}
-
-func (c *CdxJ) Init() (err error) {
+func (c *CdxJ) Init(config *DbConfig) (err error) {
 	c.jsonMarshaler = &jsonpb.Marshaler{}
 	return nil
 }
@@ -68,11 +91,7 @@ func (c *CdxJ) Write(wr warcrecord.WarcRecord, fileName string, offset int64) er
 	return nil
 }
 
-type CdxPb struct {
-	jsonMarshaler *jsonpb.Marshaler
-}
-
-func (c *CdxPb) Init() (err error) {
+func (c *CdxPb) Init(config *DbConfig) (err error) {
 	c.jsonMarshaler = &jsonpb.Marshaler{}
 	return nil
 }
@@ -90,26 +109,4 @@ func (c *CdxPb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) e
 		fmt.Printf("%s %s %s %s\n", rec.Ssu, rec.Sts, rec.Srt, cdxpb)
 	}
 	return nil
-}
-
-type CdxDb struct {
-	db *Db
-}
-
-func (cdxdb *CdxDb) Init() error {
-	db, err := DbFromViper()
-	if err != nil {
-		return err
-	}
-	cdxdb.db = db
-	return nil
-}
-
-func (c *CdxDb) Close() {
-	c.db.Flush()
-	c.db.Close()
-}
-
-func (c *CdxDb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
-	return c.db.Add(wr, fileName, offset)
 }

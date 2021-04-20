@@ -18,14 +18,10 @@ package index
 import (
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"strconv"
 
-	"github.com/nlnwa/gowarc/warcoptions"
-	"github.com/nlnwa/gowarc/warcreader"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func parseFormat(format string) (index.CdxWriter, error) {
@@ -57,8 +53,6 @@ func NewCommand() *cobra.Command {
 			if len(args) == 0 {
 				return errors.New("missing file name")
 			}
-			// TODO: maybe try to open file/directory here?
-			// 	     default return should be an error case
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -69,11 +63,7 @@ func NewCommand() *cobra.Command {
 				return err
 			}
 
-			writer.Init()
-			defer writer.Close()
-			fmt.Printf("Format: %v\n", c.writerFormat)
-
-			return readFile(c.fileName, writer)
+			return runE(c, writer)
 		},
 	}
 
@@ -82,33 +72,17 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func readFile(fileName string, writer index.CdxWriter) error {
-	opts := &warcoptions.WarcOptions{Strict: false}
-	wf, err := warcreader.NewWarcFilename(fileName, 0, opts)
+func runE(c *conf, writer index.CdxWriter) error {
+	fmt.Printf("Format: %v\n", c.writerFormat)
+	compression := viper.GetString("compression")
+	dir := viper.GetString("indexdir")
+	dbConfig := index.NewDbConfig(compression, dir)
+	err := writer.Init(dbConfig)
 	if err != nil {
 		return err
 	}
-	defer wf.Close()
+	defer writer.Close()
 
-	count := 0
-
-	// avoid defer copy value by using a anonymous function
-	// At the end, print count even if an error occurs
-	defer func() {
-		fmt.Fprintln(os.Stdout, "Count: ", count)
-	}()
-
-	for {
-		wr, currentOffset, err := wf.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("Error: %v, rec num: %v, Offset %v\n", err.Error(), strconv.Itoa(count), currentOffset)
-		}
-		count++
-
-		writer.Write(wr, fileName, currentOffset)
-	}
+	ReadFile(c, writer)
 	return nil
 }
