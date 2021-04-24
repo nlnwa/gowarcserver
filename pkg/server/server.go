@@ -31,10 +31,9 @@ import (
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	"github.com/nlnwa/gowarcserver/pkg/server/warcserver"
-	log "github.com/sirupsen/logrus"
 )
 
-func Serve(db *index.DB, port int) {
+func Serve(db *index.DB, port int) error {
 	l := &loader.Loader{
 		Resolver: &storageRefResolver{db: db},
 		Loader: &loader.FileStorageLoader{FilePathResolver: func(fileName string) (filePath string, err error) {
@@ -71,7 +70,7 @@ func Serve(db *index.DB, port int) {
 		httpServer.Shutdown(ctx)
 	}()
 
-	log.Info(httpServer.ListenAndServe())
+	return httpServer.ListenAndServe()
 }
 
 type storageRefResolver struct {

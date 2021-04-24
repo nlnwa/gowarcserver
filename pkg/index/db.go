@@ -52,7 +52,6 @@ type index struct {
 }
 
 func newIndex(dbDir string, file string, mask int32, typeMask int32) (index, error) {
-	log.Warnf("new index %d, %d %d", typeMask, mask, mask&typeMask)
 	if mask&typeMask <= 0 {
 		return index{nil}, nil
 	}

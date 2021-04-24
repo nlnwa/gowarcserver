@@ -23,61 +23,70 @@ import (
 	"github.com/spf13/viper"
 )
 
-type conf struct {
-	port       int
-	warcDirs   []string
-	watchDepth int
-	noIdDB     bool
-	noFileDB   bool
-	noCdxDB    bool
-}
-
 func NewCommand() *cobra.Command {
-	c := &conf{}
 	var cmd = &cobra.Command{
 		Use:   "serve",
 		Short: "Start the warc server to serve warc records",
 		Long:  ``,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var warcDirs []string
 			if len(args) > 0 {
-				c.warcDirs = args
+				warcDirs = args
 			} else {
-				c.warcDirs = viper.GetStringSlice("warcdir")
+				warcDirs = viper.GetStringSlice("warcDir")
 			}
-			return runE(c)
+			return runE(warcDirs)
 		},
 	}
 
-	cmd.Flags().IntVarP(&c.port, "port", "p", -1, "the port that should be used to serve, will use config value otherwise")
-	cmd.Flags().IntVarP(&c.watchDepth, "watch-depth", "w", 4, "The maximum depth when indexing warc")
-	cmd.Flags().BoolVarP(&c.noIdDB, "id-db", "i", false, "Turn off id db")
-	cmd.Flags().BoolVarP(&c.noFileDB, "file-db", "f", false, "Turn off file db")
-	cmd.Flags().BoolVarP(&c.noCdxDB, "cdx-db", "c", false, "Turn off cdx db")
+	// Stub to hold flags
+	c := &struct {
+		warcPort   int
+		watchDepth int
+		autoIndex  bool
+		noIdDB     bool
+		noFileDB   bool
+		noCdxDB    bool
+	}{}
+	cmd.Flags().IntVarP(&c.warcPort, "warcPort", "p", 9999, "Port that should be used to serve, will use config value otherwise")
+	cmd.Flags().IntVarP(&c.watchDepth, "watchDepth", "w", 4, "Maximum depth when indexing warc")
+	cmd.Flags().BoolVarP(&c.autoIndex, "autoIndex", "a", true, "Whether the server should index warc files automatically")
+	cmd.Flags().BoolVarP(&c.noIdDB, "idDb", "i", false, "Turn off id db")
+	cmd.Flags().BoolVarP(&c.noFileDB, "fileDb", "f", false, "Turn off file db")
+	cmd.Flags().BoolVarP(&c.noCdxDB, "cdxDb", "c", false, "Turn off cdx db")
+	if err := viper.BindPFlags(cmd.Flags()); err != nil {
+		log.Fatalf("Failed to bind serve flags, err: %v", err)
+	}
 
 	return cmd
 }
 
-func runE(c *conf) error {
-	if c.port < 0 {
-		c.port = viper.GetInt("warcport")
-	}
-
-	dbDir := viper.GetString("indexdir")
-	dbMask := ConfigToDBMask(c.noIdDB, c.noFileDB, c.noCdxDB)
+func runE(warcDirs []string) error {
+	dbDir := viper.GetString("indexDir")
+	dbMask := ConfigToDBMask(
+		viper.GetBool("idDb"),
+		viper.GetBool("fileDb"),
+		viper.GetBool("cdxDb"),
+	)
 	db, err := index.NewIndexDb(dbDir, dbMask)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	if viper.GetBool("autoindex") {
-		log.Infof("Starting autoindexer")
-		autoindexer := index.NewAutoIndexer(db, c.warcDirs, c.watchDepth)
+	if viper.GetBool("autoIndex") {
+		log.Infof("Starting auto indexer")
+		watchDepth := viper.GetInt("watchDepth")
+		autoindexer := index.NewAutoIndexer(db, warcDirs, watchDepth)
 		defer autoindexer.Shutdown()
 	}
 
-	log.Infof("Starting web server at http://localhost:%v", c.port)
-	server.Serve(db, c.port)
+	port := viper.GetInt("warcPort")
+	log.Infof("Starting web server at http://localhost:%v", port)
+	err = server.Serve(db, port)
+	if err != nil {
+		log.Warnf("%v", err)
+	}
 	return nil
 }
 

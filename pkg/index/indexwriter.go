@@ -22,11 +22,10 @@ import (
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/nlnwa/gowarc/warcrecord"
-	"github.com/spf13/viper"
 )
 
 type CdxWriter interface {
-	Init() error
+	Init(dbDir string) error
 	Close()
 	Write(wr warcrecord.WarcRecord, fileName string, offset int64) error
 }
@@ -43,9 +42,7 @@ type CdxDb struct {
 	db *DB
 }
 
-func (c *CdxDb) Init() (err error) {
-	dbDir := viper.GetString("indexdir")
-	// index for all databases when you index offline
+func (c *CdxDb) Init(dbDir string) (err error) {
 	c.db, err = NewIndexDb(dbDir, ALL_MASK)
 	if err != nil {
 		return err
@@ -62,7 +59,7 @@ func (c *CdxDb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) e
 	return c.db.Add(wr, fileName, offset)
 }
 
-func (c *CdxLegacy) Init() (err error) {
+func (c *CdxLegacy) Init(dbDir string) (err error) {
 	return nil
 }
 
@@ -73,7 +70,7 @@ func (c *CdxLegacy) Write(wr warcrecord.WarcRecord, fileName string, offset int6
 	return nil
 }
 
-func (c *CdxJ) Init() (err error) {
+func (c *CdxJ) Init(dbDir string) (err error) {
 	c.jsonMarshaler = &jsonpb.Marshaler{}
 	return nil
 }
@@ -93,7 +90,7 @@ func (c *CdxJ) Write(wr warcrecord.WarcRecord, fileName string, offset int64) er
 	return nil
 }
 
-func (c *CdxPb) Init() (err error) {
+func (c *CdxPb) Init(dbDir string) (err error) {
 	return nil
 }
 
