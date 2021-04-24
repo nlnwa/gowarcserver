@@ -32,6 +32,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	NONE_MASK    = 0b000
+	ID_DB_MASK   = 0b001
+	FILE_DB_MASK = 0b010
+	CDX_DB_MASK  = 0b100
+	ALL_MASK     = 0b111
+)
+
 type record struct {
 	id       string
 	filePath string
@@ -39,12 +47,65 @@ type record struct {
 	cdx      *gowarcpb.Cdx
 }
 
-type Db struct {
-	dbDir        string
-	idIndex      *badger.DB
-	fileIndex    *badger.DB
-	cdxIndex     *badger.DB
-	dbGcInterval *time.Ticker
+type index struct {
+	db *badger.DB
+}
+
+func newIndex(dbDir string, file string, mask int32, typeMask int32) (index, error) {
+	if mask&typeMask <= 0 {
+		return index{nil}, nil
+	}
+
+	indexDir := path.Join(dbDir, file)
+	db, err := openIndex(indexDir)
+	if err != nil {
+		return index{nil}, err
+	}
+	return index{db}, nil
+}
+
+func (i index) close() error {
+	if i.db == nil {
+		return nil
+	}
+
+	return i.db.Close()
+}
+
+func (i index) runGC(discardRatio float64) {
+	if i.db == nil {
+		return
+	}
+
+	for {
+		err := i.db.RunValueLogGC(discardRatio)
+		// TODO: code smell using error as branching mechanism
+		if err != nil {
+			break
+		}
+	}
+}
+
+func (i index) update(fn func(txn *badger.Txn) error) error {
+	if i.db != nil {
+		return i.db.Update(fn)
+	}
+	return nil
+}
+
+func (i index) view(fn func(txn *badger.Txn) error) error {
+	if i.db != nil {
+		return i.db.View(fn)
+	}
+	return nil
+}
+
+type DB struct {
+	dir        string
+	idIndex    index
+	fileIndex  index
+	cdxIndex   index
+	gcInterval *time.Ticker
 
 	// batch settings
 	batchMaxSize int
@@ -55,18 +116,15 @@ type Db struct {
 	batchFlushChan chan []*record
 }
 
-func NewIndexDb(dbDir string) (*Db, error) {
+func NewIndexDb(dbDir string, mask int32) (*DB, error) {
 	dbDir = path.Join(dbDir, "warcdb")
-	idIndexDir := path.Join(dbDir, "id-index")
-	fileIndexDir := path.Join(dbDir, "file-index")
-	cdxIndexDir := path.Join(dbDir, "cdx-index")
 
 	batchMaxSize := 10000
 	batchMaxWait := 5 * time.Second
 
-	d := &Db{
-		dbDir:          dbDir,
-		dbGcInterval:   time.NewTicker(15 * time.Second),
+	d := &DB{
+		dir:            dbDir,
+		gcInterval:     time.NewTicker(15 * time.Second),
 		batchMaxSize:   batchMaxSize,
 		batchMaxWait:   batchMaxWait,
 		batchItems:     make([]*record, 0, batchMaxSize),
@@ -93,23 +151,23 @@ func NewIndexDb(dbDir string) (*Db, error) {
 	// Open db
 	var err error
 
-	d.idIndex, err = openIndex(idIndexDir)
+	d.idIndex, err = newIndex(dbDir, "id-index", mask, ID_DB_MASK)
 	if err != nil {
 		return nil, err
 	}
 
-	d.fileIndex, err = openIndex(fileIndexDir)
+	d.fileIndex, err = newIndex(dbDir, "file-index", mask, FILE_DB_MASK)
 	if err != nil {
 		return nil, err
 	}
 
-	d.cdxIndex, err = openIndex(cdxIndexDir)
+	d.cdxIndex, err = newIndex(dbDir, "cdx-index", mask, CDX_DB_MASK)
 	if err != nil {
 		return nil, err
 	}
 
 	go func() {
-		for range d.dbGcInterval.C {
+		for range d.gcInterval.C {
 			d.runValueLogGC(0.5)
 		}
 	}()
@@ -127,44 +185,29 @@ func openIndex(indexDir string) (db *badger.DB, err error) {
 	return
 }
 
-func (d *Db) runValueLogGC(discardRatio float64) {
-	for {
-		err := d.idIndex.RunValueLogGC(discardRatio)
-		if err != nil {
-			break
-		}
-	}
-	for {
-		err := d.fileIndex.RunValueLogGC(discardRatio)
-		if err != nil {
-			break
-		}
-	}
-	for {
-		err := d.cdxIndex.RunValueLogGC(discardRatio)
-		if err != nil {
-			break
-		}
-	}
+func (d *DB) runValueLogGC(discardRatio float64) {
+	d.idIndex.runGC(discardRatio)
+	d.fileIndex.runGC(discardRatio)
+	d.cdxIndex.runGC(discardRatio)
 }
 
-func (d *Db) DeleteDb() {
-	if err := os.RemoveAll(d.dbDir); err != nil {
+func (d *DB) DeleteDb() {
+	if err := os.RemoveAll(d.dir); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (d *Db) Close() {
+func (d *DB) Close() {
 	d.Flush()
-	d.dbGcInterval.Stop()
+	d.gcInterval.Stop()
 	d.runValueLogGC(0.3)
-	_ = d.idIndex.Close()
-	_ = d.fileIndex.Close()
-	_ = d.cdxIndex.Close()
+	_ = d.idIndex.close()
+	_ = d.fileIndex.close()
+	_ = d.cdxIndex.close()
 }
 
-func (d *Db) Add(warcRecord warcrecord.WarcRecord, filePath string, offset int64) error {
-	record := &record{
+func (d *DB) Add(warcRecord warcrecord.WarcRecord, filePath string, offset int64) error {
+	rec := &record{
 		id:       warcRecord.WarcHeader().Get(warcrecord.WarcRecordID),
 		filePath: filePath,
 		offset:   offset,
@@ -172,14 +215,14 @@ func (d *Db) Add(warcRecord warcrecord.WarcRecord, filePath string, offset int64
 
 	var err error
 	if warcRecord.Type() == warcrecord.RESPONSE || warcRecord.Type() == warcrecord.REVISIT {
-		record.cdx = NewCdxRecord(warcRecord, filePath, offset)
+		rec.cdx = NewCdxRecord(warcRecord, filePath, offset)
 	}
 	if err != nil {
 		return err
 	}
 
 	d.batchMutex.Lock()
-	d.batchItems = append(d.batchItems, record)
+	d.batchItems = append(d.batchItems, rec)
 	d.batchMutex.Unlock()
 	if len(d.batchItems) >= d.batchMaxSize {
 		d.Flush()
@@ -188,7 +231,7 @@ func (d *Db) Add(warcRecord warcrecord.WarcRecord, filePath string, offset int64
 	return nil
 }
 
-func (d *Db) UpdateFilePath(filePath string) {
+func (d *DB) UpdateFilePath(filePath string) {
 	fileInfo := &gowarcpb.Fileinfo{}
 	var err error
 	fileInfo.Path, err = filepath.Abs(filePath)
@@ -212,7 +255,7 @@ func (d *Db) UpdateFilePath(filePath string) {
 		return
 	}
 
-	err = d.fileIndex.Update(func(txn *badger.Txn) error {
+	err = d.fileIndex.update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(fileInfo.Name), value)
 	})
 	if err != nil {
@@ -220,11 +263,11 @@ func (d *Db) UpdateFilePath(filePath string) {
 	}
 }
 
-func (d *Db) AddBatch(records []*record) {
+func (d *DB) AddBatch(records []*record) {
 	log.Debug("flushing batch to DB")
 
 	var err error
-	err = d.idIndex.Update(func(txn *badger.Txn) error {
+	err = d.idIndex.update(func(txn *badger.Txn) error {
 		for _, r := range records {
 			r.filePath, err = filepath.Abs(r.filePath)
 			if err != nil {
@@ -243,7 +286,7 @@ func (d *Db) AddBatch(records []*record) {
 		log.Errorf("%v", err)
 	}
 
-	err = d.cdxIndex.Update(func(txn *badger.Txn) error {
+	err = d.cdxIndex.update(func(txn *badger.Txn) error {
 		for _, r := range records {
 			if r.cdx != nil {
 				key := r.cdx.Ssu + " " + r.cdx.Sts + " " + r.cdx.Srt
@@ -265,7 +308,7 @@ func (d *Db) AddBatch(records []*record) {
 	}
 }
 
-func (d *Db) Flush() {
+func (d *DB) Flush() {
 	d.batchMutex.RLock()
 	defer d.batchMutex.RUnlock()
 
@@ -278,9 +321,9 @@ func (d *Db) Flush() {
 	d.batchFlushChan <- copiedItems
 }
 
-func (d *Db) GetStorageRef(id string) (string, error) {
+func (d *DB) GetStorageRef(id string) (string, error) {
 	var val []byte
-	err := d.idIndex.View(func(txn *badger.Txn) error {
+	err := d.idIndex.view(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(id))
 		if err != nil {
 			return err
@@ -291,9 +334,9 @@ func (d *Db) GetStorageRef(id string) (string, error) {
 	return string(val), err
 }
 
-func (d *Db) GetFilePath(fileName string) (*gowarcpb.Fileinfo, error) {
+func (d *DB) GetFilePath(fileName string) (*gowarcpb.Fileinfo, error) {
 	val := &gowarcpb.Fileinfo{}
-	err := d.fileIndex.View(func(txn *badger.Txn) error {
+	err := d.fileIndex.view(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(fileName))
 		if err != nil {
 			return err
@@ -306,13 +349,13 @@ func (d *Db) GetFilePath(fileName string) (*gowarcpb.Fileinfo, error) {
 	return val, err
 }
 
-func (d *Db) ListFileNames() ([]string, error) {
+func (d *DB) ListFileNames() ([]string, error) {
 	var result []string
 	opt := badger.DefaultIteratorOptions
 	opt.PrefetchSize = 10
 	opt.PrefetchValues = false
 	var count int
-	err := d.fileIndex.View(func(txn *badger.Txn) error {
+	err := d.fileIndex.view(func(txn *badger.Txn) error {
 		it := txn.NewIterator(opt)
 		defer it.Close()
 		for it.Rewind(); it.Valid(); it.Next() {
@@ -331,10 +374,10 @@ func (d *Db) ListFileNames() ([]string, error) {
 type PerItemFunction func(*badger.Item) (stopIteration bool)
 type AfterIterationFunction func(txn *badger.Txn) error
 
-func (d *Db) Search(key string, reverse bool, f PerItemFunction, a AfterIterationFunction) error {
+func (d *DB) Search(key string, reverse bool, f PerItemFunction, a AfterIterationFunction) error {
 	log.Debugf("Searching for key '%s'", key)
 
-	err := d.cdxIndex.View(func(txn *badger.Txn) error {
+	err := d.cdxIndex.view(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
 		opts.Prefix = []byte(key)

@@ -33,7 +33,7 @@ import (
 	"github.com/nlnwa/gowarcserver/pkg/server/warcserver"
 )
 
-func Serve(db *index.Db, port int) error {
+func Serve(db *index.DB, port int) error {
 	l := &loader.Loader{
 		Resolver: &storageRefResolver{db: db},
 		Loader: &loader.FileStorageLoader{FilePathResolver: func(fileName string) (filePath string, err error) {
@@ -74,7 +74,7 @@ func Serve(db *index.Db, port int) error {
 }
 
 type storageRefResolver struct {
-	db *index.Db
+	db *index.DB
 }
 
 func (m *storageRefResolver) Resolve(warcId string) (storageRef string, err error) {
