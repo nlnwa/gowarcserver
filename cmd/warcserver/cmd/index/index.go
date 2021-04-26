@@ -74,9 +74,9 @@ func NewCommand() *cobra.Command {
 
 func runE(c *conf, writer index.CdxWriter) error {
 	fmt.Printf("Format: %v\n", c.writerFormat)
-	compression := viper.GetString("compression")
 	dir := viper.GetString("indexdir")
-	dbConfig := index.NewDbConfig(compression, dir)
+	compression := viper.GetString("compression")
+	dbConfig := index.NewDbConfig(dir, compression, index.ALL_MASK)
 	err := writer.Init(dbConfig)
 	if err != nil {
 		return err

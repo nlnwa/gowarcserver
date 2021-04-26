@@ -39,15 +39,14 @@ type CdxPb struct {
 	jsonMarshaler *jsonpb.Marshaler
 }
 type CdxDb struct {
-	db *Db
+	db *DB
 }
 
 func (c *CdxDb) Init(config *DbConfig) (err error) {
-	db, err := DbFromConfig(config)
+	c.db, err = NewIndexDb(config)
 	if err != nil {
 		return err
 	}
-	c.db = db
 	return nil
 }
 

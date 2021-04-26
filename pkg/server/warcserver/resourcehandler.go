@@ -35,7 +35,7 @@ import (
 
 type resourceHandler struct {
 	loader *loader.Loader
-	db     *index.Db
+	db     *index.DB
 }
 
 func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

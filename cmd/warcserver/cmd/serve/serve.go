@@ -44,10 +44,16 @@ func NewCommand() *cobra.Command {
 		warcPort   int
 		watchDepth int
 		autoIndex  bool
+		noIdDB     bool
+		noFileDB   bool
+		noCdxDB    bool
 	}{}
 	cmd.Flags().IntVarP(&c.warcPort, "warcPort", "p", 9999, "Port that should be used to serve, will use config value otherwise")
 	cmd.Flags().IntVarP(&c.watchDepth, "watchDepth", "w", 4, "Maximum depth when indexing warc")
 	cmd.Flags().BoolVarP(&c.autoIndex, "autoIndex", "a", true, "Whether the server should index warc files automatically")
+	cmd.Flags().BoolVarP(&c.noIdDB, "idDb", "i", false, "Turn off id db")
+	cmd.Flags().BoolVarP(&c.noFileDB, "fileDb", "f", false, "Turn off file db")
+	cmd.Flags().BoolVarP(&c.noCdxDB, "cdxDb", "c", false, "Turn off cdx db")
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
 		log.Fatalf("Failed to bind serve flags, err: %v", err)
 	}
@@ -56,10 +62,15 @@ func NewCommand() *cobra.Command {
 }
 
 func runE(warcDirs []string) error {
-	compression := viper.GetString("compression")
-	dir := viper.GetString("indexdir")
-	dbConfig := index.NewDbConfig(compression, dir)
-	db, err := index.DbFromConfig(dbConfig)
+	dir := viper.GetString("indexDir")
+	mask := ConfigToDBMask(
+		viper.GetBool("idDb"),
+		viper.GetBool("fileDb"),
+		viper.GetBool("cdxDb"),
+	)
+	compressionStr := viper.GetString("compression")
+	dbConfig := index.NewDbConfig(dir, compressionStr, mask)
+	db, err := index.NewIndexDb(dbConfig)
 	if err != nil {
 		return err
 	}
@@ -79,4 +90,20 @@ func runE(warcDirs []string) error {
 		log.Warnf("%v", err)
 	}
 	return nil
+}
+
+func ConfigToDBMask(noIdDB bool, noFileDB bool, noCdxDB bool) int32 {
+	masker := func(excludeDB bool, v int32) int32 {
+		if !excludeDB {
+			return v
+		} else {
+			return index.NONE_MASK
+		}
+	}
+
+	cdxMask := masker(noCdxDB, index.CDX_DB_MASK)
+	fileMask := masker(noFileDB, index.FILE_DB_MASK)
+	idMask := masker(noIdDB, index.ID_DB_MASK)
+
+	return cdxMask | fileMask | idMask
 }

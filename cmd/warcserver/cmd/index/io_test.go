@@ -125,7 +125,7 @@ Content-Length: 0`)
 				filepath,
 				tt.writerFormat,
 			}
-			dbConfig := index.NewDbConfig("none", t.TempDir())
+			dbConfig := index.NewDbConfig(t.TempDir(), "none", index.ALL_MASK)
 			tt.writer.Init(dbConfig)
 			defer tt.writer.Close()
 

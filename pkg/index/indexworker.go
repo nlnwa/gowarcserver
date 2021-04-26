@@ -36,7 +36,7 @@ type job struct {
 }
 
 type indexWorker struct {
-	db          *Db
+	db          *DB
 	noOfWorkers int
 	jobs        chan string
 	stop        chan bool
@@ -44,7 +44,7 @@ type indexWorker struct {
 	mx          *sync.Mutex
 }
 
-func NewIndexWorker(db *Db, noOfWorkers int) *indexWorker {
+func NewIndexWorker(db *DB, noOfWorkers int) *indexWorker {
 	iw := &indexWorker{
 		db:          db,
 		noOfWorkers: noOfWorkers,
@@ -98,7 +98,7 @@ func (iw *indexWorker) Queue(fileName string, batchWindow time.Duration) {
 	}
 }
 
-func indexFile(db *Db, fileName string) {
+func indexFile(db *DB, fileName string) {
 	// Check if file is indexed and has not changed since indexing
 	stat, err := os.Stat(fileName)
 	if err != nil {

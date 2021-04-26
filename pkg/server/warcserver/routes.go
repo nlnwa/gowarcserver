@@ -22,7 +22,7 @@ import (
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 )
 
-func RegisterRoutes(r *mux.Router, db *index.Db, loader *loader.Loader) {
+func RegisterRoutes(r *mux.Router, db *index.DB, loader *loader.Loader) {
 	r.Handle("/", &rootHandler{})
 	r.Handle("/{collection}/index", &indexHandler{loader: loader, db: db})
 	r.Handle("/{collection}/resource", &resourceHandler{loader: loader, db: db})
