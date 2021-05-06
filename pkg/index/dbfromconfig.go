@@ -1,10 +1,5 @@
 package index
 
-/*
-	Usually it should be avoided to reference viper in pkg, but this functionality is used by
-	cmd index and server, so it's an exception.
-*/
-
 type DbConfig struct {
 	dir         string
 	compression string
