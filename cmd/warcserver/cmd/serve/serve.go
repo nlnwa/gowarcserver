@@ -53,7 +53,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVarP(&c.autoIndex, "autoIndex", "a", true, "Whether the server should index warc files automatically")
 	cmd.Flags().BoolVarP(&c.noIdDB, "idDb", "i", false, "Turn off id db")
 	cmd.Flags().BoolVarP(&c.noFileDB, "fileDb", "f", false, "Turn off file db")
-	cmd.Flags().BoolVarP(&c.noCdxDB, "cdxDb", "c", false, "Turn off cdx db")
+	cmd.Flags().BoolVarP(&c.noCdxDB, "cdxDb", "x", false, "Turn off cdx db")
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
 		log.Fatalf("Failed to bind serve flags, err: %v", err)
 	}
