@@ -6,6 +6,6 @@ type DbConfig struct {
 	mask        int32
 }
 
-func NewDbConfig(dir string, compresion string, mask int32) *DbConfig {
-	return &DbConfig{dir: dir, compression: compresion, mask: mask}
+func NewDbConfig(dir string, compression string, mask int32) *DbConfig {
+	return &DbConfig{dir: dir, compression: compression, mask: mask}
 }

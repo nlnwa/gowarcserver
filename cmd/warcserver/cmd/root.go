@@ -60,7 +60,7 @@ func NewCommand() *cobra.Command {
 	}{}
 
 	// Flags
-	cmd.PersistentFlags().StringVarP(&c.compression, "compression", "c", "none", "DB compression type: 'none', 'snappy', 'zstd'")
+	cmd.PersistentFlags().StringVarP(&c.compression, "compression", "c", "badgerdefault", "DB compression type: 'badgerdefault', 'none', 'snappy', 'zstd'.")
 	cmd.PersistentFlags().StringVarP(&c.logLevel, "logLevel", "l", "info", "set the log level of gowarc, it will take precedence over config 'loglevel'")
 	cmd.PersistentFlags().StringVar(&c.cfgFile, "config", "", "config file. If not set, /etc/warc/, $HOME/.warc/ and current working dir will be searched for file config.yaml")
 
