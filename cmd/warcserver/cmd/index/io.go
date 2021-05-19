@@ -25,7 +25,7 @@ func ParseFormat(format string) (index.CdxWriter, error) {
 	return nil, fmt.Errorf("unknwon format %v, valid formats are: 'cdx', 'cdxj', 'cdxpb', 'db'", format)
 }
 
-func ReadFile(c *conf) error {
+func ReadFile(c *conf, writer index.CdxWriter) error {
 	opts := &warcoptions.WarcOptions{Strict: false}
 	wf, err := warcreader.NewWarcFilename(c.fileName, 0, opts)
 	if err != nil {
@@ -51,7 +51,7 @@ func ReadFile(c *conf) error {
 		}
 		count++
 
-		c.writer.Write(wr, c.fileName, currentOffset)
+		writer.Write(wr, c.fileName, currentOffset)
 	}
 	return nil
 }

@@ -25,10 +25,12 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v3/options"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	gowarcpb "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarcserver/pkg/compressiontype"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -51,13 +53,17 @@ type index struct {
 	db *badger.DB
 }
 
-func newIndex(dbDir string, file string, mask int32, typeMask int32) (index, error) {
-	if mask&typeMask <= 0 {
-		return index{nil}, nil
-	}
+func isStubIndex(mask int32, typeMask int32) bool {
+	return mask&typeMask <= 0
+}
 
+func stubIndex() index {
+	return index{nil}
+}
+
+func newIndex(dbDir string, file string, compression compressiontype.CompressionType) (index, error) {
 	indexDir := path.Join(dbDir, file)
-	db, err := openIndex(indexDir)
+	db, err := openIndex(indexDir, compression)
 	if err != nil {
 		return index{nil}, err
 	}
@@ -116,8 +122,8 @@ type DB struct {
 	batchFlushChan chan []*record
 }
 
-func NewIndexDb(dbDir string, mask int32) (*DB, error) {
-	dbDir = path.Join(dbDir, "warcdb")
+func NewIndexDb(config *DbConfig) (*DB, error) {
+	dbDir := path.Join(config.dir, "warcdb")
 
 	batchMaxSize := 10000
 	batchMaxWait := 5 * time.Second
@@ -149,21 +155,36 @@ func NewIndexDb(dbDir string, mask int32) (*DB, error) {
 	}()
 
 	// Open db
-	var err error
-
-	d.idIndex, err = newIndex(dbDir, "id-index", mask, ID_DB_MASK)
+	compression, err := compressiontype.FromString(config.compression)
 	if err != nil {
 		return nil, err
 	}
 
-	d.fileIndex, err = newIndex(dbDir, "file-index", mask, FILE_DB_MASK)
-	if err != nil {
-		return nil, err
+	if isStubIndex(config.mask, ID_DB_MASK) {
+		d.idIndex = stubIndex()
+	} else {
+		d.idIndex, err = newIndex(dbDir, "id-index", compression)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	d.cdxIndex, err = newIndex(dbDir, "cdx-index", mask, CDX_DB_MASK)
-	if err != nil {
-		return nil, err
+	if isStubIndex(config.mask, FILE_DB_MASK) {
+		d.fileIndex = stubIndex()
+	} else {
+		d.fileIndex, err = newIndex(dbDir, "file-index", compression)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if isStubIndex(config.mask, CDX_DB_MASK) {
+		d.cdxIndex = stubIndex()
+	} else {
+		d.cdxIndex, err = newIndex(dbDir, "cdx-index", compression)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	go func() {
@@ -175,12 +196,14 @@ func NewIndexDb(dbDir string, mask int32) (*DB, error) {
 	return d, nil
 }
 
-func openIndex(indexDir string) (db *badger.DB, err error) {
+func openIndex(indexDir string, compression compressiontype.CompressionType) (db *badger.DB, err error) {
 	if err := os.MkdirAll(indexDir, 0777); err != nil {
 		return nil, err
 	}
-	opts := badger.DefaultOptions(indexDir)
-	opts.Logger = log.StandardLogger()
+	opts := badger.DefaultOptions(indexDir).WithLogger(log.StandardLogger())
+	opts.Compression = options.CompressionType(compression)
+	// Currently always use zstd level 5
+	opts.ZSTDCompressionLevel = 5
 	db, err = badger.Open(opts)
 	return
 }

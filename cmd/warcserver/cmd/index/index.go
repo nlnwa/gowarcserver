@@ -41,7 +41,6 @@ func parseFormat(format string) (index.CdxWriter, error) {
 type conf struct {
 	fileName     string
 	writerFormat string
-	writer       index.CdxWriter
 }
 
 func NewCommand() *cobra.Command {
@@ -50,19 +49,21 @@ func NewCommand() *cobra.Command {
 		Use:   "index",
 		Short: "Index a given warc file",
 		Long:  ``,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return errors.New("missing file name")
 			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
 			c.fileName = args[0]
 
-			var err error
-			c.writer, err = parseFormat(c.writerFormat)
+			writer, err := parseFormat(c.writerFormat)
 			if err != nil {
 				return err
 			}
 
-			return runE(c)
+			return runE(c, writer)
 		},
 	}
 
@@ -71,15 +72,17 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func runE(c *conf) error {
+func runE(c *conf, writer index.CdxWriter) error {
 	fmt.Printf("Format: %v\n", c.writerFormat)
-	dbDir := viper.GetString("indexdir")
-	err := c.writer.Init(dbDir)
+	dir := viper.GetString("indexdir")
+	compression := viper.GetString("compression")
+	dbConfig := index.NewDbConfig(dir, compression, index.ALL_MASK)
+	err := writer.Init(dbConfig)
 	if err != nil {
 		return err
 	}
-	defer c.writer.Close()
+	defer writer.Close()
 
-	ReadFile(c)
+	ReadFile(c, writer)
 	return nil
 }

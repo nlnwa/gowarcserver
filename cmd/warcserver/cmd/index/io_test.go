@@ -124,12 +124,12 @@ Content-Length: 0`)
 			c := &conf{
 				filepath,
 				tt.writerFormat,
-				tt.writer,
 			}
-			c.writer.Init(t.TempDir())
-			defer c.writer.Close()
+			dbConfig := index.NewDbConfig(t.TempDir(), "none", index.ALL_MASK)
+			tt.writer.Init(dbConfig)
+			defer tt.writer.Close()
 
-			err := ReadFile(c)
+			err := ReadFile(c, tt.writer)
 			if err != nil {
 				t.Errorf("Unexpected failure: %v", err)
 			}
