@@ -24,8 +24,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dgraph-io/badger/v2"
-	"github.com/dgraph-io/badger/v2/options"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v3/options"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	gowarcpb "github.com/nlnwa/gowarc/proto"

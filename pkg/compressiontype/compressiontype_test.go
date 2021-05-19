@@ -3,7 +3,7 @@ package compressiontype_test
 import (
 	"testing"
 
-	"github.com/dgraph-io/badger/v2/options"
+	"github.com/dgraph-io/badger/v3/options"
 	ct "github.com/nlnwa/gowarcserver/pkg/compressiontype"
 )
 
