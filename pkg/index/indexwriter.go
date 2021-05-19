@@ -91,7 +91,6 @@ func (c *CdxJ) Write(wr warcrecord.WarcRecord, fileName string, offset int64) er
 }
 
 func (c *CdxPb) Init(config *DbConfig) (err error) {
-	c.jsonMarshaler = &jsonpb.Marshaler{}
 	return nil
 }
 
