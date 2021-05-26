@@ -5,6 +5,9 @@
 *.so
 *.dylib
 
+#vscode debug binary
+__debug_bin
+
 # Test binary, build with `go test -c`
 *.test
 
@@ -22,3 +25,4 @@
 
 .idea
 /proto/tools/
+/.vscode

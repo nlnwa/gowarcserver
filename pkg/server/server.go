@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -33,7 +34,7 @@ import (
 	"github.com/nlnwa/gowarcserver/pkg/server/warcserver"
 )
 
-func Serve(db *index.DB, port int) error {
+func Serve(db *index.DB, port int, childUrls []url.URL, childQueryTimeout time.Duration) error {
 	l := &loader.Loader{
 		Resolver: &storageRefResolver{db: db},
 		Loader: &loader.FileStorageLoader{FilePathResolver: func(fileName string) (filePath string, err error) {
@@ -46,7 +47,7 @@ func Serve(db *index.DB, port int) error {
 	r := mux.NewRouter()
 	r.Handle("/id/{id}", &contentHandler{l})
 	r.Handle("/files/", &fileHandler{l, db})
-	r.Handle("/search", &searchHandler{l, db})
+	r.Handle("/search", &searchHandler{l, db, childUrls, childQueryTimeout})
 	warcserverRoutes := r.PathPrefix("/warcserver").Subrouter()
 	warcserver.RegisterRoutes(warcserverRoutes, db, l)
 	http.Handle("/", r)
@@ -69,7 +70,6 @@ func Serve(db *index.DB, port int) error {
 		defer cancel()
 		httpServer.Shutdown(ctx)
 	}()
-
 	return httpServer.ListenAndServe()
 }
 
