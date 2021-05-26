@@ -18,7 +18,12 @@ package server
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/url"
+	"path"
+	"sync"
+	"time"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/protobuf/jsonpb"
@@ -32,8 +37,10 @@ import (
 )
 
 type searchHandler struct {
-	loader *loader.Loader
-	db     *index.DB
+	loader            *loader.Loader
+	db                *index.DB
+	childUrls         []url.URL
+	childQueryTimeout time.Duration
 }
 
 var jsonMarshaler = &jsonpb.Marshaler{}
@@ -46,30 +53,90 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Infof("request url: %v, key: %v", uri, key)
+	childCount := len(h.childUrls)
 
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(childCount)
+	childQueryResponse := make(chan []byte, childCount)
+
+	go func() {
+		waitGroup.Wait()
+		close(childQueryResponse)
+	}()
+
+	for _, childUrl := range h.childUrls {
+		go func(childUrl *url.URL) {
+			defer waitGroup.Done()
+
+			client := http.Client{
+				Timeout: time.Millisecond * h.childQueryTimeout,
+			}
+
+			buildUrl := *childUrl
+			buildUrl.Path = path.Join(buildUrl.Path, "search")
+			query := buildUrl.Query()
+			query.Add("url", uri)
+			buildUrl.RawQuery = query.Encode()
+
+			resp, err := client.Get(buildUrl.String())
+			if err != nil {
+				log.Warnf("Query to %+v resultet in error: %v", *childUrl, err)
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				log.Warnf("Query to %+v got status code %d", *childUrl, resp.StatusCode)
+				return
+			}
+
+			bodyBytes, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Printf("Failed to read response from child url %+v: %v", *childUrl, err)
+				return
+			}
+			childQueryResponse <- bodyBytes
+		}(&childUrl)
+	}
+
+	log.Infof("request url: %s, key: %v", uri, key)
+	results, err := h.querySelf(key)
+	for _, result := range results {
+		cdxj, err := jsonMarshaler.MarshalToString(result)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		fmt.Fprintf(w, "%s %s %s %s\n\n", result.Ssu, result.Sts, result.Srt, cdxj)
+	}
+
+	for responseBytes := range childQueryResponse {
+		w.Write(responseBytes)
+	}
+}
+
+func (h *searchHandler) querySelf(key string) ([]*cdx.Cdx, error) {
+	var results []*cdx.Cdx
 	perItemFn := func(item *badger.Item) bool {
 		result := &cdx.Cdx{}
 		err := item.Value(func(v []byte) error {
-			proto.Unmarshal(v, result)
-
-			cdxj, err := jsonMarshaler.MarshalToString(result)
+			err := proto.Unmarshal(v, result)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(w, "%s %s %s %s\n\n", result.Ssu, result.Sts, result.Srt, cdxj)
-
+			results = append(results, result)
 			return nil
 		})
 		if err != nil {
 			log.Errorf("perItemFn error: %s", err)
 		}
+
 		return false
 	}
 	afterIterFn := func(txn *badger.Txn) error {
 		return nil
 	}
-	h.db.Search(key, false, perItemFn, afterIterFn)
+	err := h.db.Search(key, false, perItemFn, afterIterFn)
+	return results, err
 }
 
 func (h *searchHandler) handleError(err error, w http.ResponseWriter) {

@@ -397,7 +397,7 @@ func (d *DB) ListFileNames() ([]string, error) {
 type PerItemFunction func(*badger.Item) (stopIteration bool)
 type AfterIterationFunction func(txn *badger.Txn) error
 
-func (d *DB) Search(key string, reverse bool, f PerItemFunction, a AfterIterationFunction) error {
+func (d *DB) Search(key string, reverse bool, perItemFn PerItemFunction, afterItemFn AfterIterationFunction) error {
 	log.Debugf("Searching for key '%s'", key)
 
 	err := d.cdxIndex.view(func(txn *badger.Txn) error {
@@ -415,11 +415,11 @@ func (d *DB) Search(key string, reverse bool, f PerItemFunction, a AfterIteratio
 
 		for it.Seek([]byte(seekKey)); it.ValidForPrefix([]byte(key)); it.Next() {
 			item := it.Item()
-			if f(item) {
+			if perItemFn(item) {
 				break
 			}
 		}
-		return a(txn)
+		return afterItemFn(txn)
 	})
 	return err
 }
