@@ -22,7 +22,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/dgraph-io/badger/v3"
 	cdx "github.com/nlnwa/gowarc/proto"
@@ -34,8 +36,10 @@ import (
 )
 
 type resourceHandler struct {
-	loader *loader.Loader
-	db     *index.DB
+	db                *index.DB
+	loader            *loader.Loader
+	childUrls         []url.URL
+	childQueryTimeout time.Duration
 }
 
 func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +57,7 @@ func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		defer warcRecord.Close()
 
-		cdxj, err := json.Marshal(cdxjTopywbJson(record))
+		cdxj, err := json.Marshal(cdxjToPywbJson(record))
 		if err != nil {
 			return err
 		}

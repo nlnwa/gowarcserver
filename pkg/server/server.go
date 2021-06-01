@@ -49,7 +49,14 @@ func Serve(db *index.DB, port int, childUrls []url.URL, childQueryTimeout time.D
 	r.Handle("/files/", &fileHandler{l, db})
 	r.Handle("/search", &searchHandler{l, db, childUrls, childQueryTimeout})
 	warcserverRoutes := r.PathPrefix("/warcserver").Subrouter()
-	warcserver.RegisterRoutes(warcserverRoutes, db, l)
+
+	routeData := &warcserver.RouteData{
+		Db:                db,
+		Loader:            l,
+		ChildUrls:         childUrls,
+		ChildQueryTimeout: childQueryTimeout,
+	}
+	warcserver.RegisterRoutes(warcserverRoutes, routeData)
 	http.Handle("/", r)
 
 	loggingMw := func(h http.Handler) http.Handler {

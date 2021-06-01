@@ -17,13 +17,37 @@
 package warcserver
 
 import (
+	"net/url"
+	"time"
+
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 )
 
-func RegisterRoutes(r *mux.Router, db *index.DB, loader *loader.Loader) {
+type RouteData struct {
+	Db                *index.DB
+	Loader            *loader.Loader
+	ChildUrls         []url.URL
+	ChildQueryTimeout time.Duration
+}
+
+func RegisterRoutes(r *mux.Router, d *RouteData) {
 	r.Handle("/", &rootHandler{})
-	r.Handle("/{collection}/index", &indexHandler{loader: loader, db: db})
-	r.Handle("/{collection}/resource", &resourceHandler{loader: loader, db: db})
+
+	indexHandler := &indexHandler{
+		db:                d.Db,
+		loader:            d.Loader,
+		childUrls:         d.ChildUrls,
+		childQueryTimeout: d.ChildQueryTimeout,
+	}
+	r.Handle("/{collection}/index", indexHandler)
+
+	resourceHandler := &resourceHandler{
+		db:                d.Db,
+		loader:            d.Loader,
+		childUrls:         d.ChildUrls,
+		childQueryTimeout: d.ChildQueryTimeout,
+	}
+	r.Handle("/{collection}/resource", resourceHandler)
 }

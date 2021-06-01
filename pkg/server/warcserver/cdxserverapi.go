@@ -17,14 +17,15 @@
 package warcserver
 
 import (
+	"net/http"
+	"strconv"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gorilla/mux"
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/whatwg-url/url"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"net/http"
-	"strconv"
 )
 
 var jsonMarshaler = &protojson.MarshalOptions{}

@@ -47,12 +47,6 @@ var jsonMarshaler = &jsonpb.Marshaler{}
 
 func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uri := r.URL.Query().Get("url")
-	key, err := surt.SsurtString(uri, true)
-	if err != nil {
-		h.handleError(err, w)
-		return
-	}
-
 	childCount := len(h.childUrls)
 
 	var waitGroup sync.WaitGroup
@@ -66,39 +60,43 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for _, childUrl := range h.childUrls {
 		u := childUrl
-		go func(childUrl *url.URL) {
+		go func(u *url.URL) {
 			defer waitGroup.Done()
 
 			client := http.Client{
-				Timeout: time.Millisecond * h.childQueryTimeout,
+				Timeout: h.childQueryTimeout,
 			}
 
-			childUrl.Path = path.Join(childUrl.Path, "search")
-			query := childUrl.Query()
+			u.Path = path.Join(u.Path, "search")
+			query := u.Query()
 			query.Add("url", uri)
-			childUrl.RawQuery = query.Encode()
-
-			resp, err := client.Get(childUrl.String())
+			u.RawQuery = query.Encode()
+			resp, err := client.Get(u.String())
 			if err != nil {
-				log.Warnf("Query to %s resultet in error: %v", childUrl, err)
+				log.Warnf("Query to %s resultet in error: %v", u, err)
 				return
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode != http.StatusOK {
-				log.Warnf("Query to %s got status code %d", childUrl, resp.StatusCode)
+				log.Warnf("Query to %s got status code %d", u, resp.StatusCode)
 				return
 			}
 
 			bodyBytes, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
-				log.Printf("Failed to read response from child url %s: %v", childUrl, err)
+				log.Printf("Failed to read response from child url %s: %v", u, err)
 				return
 			}
 			childQueryResponse <- bodyBytes
 		}(&u)
 	}
 
-	log.Infof("request url: %s, key: %v", uri, key)
+	key, err := surt.SsurtString(uri, true)
+	if err != nil {
+		h.handleError(err, w)
+		return
+	}
+
 	results, err := h.querySelf(key)
 	for _, result := range results {
 		cdxj, err := jsonMarshaler.MarshalToString(result)

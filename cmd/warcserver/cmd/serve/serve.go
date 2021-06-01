@@ -60,7 +60,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVarP(&c.noFileDB, "fileDb", "f", false, "Turn off file db")
 	cmd.Flags().BoolVarP(&c.noCdxDB, "cdxDb", "x", false, "Turn off cdx db")
 	cmd.Flags().StringSliceVarP(&c.childUrls, "childUrls", "u", []string{""}, "specify urls to other gowarcserver instances, queries are propagated to these urls")
-	cmd.Flags().DurationVarP(&c.childQueryTimeout, "childQueryTimeout", "t", 300, "How many miliseconds before query to child node times out")
+	cmd.Flags().DurationVarP(&c.childQueryTimeout, "childQueryTimeout", "t", time.Millisecond*300, "Time before query to child node times out")
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
 		log.Fatalf("Failed to bind serve flags, err: %v", err)
 	}

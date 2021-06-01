@@ -19,23 +19,32 @@ package warcserver
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/dgraph-io/badger/v3"
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
+	log "github.com/sirupsen/logrus"
 )
 
 type indexHandler struct {
-	loader *loader.Loader
-	db     *index.DB
+	db                *index.DB
+	loader            *loader.Loader
+	childUrls         []url.URL
+	childQueryTimeout time.Duration
 }
 
 func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
 	var renderFunc RenderFunc = func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error {
-		cdxj, err := json.Marshal(cdxjTopywbJson(record))
+		cdxj, err := json.Marshal(cdxjToPywbJson(record))
 		if err != nil {
 			return err
 		}
@@ -47,41 +56,95 @@ func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	}
-
+	// TODO: structure code so that this comment is not necessary
+	// value used in multiple routines, member variable 'key' should only be
+	// used in the local search routine as it is mutated!
 	cdxApi, err := parseCdxServerApi(w, r, renderFunc)
 	if err != nil {
 		handleError(err, w)
 		return
 	}
 
-	var defaultPerItemFunc index.PerItemFunction = func(item *badger.Item) (stopIteration bool) {
-		k := item.Key()
-		if !cdxApi.dateRange.eval(k) {
-			return false
+	// local page render + children
+	workCount := 1 + len(h.childUrls)
+
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(workCount)
+	childQueryResponse := make(chan []byte, workCount-1)
+
+	go func() {
+		waitGroup.Wait()
+		close(childQueryResponse)
+	}()
+
+	go func() {
+		defer waitGroup.Done()
+
+		defaultPerItemFn := func(item *badger.Item) (stopIteration bool) {
+			k := item.Key()
+			if !cdxApi.dateRange.eval(k) {
+				return false
+			}
+
+			return cdxApi.writeItem(item)
 		}
 
-		return cdxApi.writeItem(item)
-	}
-
-	var defaultAfterIterationFunc index.AfterIterationFunction = func(txn *badger.Txn) error {
-		return nil
-	}
-
-	if cdxApi.sort.closest != "" {
-		h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
-	} else {
-		h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
-	}
-
-	// If no hits with http, try https
-	if cdxApi.count == 0 && strings.Contains(cdxApi.key, "http:") {
-		cdxApi.key = strings.ReplaceAll(cdxApi.key, "http:", "https:")
-
-		if cdxApi.sort.closest != "" {
-			h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
-		} else {
-			h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
+		defaultAfterIterFunc := func(txn *badger.Txn) error {
+			return nil
 		}
+
+		search := func(api *cdxServerApi) {
+			if api.sort.closest != "" {
+				h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
+			} else {
+				h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFn, defaultAfterIterFunc)
+			}
+		}
+
+		search(cdxApi)
+		// If no hits with http, try https
+		if cdxApi.count == 0 && strings.Contains(cdxApi.key, "http:") {
+			cdxApi.key = strings.ReplaceAll(cdxApi.key, "http:", "https:")
+			search(cdxApi)
+		}
+	}()
+
+	// TODO: share this code between resourcehandler, indexhandler and searchhandler
+	for _, childUrl := range h.childUrls {
+		u := childUrl
+		go func(u url.URL) {
+			defer waitGroup.Done()
+
+			client := http.Client{
+				Timeout: h.childQueryTimeout,
+			}
+
+			u.Path = path.Join(u.Path, "warcserver", cdxApi.collection, "index")
+			query := r.URL.Query()
+			u.RawQuery = query.Encode()
+			log.Info(u.String())
+			resp, err := client.Get(u.String())
+			if err != nil {
+				log.Warnf("Query to %s resultet in error: %v", u, err)
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				log.Warnf("Query to %s got status code %d", u, resp.StatusCode)
+				return
+			}
+
+			bodyBytes, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Printf("Failed to read response from child url %s: %v", u, err)
+				return
+			}
+			childQueryResponse <- bodyBytes
+		}(u)
+	}
+
+	for responseBytes := range childQueryResponse {
+		w.Write(responseBytes)
 	}
 }
 
@@ -97,7 +160,7 @@ type pywbJson struct {
 	Filename  string `json:"filename"`
 }
 
-func cdxjTopywbJson(record *cdx.Cdx) *pywbJson {
+func cdxjToPywbJson(record *cdx.Cdx) *pywbJson {
 	js := &pywbJson{
 		Urlkey:    record.Ssu,
 		Timestamp: record.Sts,
