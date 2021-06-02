@@ -18,7 +18,6 @@ package server
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
@@ -29,6 +28,7 @@ import (
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	cdx "github.com/nlnwa/gowarc/proto"
+	"github.com/nlnwa/gowarcserver/pkg/childhandler"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	"github.com/nlnwa/gowarcserver/pkg/surt"
@@ -58,38 +58,25 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		close(childQueryResponse)
 	}()
 
-	for _, childUrl := range h.childUrls {
-		u := childUrl
-		go func(u *url.URL) {
-			defer waitGroup.Done()
-
-			client := http.Client{
-				Timeout: h.childQueryTimeout,
-			}
-
-			u.Path = path.Join(u.Path, "search")
-			query := u.Query()
-			query.Add("url", uri)
-			u.RawQuery = query.Encode()
-			resp, err := client.Get(u.String())
-			if err != nil {
-				log.Warnf("Query to %s resultet in error: %v", u, err)
-				return
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				log.Warnf("Query to %s got status code %d", u, resp.StatusCode)
-				return
-			}
-
-			bodyBytes, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				log.Printf("Failed to read response from child url %s: %v", u, err)
-				return
-			}
-			childQueryResponse <- bodyBytes
-		}(&u)
+	urlBuilderFn := func(u *url.URL) string {
+		u.Path = path.Join(u.Path, "search")
+		query := u.Query()
+		query.Add("url", uri)
+		u.RawQuery = query.Encode()
+		return u.String()
 	}
+	predicateFn := func(*http.Response) bool {
+		return true
+	}
+	queryData := childhandler.QueryData{
+		UrlBuilder:         urlBuilderFn,
+		ResponsePredicate:  predicateFn,
+		ChildUrls:          h.childUrls,
+		Timeout:            h.childQueryTimeout,
+		WaitGroup:          &waitGroup,
+		ChildQueryResponse: childQueryResponse,
+	}
+	childhandler.Query(queryData)
 
 	key, err := surt.SsurtString(uri, true)
 	if err != nil {

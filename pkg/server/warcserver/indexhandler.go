@@ -19,7 +19,6 @@ package warcserver
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
@@ -29,9 +28,9 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	cdx "github.com/nlnwa/gowarc/proto"
+	"github.com/nlnwa/gowarcserver/pkg/childhandler"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	log "github.com/sirupsen/logrus"
 )
 
 type indexHandler struct {
@@ -42,8 +41,7 @@ type indexHandler struct {
 }
 
 func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
-	var renderFunc RenderFunc = func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error {
+	var renderFunc RenderFunction = func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error {
 		cdxj, err := json.Marshal(cdxjToPywbJson(record))
 		if err != nil {
 			return err
@@ -67,7 +65,6 @@ func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// local page render + children
 	workCount := 1 + len(h.childUrls)
-
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(workCount)
 	childQueryResponse := make(chan []byte, workCount-1)
@@ -109,42 +106,33 @@ func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// TODO: share this code between resourcehandler, indexhandler and searchhandler
-	for _, childUrl := range h.childUrls {
-		u := childUrl
-		go func(u url.URL) {
-			defer waitGroup.Done()
-
-			client := http.Client{
-				Timeout: h.childQueryTimeout,
-			}
-
-			u.Path = path.Join(u.Path, "warcserver", cdxApi.collection, "index")
-			query := r.URL.Query()
-			u.RawQuery = query.Encode()
-			log.Info(u.String())
-			resp, err := client.Get(u.String())
-			if err != nil {
-				log.Warnf("Query to %s resultet in error: %v", u, err)
-				return
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				log.Warnf("Query to %s got status code %d", u, resp.StatusCode)
-				return
-			}
-
-			bodyBytes, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				log.Printf("Failed to read response from child url %s: %v", u, err)
-				return
-			}
-			childQueryResponse <- bodyBytes
-		}(u)
+	urlBuilderFn := func(u *url.URL) string {
+		u.Path = path.Join(u.Path, "warcserver", cdxApi.collection, "index")
+		query := r.URL.Query()
+		u.RawQuery = query.Encode()
+		return u.String()
 	}
+	predicateFn := func(*http.Response) bool {
+		return true
+	}
+	queryData := childhandler.QueryData{
+		UrlBuilder:         urlBuilderFn,
+		ResponsePredicate:  predicateFn,
+		ChildUrls:          h.childUrls,
+		Timeout:            h.childQueryTimeout,
+		WaitGroup:          &waitGroup,
+		ChildQueryResponse: childQueryResponse,
+	}
+	childhandler.Query(queryData)
 
+	var i int
 	for responseBytes := range childQueryResponse {
 		w.Write(responseBytes)
+		i += 1
+	}
+
+	if cdxApi.count == 0 && i <= 0 {
+		handleError(fmt.Errorf("Not found"), w)
 	}
 }
 

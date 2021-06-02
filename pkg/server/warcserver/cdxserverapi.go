@@ -30,7 +30,7 @@ import (
 
 var jsonMarshaler = &protojson.MarshalOptions{}
 
-type RenderFunc func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error
+type RenderFunction func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error
 
 type cdxServerApi struct {
 	collection string
@@ -43,10 +43,10 @@ type cdxServerApi struct {
 	output     string
 	w          http.ResponseWriter
 	count      int
-	renderFunc RenderFunc
+	renderFunc RenderFunction
 }
 
-func parseCdxServerApi(w http.ResponseWriter, r *http.Request, renderFunc RenderFunc) (*cdxServerApi, error) {
+func parseCdxServerApi(w http.ResponseWriter, r *http.Request, renderFunc RenderFunction) (*cdxServerApi, error) {
 	var err error
 	c := &cdxServerApi{
 		collection: mux.Vars(r)["collection"],

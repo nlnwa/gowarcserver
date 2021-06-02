@@ -30,6 +30,7 @@ type fileHandler struct {
 	db     *index.DB
 }
 
+// TODO: implemnt queries to children
 func (h *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	files, err := h.db.ListFileNames()
 	if err != nil {
