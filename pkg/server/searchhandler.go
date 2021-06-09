@@ -19,6 +19,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/protobuf/jsonpb"
@@ -26,27 +27,32 @@ import (
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
+	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 	"github.com/nlnwa/gowarcserver/pkg/surt"
-	whatwg "github.com/nlnwa/whatwg-url/errors"
 	log "github.com/sirupsen/logrus"
 )
 
 type searchHandler struct {
-	loader *loader.Loader
-	db     *index.DB
+	loader   *loader.Loader
+	db       *index.DB
+	children *localhttp.Children
 }
 
 var jsonMarshaler = &jsonpb.Marshaler{}
 
 func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	localhttp.AggregatedQuery(h, w, r)
+}
+
+func (h *searchHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
 	uri := r.URL.Query().Get("url")
 	key, err := surt.SsurtString(uri, true)
 	if err != nil {
-		h.handleError(err, w)
-		return
+		return nil, err
 	}
 
 	log.Infof("request url: %v, key: %v", uri, key)
+	localWriter := localhttp.NewWriter()
 
 	perItemFn := func(item *badger.Item) bool {
 		result := &cdx.Cdx{}
@@ -57,7 +63,7 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(w, "%s %s %s %s\n\n", result.Ssu, result.Sts, result.Srt, cdxj)
+			fmt.Fprintf(localWriter, "%s %s %s %s\n\n", result.Ssu, result.Sts, result.Srt, cdxj)
 
 			return nil
 		})
@@ -70,22 +76,14 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 	h.db.Search(key, false, perItemFn, afterIterFn)
+
+	return localWriter, nil
 }
 
-func (h *searchHandler) handleError(err error, w http.ResponseWriter) {
-	if err == nil {
-		return
-	}
+func (h *searchHandler) PredicateFn(r *http.Response) bool {
+	return r.StatusCode >= 200 && r.StatusCode < 300
+}
 
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprint(w, err)
-
-	// if the error is from a malformed url being parsed, then the url is invalid
-	if _, ok := err.(*whatwg.UrlError); ok {
-		// 422: the url is unprocessanble.
-		w.WriteHeader(http.StatusUnprocessableEntity)
-	} else {
-		// 500: unexpected error receved
-		w.WriteHeader(http.StatusInternalServerError)
-	}
+func (h *searchHandler) Children() *localhttp.Children {
+	return h.children
 }

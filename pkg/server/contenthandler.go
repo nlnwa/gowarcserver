@@ -18,21 +18,27 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarc/warcrecord"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
+	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 	"github.com/sirupsen/logrus"
 )
 
 type contentHandler struct {
-	loader *loader.Loader
+	loader   *loader.Loader
+	children *localhttp.Children
 }
 
 func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	localhttp.FirstQuery(h, w, r)
+}
+
+func (h *contentHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
 	warcid := mux.Vars(r)["id"]
 	if len(warcid) > 0 && warcid[0] != '<' {
 		warcid = "<" + warcid + ">"
@@ -41,39 +47,37 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logrus.Debugf("request id: %v", warcid)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	record, err := h.loader.Get(ctx, warcid)
 
+	record, err := h.loader.Get(ctx, warcid)
 	if err != nil {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(404)
-		w.Write([]byte("Document not found\n"))
-		return
+		return nil, err
 	}
 	defer record.Close()
 
+	localWriter := localhttp.NewWriter()
 	switch v := record.Block().(type) {
 	case *warcrecord.RevisitBlock:
 		r, err := v.Response()
 		if err != nil {
-			return
+			return nil, err
 		}
-		renderContent(w, v, r)
+		renderContent(localWriter, v, r)
 	case warcrecord.HttpResponseBlock:
 		r, err := v.Response()
 		if err != nil {
-			return
+			return nil, err
 		}
-		renderContent(w, v, r)
+		renderContent(localWriter, v, r)
 	default:
-		w.Header().Set("Content-Type", "text/plain")
-		record.WarcHeader().Write(w)
-		fmt.Fprintln(w)
+		localWriter.Header().Set("Content-Type", "text/plain")
+		record.WarcHeader().Write(localWriter)
 		rb, err := v.RawBytes()
 		if err != nil {
-			return
+			return nil, err
 		}
-		io.Copy(w, rb)
+		io.Copy(localWriter, rb)
 	}
+	return localWriter, nil
 }
 
 func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Response) {
@@ -87,4 +91,12 @@ func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Res
 		return
 	}
 	io.Copy(w, p)
+}
+
+func (h *contentHandler) PredicateFn(r *http.Response) bool {
+	return r.StatusCode == 200
+}
+
+func (h *contentHandler) Children() *localhttp.Children {
+	return h.children
 }

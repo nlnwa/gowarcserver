@@ -21,20 +21,27 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/dgraph-io/badger/v3"
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
+	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 )
 
 type indexHandler struct {
-	loader *loader.Loader
-	db     *index.DB
+	loader   *loader.Loader
+	db       *index.DB
+	children *localhttp.Children
 }
 
 func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var renderFunc RenderFunc = func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error {
+	localhttp.AggregatedQuery(h, w, r)
+}
+
+func (h *indexHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
+	var renderFunc RenderFunc = func(w *localhttp.Writer, record *cdx.Cdx, cdxApi *cdxServerApi) error {
 		cdxj, err := json.Marshal(cdxjTopywbJson(record))
 		if err != nil {
 			return err
@@ -48,13 +55,13 @@ func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 
-	cdxApi, err := parseCdxServerApi(w, r, renderFunc)
+	localWriter := localhttp.NewWriter()
+	cdxApi, err := parseCdxServerApi(localWriter, r, renderFunc)
 	if err != nil {
-		handleError(err, w)
-		return
+		return nil, err
 	}
 
-	var defaultPerItemFunc index.PerItemFunction = func(item *badger.Item) (stopIteration bool) {
+	defaultPerItemFunc := func(item *badger.Item) (stopIteration bool) {
 		k := item.Key()
 		if !cdxApi.dateRange.eval(k) {
 			return false
@@ -63,26 +70,20 @@ func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return cdxApi.writeItem(item)
 	}
 
-	var defaultAfterIterationFunc index.AfterIterationFunction = func(txn *badger.Txn) error {
+	defaultAfterIterationFunc := func(txn *badger.Txn) error {
 		return nil
 	}
 
-	if cdxApi.sort.closest != "" {
-		h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
-	} else {
-		h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
-	}
+	cdxApi.sortedSearch(h.db, defaultPerItemFunc, defaultAfterIterationFunc)
+	return localWriter, nil
+}
 
-	// If no hits with http, try https
-	if cdxApi.count == 0 && strings.Contains(cdxApi.key, "http:") {
-		cdxApi.key = strings.ReplaceAll(cdxApi.key, "http:", "https:")
+func (h *indexHandler) PredicateFn(r *http.Response) bool {
+	return r.StatusCode == 200
+}
 
-		if cdxApi.sort.closest != "" {
-			h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
-		} else {
-			h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
-		}
-	}
+func (h *indexHandler) Children() *localhttp.Children {
+	return h.children
 }
 
 type pywbJson struct {
