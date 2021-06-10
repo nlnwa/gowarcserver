@@ -16,13 +16,9 @@ type Children struct {
 	Timeout time.Duration
 }
 
-type Aggregator interface {
-	Aggregate(handler *Children, resut chan<- Writer)
-}
-
 type ResponsePredicateFn func(*http.Response) bool
 
-type QueryData struct {
+type ChildQueryData struct {
 	// Used to dictate if a response should be included in response channel
 	// true means it should be included, false will cause an early return for a given child
 	PredicateFn ResponsePredicateFn
@@ -32,7 +28,7 @@ type QueryData struct {
 	Response    chan<- Writer
 }
 
-func ChildQuery(queryData QueryData) {
+func ChildQuery(queryData ChildQueryData) {
 	var wgDoneFn func()
 	if queryData.Wg != nil {
 		wgDoneFn = func() {

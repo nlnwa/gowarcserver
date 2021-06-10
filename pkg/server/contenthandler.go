@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarc/warcrecord"
@@ -35,7 +36,7 @@ type contentHandler struct {
 }
 
 func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	localhttp.FirstQuery(h, w, r)
+	localhttp.FirstQuery(h, w, r, time.Second*3)
 }
 
 func (h *contentHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {

@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/dgraph-io/badger/v3"
 	cdx "github.com/nlnwa/gowarc/proto"
@@ -41,7 +42,7 @@ type resourceHandler struct {
 }
 
 func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	localhttp.FirstQuery(h, w, r)
+	localhttp.FirstQuery(h, w, r, time.Second*3)
 }
 
 func (h *resourceHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
