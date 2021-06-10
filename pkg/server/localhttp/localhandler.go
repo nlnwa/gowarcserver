@@ -32,6 +32,7 @@ func FirstQuery(lh LocalHandler, w http.ResponseWriter, r *http.Request, timeAft
 				}
 			}
 			w.Write(localWriter.Bytes())
+			w.WriteHeader(localWriter.status)
 		case <-time.After(timeAfter):
 			// TODO: LocalHandler should have a 'noResponseFn' that is called here
 			w.Header().Set("Content-Type", "text/plain")
@@ -46,6 +47,7 @@ func FirstQuery(lh LocalHandler, w http.ResponseWriter, r *http.Request, timeAft
 // Query self and all children, all responses that passes the PredicateFn test is
 // written to the client through the response writer
 func AggregatedQuery(lh LocalHandler, w http.ResponseWriter, r *http.Request) {
+	// TODO: write most common header in event of response
 	chanFn := func(responses <-chan Writer, w http.ResponseWriter) {
 		var i int
 		for localWriter := range responses {
