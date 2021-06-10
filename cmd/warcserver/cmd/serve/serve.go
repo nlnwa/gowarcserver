@@ -90,17 +90,7 @@ func runE(warcDirs []string) error {
 		defer autoindexer.Shutdown()
 	}
 
-	// TODO: function that can be tested
-	urlStrs := viper.GetStringSlice("childUrls")
-	var childUrls []url.URL
-	for _, urlstr := range urlStrs {
-		if u, err := url.Parse(urlstr); err != nil {
-			log.Warnf("Parsing config child url %s failed with error %v", urlstr, err)
-		} else {
-			childUrls = append(childUrls, *u)
-		}
-	}
-
+	childUrls := BuildUrlSlice(viper.GetStringSlice("childUrls"))
 	childQueryTimeout := viper.GetDuration("childQueryTimeout")
 	port := viper.GetInt("warcPort")
 	log.Infof("Starting web server at http://localhost:%v", port)
@@ -109,6 +99,18 @@ func runE(warcDirs []string) error {
 		log.Warnf("%v", err)
 	}
 	return nil
+}
+
+func BuildUrlSlice(urlStrs []string) []url.URL {
+	var childUrls []url.URL
+	for _, urlstr := range urlStrs {
+		if u, err := url.Parse(urlstr); err != nil {
+			log.Warnf("Parsing config child url %s failed with error %v", urlstr, err)
+		} else {
+			childUrls = append(childUrls, *u)
+		}
+	}
+	return childUrls
 }
 
 func ConfigToDBMask(noIdDB bool, noFileDB bool, noCdxDB bool) int32 {
