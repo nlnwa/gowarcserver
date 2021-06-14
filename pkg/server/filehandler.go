@@ -19,7 +19,6 @@ package server
 import (
 	"fmt"
 	"net/http"
-	"sync"
 
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
@@ -36,7 +35,7 @@ func (h *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	localhttp.AggregatedQuery(h, w, r)
 }
 
-func (h *fileHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
+func (h *fileHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
 	files, err := h.db.ListFileNames()
 	if err != nil {
 		return nil, fmt.Errorf("error reading files: %v", err)

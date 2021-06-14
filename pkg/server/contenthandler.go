@@ -20,7 +20,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -39,7 +38,7 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	localhttp.FirstQuery(h, w, r, time.Second*3)
 }
 
-func (h *contentHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
+func (h *contentHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
 	warcid := mux.Vars(r)["id"]
 	if len(warcid) > 0 && warcid[0] != '<' {
 		warcid = "<" + warcid + ">"

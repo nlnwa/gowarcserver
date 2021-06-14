@@ -9,7 +9,7 @@ import (
 type LocalHandler interface {
 	// Function used to query self. It will return a Writer in the event of
 	// no error and this will be sent to a repsonse channel if present
-	ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*Writer, error)
+	ServeLocalHTTP(r *http.Request) (*Writer, error)
 	// PredicateFn allows a handler to filter out responses from child processes
 	// if they do not meet a certain criteria. True means that the response is
 	// acceptable to be used, a false will mean that the response should be discarded
@@ -86,7 +86,7 @@ func CustomQuery(lh LocalHandler, w http.ResponseWriter, r *http.Request, chanFn
 
 	go func() {
 		defer waitGroup.Done()
-		localWriter, err := lh.ServeLocalHTTP(&waitGroup, r)
+		localWriter, err := lh.ServeLocalHTTP(r)
 		if err != nil {
 			return
 		}

@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
@@ -45,7 +44,7 @@ func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	localhttp.FirstQuery(h, w, r, time.Second*3)
 }
 
-func (h *resourceHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
+func (h *resourceHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
 	localWriter := localhttp.NewWriter()
 	var renderFunc RenderFunc = func(w *localhttp.Writer, record *cdx.Cdx, cdxApi *cdxServerApi) error {
 		warcid := record.Rid

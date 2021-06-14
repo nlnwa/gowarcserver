@@ -19,7 +19,6 @@ package server
 import (
 	"fmt"
 	"net/http"
-	"sync"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/protobuf/jsonpb"
@@ -44,7 +43,7 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	localhttp.AggregatedQuery(h, w, r)
 }
 
-func (h *searchHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
+func (h *searchHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
 	uri := r.URL.Query().Get("url")
 	key, err := surt.SsurtString(uri, true)
 	if err != nil {
