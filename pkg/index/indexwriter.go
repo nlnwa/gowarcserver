@@ -19,9 +19,9 @@ package index
 import (
 	"fmt"
 
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
 	"github.com/nlnwa/gowarc/warcrecord"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type CdxWriter interface {
@@ -33,10 +33,8 @@ type CdxWriter interface {
 type CdxLegacy struct {
 }
 type CdxJ struct {
-	jsonMarshaler *jsonpb.Marshaler
 }
 type CdxPb struct {
-	jsonMarshaler *jsonpb.Marshaler
 }
 type CdxDb struct {
 	db *DB
@@ -71,7 +69,6 @@ func (c *CdxLegacy) Write(wr warcrecord.WarcRecord, fileName string, offset int6
 }
 
 func (c *CdxJ) Init(config *DbConfig) (err error) {
-	c.jsonMarshaler = &jsonpb.Marshaler{}
 	return nil
 }
 
@@ -81,10 +78,7 @@ func (c *CdxJ) Close() {
 func (c *CdxJ) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
 	if wr.Type() == warcrecord.RESPONSE {
 		rec := NewCdxRecord(wr, fileName, offset)
-		cdxj, err := c.jsonMarshaler.MarshalToString(rec)
-		if err != nil {
-			return err
-		}
+		cdxj := protojson.Format(rec)
 		fmt.Printf("%s %s %s %s\n", rec.Ssu, rec.Sts, rec.Srt, cdxj)
 	}
 	return nil

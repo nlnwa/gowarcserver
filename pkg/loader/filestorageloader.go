@@ -19,13 +19,14 @@ package loader
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
 	"github.com/nlnwa/gowarc/warcoptions"
 	"github.com/nlnwa/gowarc/warcreader"
 	"github.com/nlnwa/gowarc/warcrecord"
 	log "github.com/sirupsen/logrus"
-	"os"
-	"strconv"
-	"strings"
 )
 
 type FileStorageLoader struct {
@@ -46,11 +47,9 @@ func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record
 	}
 
 	go func() {
-		select {
-		case <-ctx.Done():
-			log.Tracef("File: %v closed\n", filePath)
-			wf.Close()
-		}
+		<-ctx.Done()
+		log.Tracef("File: %v closed\n", filePath)
+		wf.Close()
 	}()
 
 	record, _, err = wf.Next()

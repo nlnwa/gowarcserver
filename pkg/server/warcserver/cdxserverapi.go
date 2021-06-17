@@ -17,17 +17,15 @@
 package warcserver
 
 import (
+	"net/http"
+	"strconv"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gorilla/mux"
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/whatwg-url/url"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"net/http"
-	"strconv"
 )
-
-var jsonMarshaler = &protojson.MarshalOptions{}
 
 type RenderFunc func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error
 
@@ -63,7 +61,12 @@ func parseCdxServerApi(w http.ResponseWriter, r *http.Request, renderFunc Render
 	}
 
 	url, err := url.ParseRef("http://example.com", r.RequestURI)
-	if c.key, c.matchType, err = parseKey(url.SearchParams().Get("url"), r.URL.Query().Get("matchType")); err != nil {
+	if err != nil {
+		return nil, err
+	}
+
+	c.key, c.matchType, err = parseKey(url.SearchParams().Get("url"), r.URL.Query().Get("matchType"))
+	if err != nil {
 		return nil, err
 	}
 
@@ -84,7 +87,10 @@ func parseCdxServerApi(w http.ResponseWriter, r *http.Request, renderFunc Render
 func (c *cdxServerApi) writeItem(item *badger.Item) (stopIteration bool) {
 	result := &cdx.Cdx{}
 	err := item.Value(func(v []byte) error {
-		proto.Unmarshal(v, result)
+		if err := proto.Unmarshal(v, result); err != nil {
+			return err
+		}
+
 		if c.filter.eval(result) {
 			if err := c.renderFunc(c.w, result, c); err != nil {
 				return err

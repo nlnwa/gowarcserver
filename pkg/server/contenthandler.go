@@ -25,7 +25,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarc/warcrecord"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 type contentHandler struct {
@@ -38,15 +38,16 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		warcid = "<" + warcid + ">"
 	}
 
-	logrus.Debugf("request id: %v", warcid)
+	log.Debugf("request id: %v", warcid)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	record, err := h.loader.Get(ctx, warcid)
-
 	if err != nil {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(404)
-		w.Write([]byte("Document not found\n"))
+		if _, werr := w.Write([]byte("Document not found\n")); werr != nil {
+			log.Warn("Failed to write 404 message to body: ", werr)
+		}
 		return
 	}
 	defer record.Close()
@@ -55,24 +56,35 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case *warcrecord.RevisitBlock:
 		r, err := v.Response()
 		if err != nil {
+			log.Warnf("%v", err)
 			return
 		}
 		renderContent(w, v, r)
 	case warcrecord.HttpResponseBlock:
 		r, err := v.Response()
 		if err != nil {
+			log.Warnf("%v", err)
 			return
 		}
 		renderContent(w, v, r)
 	default:
 		w.Header().Set("Content-Type", "text/plain")
-		record.WarcHeader().Write(w)
+		_, err = record.WarcHeader().Write(w)
+		if err != nil {
+			log.Warnf("Failed to write response header to %s", r.URL)
+			return
+		}
+
 		fmt.Fprintln(w)
 		rb, err := v.RawBytes()
 		if err != nil {
+			log.Warnf("Failed to get raw bytes: %v", err)
 			return
 		}
-		io.Copy(w, rb)
+		_, err = io.Copy(w, rb)
+		if err != nil {
+			log.Warnf("Failed to writer content for request to %s", r.URL)
+		}
 	}
 }
 
@@ -86,5 +98,8 @@ func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Res
 	if err != nil {
 		return
 	}
-	io.Copy(w, p)
+	_, err = io.Copy(w, p)
+	if err != nil {
+		log.Warnf("Failed to writer content for request to %s", r.Request.URL)
+	}
 }

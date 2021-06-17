@@ -31,6 +31,7 @@ import (
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	"github.com/nlnwa/gowarcserver/pkg/server/warcserver"
+	"github.com/sirupsen/logrus"
 )
 
 func Serve(db *index.DB, port int) error {
@@ -67,7 +68,10 @@ func Serve(db *index.DB, port int) error {
 		<-sigs
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		httpServer.Shutdown(ctx)
+		err := httpServer.Shutdown(ctx)
+		if err != nil {
+			logrus.Warnf("Failed to shut down server: %v", err)
+		}
 	}()
 
 	return httpServer.ListenAndServe()

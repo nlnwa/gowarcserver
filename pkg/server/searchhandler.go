@@ -21,14 +21,14 @@ import (
 	"net/http"
 
 	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	"github.com/nlnwa/gowarcserver/pkg/surt"
 	whatwg "github.com/nlnwa/whatwg-url/errors"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type searchHandler struct {
@@ -36,7 +36,7 @@ type searchHandler struct {
 	db     *index.DB
 }
 
-var jsonMarshaler = &jsonpb.Marshaler{}
+var jsonMarshaler = &protojson.MarshalOptions{}
 
 func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uri := r.URL.Query().Get("url")
@@ -51,12 +51,12 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	perItemFn := func(item *badger.Item) bool {
 		result := &cdx.Cdx{}
 		err := item.Value(func(v []byte) error {
-			proto.Unmarshal(v, result)
-
-			cdxj, err := jsonMarshaler.MarshalToString(result)
+			err = proto.Unmarshal(v, result)
 			if err != nil {
 				return err
 			}
+
+			cdxj := jsonMarshaler.Format(result)
 			fmt.Fprintf(w, "%s %s %s %s\n\n", result.Ssu, result.Sts, result.Srt, cdxj)
 
 			return nil
@@ -69,7 +69,10 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	afterIterFn := func(txn *badger.Txn) error {
 		return nil
 	}
-	h.db.Search(key, false, perItemFn, afterIterFn)
+	err = h.db.Search(key, false, perItemFn, afterIterFn)
+	if err != nil {
+		log.Warnf("Failed to search db: %v", err)
+	}
 }
 
 func (h *searchHandler) handleError(err error, w http.ResponseWriter) {
