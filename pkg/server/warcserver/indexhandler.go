@@ -73,7 +73,10 @@ func (h *indexHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error
 		return nil
 	}
 
-	cdxApi.sortedSearch(h.db, defaultPerItemFunc, defaultAfterIterationFunc)
+	err = cdxApi.sortedSearch(h.db, defaultPerItemFunc, defaultAfterIterationFunc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search db: %w", err)
+	}
 	return localWriter, nil
 }
 

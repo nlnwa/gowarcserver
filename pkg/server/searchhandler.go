@@ -21,14 +21,14 @@ import (
 	"net/http"
 
 	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 	"github.com/nlnwa/gowarcserver/pkg/surt"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type searchHandler struct {
@@ -37,7 +37,7 @@ type searchHandler struct {
 	children *localhttp.Children
 }
 
-var jsonMarshaler = &jsonpb.Marshaler{}
+var jsonMarshaler = &protojson.MarshalOptions{}
 
 func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	localhttp.AggregatedQuery(h, w, r)
@@ -56,12 +56,12 @@ func (h *searchHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, erro
 	perItemFn := func(item *badger.Item) bool {
 		result := &cdx.Cdx{}
 		err := item.Value(func(v []byte) error {
-			proto.Unmarshal(v, result)
-
-			cdxj, err := jsonMarshaler.MarshalToString(result)
+			err = proto.Unmarshal(v, result)
 			if err != nil {
 				return err
 			}
+
+			cdxj := jsonMarshaler.Format(result)
 			fmt.Fprintf(localWriter, "%s %s %s %s\n\n", result.Ssu, result.Sts, result.Srt, cdxj)
 
 			return nil
@@ -74,7 +74,10 @@ func (h *searchHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, erro
 	afterIterFn := func(txn *badger.Txn) error {
 		return nil
 	}
-	h.db.Search(key, false, perItemFn, afterIterFn)
+	err = h.db.Search(key, false, perItemFn, afterIterFn)
+	if err != nil {
+		log.Warnf("Failed to search db: %v", err)
+	}
 
 	return localWriter, nil
 }

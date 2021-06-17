@@ -26,7 +26,7 @@ import (
 	"github.com/nlnwa/gowarc/warcrecord"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 type contentHandler struct {
@@ -44,7 +44,7 @@ func (h *contentHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, err
 		warcid = "<" + warcid + ">"
 	}
 
-	logrus.Debugf("request id: %v", warcid)
+	log.Debugf("request id: %v", warcid)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -70,12 +70,19 @@ func (h *contentHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, err
 		renderContent(localWriter, v, r)
 	default:
 		localWriter.Header().Set("Content-Type", "text/plain")
-		record.WarcHeader().Write(localWriter)
+		_, err = record.WarcHeader().Write(localWriter)
+		if err != nil {
+			return nil, err
+		}
+
 		rb, err := v.RawBytes()
 		if err != nil {
 			return nil, err
 		}
-		io.Copy(localWriter, rb)
+		_, err = io.Copy(localWriter, rb)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return localWriter, nil
 }
@@ -90,7 +97,10 @@ func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Res
 	if err != nil {
 		return
 	}
-	io.Copy(w, p)
+	_, err = io.Copy(w, p)
+	if err != nil {
+		log.Warnf("Failed to writer content for request to %s", r.Request.URL)
+	}
 }
 
 func (h *contentHandler) PredicateFn(r *http.Response) bool {

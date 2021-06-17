@@ -26,12 +26,9 @@ import (
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
-	"github.com/nlnwa/whatwg-url/url"
-	"google.golang.org/protobuf/encoding/protojson"
+	whatUrl "github.com/nlnwa/whatwg-url/url"
 	"google.golang.org/protobuf/proto"
 )
-
-var jsonMarshaler = &protojson.MarshalOptions{}
 
 type RenderFunc func(w *localhttp.Writer, record *cdx.Cdx, cdxApi *cdxServerApi) error
 
@@ -66,8 +63,13 @@ func parseCdxServerApi(w *localhttp.Writer, r *http.Request, renderFunc RenderFu
 		sort = r.URL.Query().Get("sort")
 	}
 
-	url, err := url.ParseRef("http://example.com", r.RequestURI)
-	if c.key, c.matchType, err = parseKey(url.SearchParams().Get("url"), r.URL.Query().Get("matchType")); err != nil {
+	url, err := whatUrl.ParseRef("http://example.com", r.RequestURI)
+	if err != nil {
+		return nil, err
+	}
+
+	c.key, c.matchType, err = parseKey(url.SearchParams().Get("url"), r.URL.Query().Get("matchType"))
+	if err != nil {
 		return nil, err
 	}
 
@@ -88,7 +90,10 @@ func parseCdxServerApi(w *localhttp.Writer, r *http.Request, renderFunc RenderFu
 func (c *cdxServerApi) writeItem(item *badger.Item) (stopIteration bool) {
 	result := &cdx.Cdx{}
 	err := item.Value(func(v []byte) error {
-		proto.Unmarshal(v, result)
+		if err := proto.Unmarshal(v, result); err != nil {
+			return err
+		}
+
 		if c.filter.eval(result) {
 			if err := c.renderFunc(c.w, result, c); err != nil {
 				return err
@@ -107,11 +112,12 @@ func (c *cdxServerApi) writeItem(item *badger.Item) (stopIteration bool) {
 	return false
 }
 
-func (c *cdxServerApi) sortedSearch(db *index.DB, perItemFn index.PerItemFunction, afterIterFn index.AfterIterationFunction) {
+func (c *cdxServerApi) sortedSearch(db *index.DB, perItemFn index.PerItemFunction, afterIterFn index.AfterIterationFunction) error {
+	var err error
 	if c.sort.closest != "" {
-		db.Search(c.key, false, c.sort.add, c.sort.write)
+		err = db.Search(c.key, false, c.sort.add, c.sort.write)
 	} else {
-		db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
+		err = db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
 	}
 
 	// If no hits with http, try https
@@ -119,9 +125,10 @@ func (c *cdxServerApi) sortedSearch(db *index.DB, perItemFn index.PerItemFunctio
 		c.key = strings.ReplaceAll(c.key, "http:", "https:")
 
 		if c.sort.closest != "" {
-			db.Search(c.key, false, c.sort.add, c.sort.write)
+			err = db.Search(c.key, false, c.sort.add, c.sort.write)
 		} else {
-			db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
+			err = db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
 		}
 	}
+	return err
 }

@@ -26,12 +26,12 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	gowarcpb "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarc/warcrecord"
 	"github.com/nlnwa/gowarcserver/pkg/compressiontype"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -146,11 +146,8 @@ func NewIndexDb(config *DbConfig) (*DB, error) {
 	}(d.batchFlushChan)
 
 	go func() {
-		for {
-			select {
-			case <-time.Tick(d.batchMaxWait):
-				d.Flush()
-			}
+		for range time.Tick(d.batchMaxWait) {
+			d.Flush()
 		}
 	}()
 
@@ -267,10 +264,7 @@ func (d *DB) UpdateFilePath(filePath string) {
 		log.Errorf("%v", err)
 	}
 	fileInfo.Size = stat.Size()
-	fileInfo.LastModified, err = ptypes.TimestampProto(stat.ModTime())
-	if err != nil {
-		log.Errorf("%v", err)
-	}
+	fileInfo.LastModified = timestamppb.New(stat.ModTime())
 
 	value, err := proto.Marshal(fileInfo)
 	if err != nil {

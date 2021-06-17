@@ -24,16 +24,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/ptypes"
 	"github.com/nlnwa/gowarc/warcoptions"
 	"github.com/nlnwa/gowarc/warcreader"
 	log "github.com/sirupsen/logrus"
 )
-
-type job struct {
-	fileName string
-	timer    *time.Timer
-}
 
 type indexWorker struct {
 	db          *DB
@@ -102,17 +96,17 @@ func indexFile(db *DB, fileName string) {
 	// Check if file is indexed and has not changed since indexing
 	stat, err := os.Stat(fileName)
 	if err != nil {
-		log.Errorf("%v", err)
+		log.Error(err)
 	}
 
 	fileSize := stat.Size()
 	fileLastModified := stat.ModTime()
 	fn := filepath.Base(fileName)
 	if fileInfo, err := db.GetFilePath(fn); err == nil {
-		fileInfoLastModified, err := ptypes.Timestamp(fileInfo.LastModified)
-		if err != nil {
-			log.Errorf("%v", err)
+		if err := fileInfo.LastModified.CheckValid(); err != nil {
+			log.Error(err)
 		}
+		fileInfoLastModified := fileInfo.LastModified.AsTime()
 		if fileInfo.Size == fileSize && fileInfoLastModified.Equal(fileLastModified) {
 			log.Debugf("Already indexed %v", fileName)
 			return
@@ -143,10 +137,12 @@ func indexFile(db *DB, fileName string) {
 		}
 		count++
 
-		db.Add(wr, fileName, currentOffset)
+		err = db.Add(wr, fileName, currentOffset)
+		if err != nil {
+			log.Warnf("Got error when adding record to %s: %v", fileName, err)
+		}
 	}
 	db.Flush()
 	db.UpdateFilePath(fileName)
 	log.Infof("Finished indexing %s. Found: %d records in: %v", fileName, count, time.Since(start))
-	return
 }

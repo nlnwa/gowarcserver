@@ -8,7 +8,7 @@ import (
 	"github.com/nlnwa/gowarc/warcoptions"
 	"github.com/nlnwa/gowarc/warcreader"
 	"github.com/nlnwa/gowarcserver/pkg/index"
-	logrus "github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 func ParseFormat(format string) (index.CdxWriter, error) {
@@ -38,7 +38,7 @@ func ReadFile(c *conf, writer index.CdxWriter) error {
 	// avoid defer copy value by using a anonymous function
 	// At the end, print count even if an error occurs
 	defer func() {
-		logrus.Printf("Count: %d", count)
+		log.Printf("Count: %d", count)
 	}()
 
 	for {
@@ -51,7 +51,10 @@ func ReadFile(c *conf, writer index.CdxWriter) error {
 		}
 		count++
 
-		writer.Write(wr, c.fileName, currentOffset)
+		err = writer.Write(wr, c.fileName, currentOffset)
+		if err != nil {
+			log.Warnf("Failed to write to %s at offset %d: %v", c.fileName, currentOffset, err)
+		}
 	}
 	return nil
 }

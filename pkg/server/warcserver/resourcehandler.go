@@ -32,6 +32,7 @@ import (
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
+	log "github.com/sirupsen/logrus"
 )
 
 type resourceHandler struct {
@@ -54,7 +55,7 @@ func (h *resourceHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, er
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		warcRecord, err := h.loader.Get(ctx, record.Rid)
+		warcRecord, err := h.loader.Get(ctx, warcid)
 		if err != nil {
 			return err
 		}
@@ -84,13 +85,24 @@ func (h *resourceHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, er
 				renderContent(localWriter, v, r)
 			default:
 				localWriter.Header().Set("Content-Type", "text/plain")
-				warcRecord.WarcHeader().Write(w)
-				fmt.Fprintln(w)
+				_, err = warcRecord.WarcHeader().Write(w)
+				if err != nil {
+					return err
+				}
+
+				_, err = fmt.Fprintln(w)
+				if err != nil {
+					return err
+				}
+
 				rb, err := v.RawBytes()
 				if err != nil {
 					return err
 				}
-				io.Copy(localWriter, rb)
+				_, err = io.Copy(localWriter, rb)
+				if err != nil {
+					return err
+				}
 			}
 		default:
 			renderWarcContent(localWriter, warcRecord, cdxApi, fmt.Sprintf("%s %s %s\n", record.Ssu, record.Sts, cdxj))
@@ -117,8 +129,10 @@ func (h *resourceHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, er
 		return nil
 	}
 
-	cdxApi.sortedSearch(h.db, defaultPerItemFn, defaultAfterIterationFn)
-
+	err = cdxApi.sortedSearch(h.db, defaultPerItemFn, defaultAfterIterationFn)
+	if err != nil {
+		return nil, err
+	}
 	if cdxApi.count == 0 {
 		return nil, fmt.Errorf("Not found")
 	}
@@ -162,7 +176,12 @@ func renderContent(w *localhttp.Writer, v warcrecord.PayloadBlock, r *http.Respo
 	w.WriteHeader(r.StatusCode)
 	p, err := v.PayloadBytes()
 	if err != nil {
+		log.Warnf("Failed to retrieve payload bytes for request to %s", r.Request.URL)
 		return
 	}
-	io.Copy(w, p)
+
+	_, err = io.Copy(w, p)
+	if err != nil {
+		log.Warnf("Failed to write content for request to %s", r.Request.URL)
+	}
 }
