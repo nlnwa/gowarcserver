@@ -26,6 +26,7 @@ import (
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
+	log "github.com/sirupsen/logrus"
 )
 
 type indexHandler struct {
@@ -68,9 +69,15 @@ func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if cdxApi.sort.closest != "" {
-		h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
+		err := h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
+		if err != nil {
+			log.Warnf("Failed to search db: %v", err)
+		}
 	} else {
-		h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
+		err := h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
+		if err != nil {
+			log.Warnf("Failed to search db: %v", err)
+		}
 	}
 
 	// If no hits with http, try https
@@ -78,9 +85,15 @@ func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		cdxApi.key = strings.ReplaceAll(cdxApi.key, "http:", "https:")
 
 		if cdxApi.sort.closest != "" {
-			h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
+			err := h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
+			if err != nil {
+				log.Warnf("Failed to search db: %v", err)
+			}
 		} else {
-			h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
+			err := h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
+			if err != nil {
+				log.Warnf("Failed to search db: %v", err)
+			}
 		}
 	}
 }

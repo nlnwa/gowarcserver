@@ -126,14 +126,17 @@ Content-Length: 0`)
 				tt.writerFormat,
 			}
 			dbConfig := index.NewDbConfig(t.TempDir(), "none", index.ALL_MASK)
-			tt.writer.Init(dbConfig)
+			err := tt.writer.Init(dbConfig)
+			if err != nil {
+				t.Errorf("writer init failed in test: %v", err)
+				return
+			}
 			defer tt.writer.Close()
 
-			err := ReadFile(c, tt.writer)
+			err = ReadFile(c, tt.writer)
 			if err != nil {
 				t.Errorf("Unexpected failure: %v", err)
 			}
-
 		})
 	}
 }

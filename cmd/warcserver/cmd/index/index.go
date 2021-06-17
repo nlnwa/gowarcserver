@@ -83,6 +83,5 @@ func runE(c *conf, writer index.CdxWriter) error {
 	}
 	defer writer.Close()
 
-	ReadFile(c, writer)
-	return nil
+	return ReadFile(c, writer)
 }

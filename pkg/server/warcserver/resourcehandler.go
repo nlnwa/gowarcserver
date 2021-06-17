@@ -31,6 +31,7 @@ import (
 	"github.com/nlnwa/gowarc/warcwriter"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
+	log "github.com/sirupsen/logrus"
 )
 
 type resourceHandler struct {
@@ -47,7 +48,7 @@ func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		warcRecord, err := h.loader.Get(ctx, record.Rid)
+		warcRecord, err := h.loader.Get(ctx, warcid)
 		if err != nil {
 			return err
 		}
@@ -76,13 +77,24 @@ func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				renderContent(w, v, r)
 			default:
 				w.Header().Set("Content-Type", "text/plain")
-				warcRecord.WarcHeader().Write(w)
-				fmt.Fprintln(w)
+				_, err = warcRecord.WarcHeader().Write(w)
+				if err != nil {
+					return err
+				}
+				_, err = fmt.Fprintln(w)
+				if err != nil {
+					return err
+				}
+
 				rb, err := v.RawBytes()
 				if err != nil {
 					return err
 				}
-				io.Copy(w, rb)
+
+				_, err = io.Copy(w, rb)
+				if err != nil {
+					return err
+				}
 			}
 		default:
 			renderWarcContent(w, warcRecord, cdxApi, fmt.Sprintf("%s %s %s\n", record.Ssu, record.Sts, cdxj))
@@ -112,9 +124,15 @@ func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if cdxApi.sort.closest != "" {
-		h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
+		err := h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
+		if err != nil {
+			log.Warnf("Failed to search db: %v", err)
+		}
 	} else {
-		h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
+		err := h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
+		if err != nil {
+			log.Warnf("Failed to search db: %v", err)
+		}
 	}
 
 	// If no hits with http, try https
@@ -122,9 +140,15 @@ func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		cdxApi.key = strings.ReplaceAll(cdxApi.key, "http:", "https:")
 
 		if cdxApi.sort.closest != "" {
-			h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
+			err := h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
+			if err != nil {
+				log.Warnf("Failed to search db: %v", err)
+			}
 		} else {
-			h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
+			err := h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
+			if err != nil {
+				log.Warnf("Failed to search db: %v", err)
+			}
 		}
 	}
 
@@ -161,7 +185,12 @@ func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Res
 	w.WriteHeader(r.StatusCode)
 	p, err := v.PayloadBytes()
 	if err != nil {
+		log.Warnf("Failed to retrieve payload bytes for request to %s", r.Request.URL)
 		return
 	}
-	io.Copy(w, p)
+
+	_, err = io.Copy(w, p)
+	if err != nil {
+		log.Warnf("Failed to writer content for request to %s", r.Request.URL)
+	}
 }
