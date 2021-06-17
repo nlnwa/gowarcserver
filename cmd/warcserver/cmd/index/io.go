@@ -53,7 +53,7 @@ func ReadFile(c *conf, writer index.CdxWriter) error {
 
 		err = writer.Write(wr, c.fileName, currentOffset)
 		if err != nil {
-			log.Warnf("Failed to writer to %s: %v", c.fileName, err)
+			log.Warnf("Failed to write to %s at offset %d: %v", c.fileName, currentOffset, err)
 		}
 	}
 	return nil
