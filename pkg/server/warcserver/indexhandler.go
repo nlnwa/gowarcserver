@@ -21,27 +21,27 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/dgraph-io/badger/v3"
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
+	"github.com/nlnwa/gowarcserver/pkg/server/handlers"
 )
 
-type indexHandler struct {
-	loader   *loader.Loader
-	db       *index.DB
-	children *localhttp.Children
+type IndexHandler struct {
+	loader *loader.Loader
+	db     *index.DB
 }
 
-func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	localhttp.AggregatedQuery(h, w, r)
-}
+func (h *IndexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	cdxApi, err := parseCdxServerApi(r)
+	if err != nil {
+		handlers.HandleError(w, err)
+		return
+	}
 
-func (h *indexHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
-	var renderFunc RenderFunc = func(w *localhttp.Writer, record *cdx.Cdx, cdxApi *cdxServerApi) error {
+	renderFunc := func(record *cdx.Cdx, cdxApi *cdxServerApi) error {
 		cdxj, err := json.Marshal(cdxjTopywbJson(record))
 		if err != nil {
 			return err
@@ -55,35 +55,24 @@ func (h *indexHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*loc
 		return nil
 	}
 
-	localWriter := localhttp.NewWriter()
-	cdxApi, err := parseCdxServerApi(localWriter, r, renderFunc)
-	if err != nil {
-		return nil, err
-	}
-
 	defaultPerItemFunc := func(item *badger.Item) (stopIteration bool) {
 		k := item.Key()
 		if !cdxApi.dateRange.eval(k) {
 			return false
 		}
 
-		return cdxApi.writeItem(item)
+		return cdxApi.writeItem(item, renderFunc)
 	}
 
 	defaultAfterIterationFunc := func(txn *badger.Txn) error {
 		return nil
 	}
 
-	cdxApi.sortedSearch(h.db, defaultPerItemFunc, defaultAfterIterationFunc)
-	return localWriter, nil
+	cdxApi.sortedSearch(h.db, renderFunc, defaultPerItemFunc, defaultAfterIterationFunc)
 }
 
-func (h *indexHandler) PredicateFn(r *http.Response) bool {
+func (h *IndexHandler) PredicateFn(r *http.Response) bool {
 	return r.StatusCode == 200
-}
-
-func (h *indexHandler) Children() *localhttp.Children {
-	return h.children
 }
 
 type pywbJson struct {

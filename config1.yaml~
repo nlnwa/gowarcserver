@@ -1,0 +1,5 @@
+logLevel: info
+warcDir:
+  - ./testdata
+indexDir: index1
+warcPort: 8888

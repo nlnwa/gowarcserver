@@ -1,51 +1,44 @@
-package localhttp
+package handlers
 
 import (
 	"bytes"
-	"errors"
 	"net/http"
 )
 
 // Used by the gowarcserver handlers to write a local respons from a request.
 // This makes it easier to uniformly deal with aggregated request results and local results
 // It implements the ResponseWriter interface in order to achieve this
+
+// Writer is an implementation of http.ResponseWriter that records body, header and status code.
 type Writer struct {
-	body   *bytes.Buffer
-	header *http.Header
-	status int
+	Head http.Header
+	Body *bytes.Buffer
+	Code int
 }
 
 func NewWriter() *Writer {
-	body := bytes.NewBuffer([]byte{})
-	header := http.Header(make(map[string][]string))
 	return &Writer{
-		body:   body,
-		header: &header,
-		status: -1,
+		Code:           200,
 	}
 }
 
 func (l *Writer) Bytes() []byte {
-	if l.body == nil {
-		return []byte{}
-	}
-	return l.body.Bytes()
+	return l.Body.Bytes()
 }
 
 func (l *Writer) Header() http.Header {
-	if l.header == nil {
-		return nil
+	m := l.Head
+	if m == nil {
+		m = make(http.Header)
+		l.Head = m
 	}
-	return *l.header
+	return m
 }
 
 func (l *Writer) Write(bytes []byte) (n int, err error) {
-	if l.body == nil {
-		return 0, errors.New("writer missing buffer")
-	}
-	return l.body.Write(bytes)
+	return l.Body.Write(bytes)
 }
 
 func (l *Writer) WriteHeader(statusCode int) {
-	l.status = statusCode
+	l.Code = statusCode
 }

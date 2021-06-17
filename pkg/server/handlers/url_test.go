@@ -1,11 +1,11 @@
-package localhttp_test
+package handlers_test
 
 import (
 	"log"
 	"net/url"
 	"testing"
 
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
+	"github.com/nlnwa/gowarcserver/pkg/server/handlers"
 )
 
 func TestConfigToDBMask(t *testing.T) {
@@ -70,7 +70,7 @@ func TestConfigToDBMask(t *testing.T) {
 			log.Fatal("illegal node url test string, msg: ", err)
 		}
 		t.Run(tt.name, func(t *testing.T) {
-			result := localhttp.BuildChildURLString(childUrl, nodeUrl)
+			result := handlers.BuildChildURLString(childUrl, nodeUrl).String()
 			if result != tt.expectedUrl {
 				t.Errorf("Expected %s got %s", tt.expectedUrl, result)
 			}

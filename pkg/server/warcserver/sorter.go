@@ -18,6 +18,7 @@ package warcserver
 
 import (
 	"fmt"
+	"github.com/nlnwa/gowarcserver/pkg/index"
 	"sort"
 	"strings"
 
@@ -47,20 +48,13 @@ func (c *cdxServerApi) parseSort(sort, closest, matchType string) (*sorter, erro
 	return s, nil
 }
 
-func (s *sorter) add(item *badger.Item) (stopIteration bool) {
-	k := item.Key()
-	if !s.cdxApi.dateRange.eval(k) {
-		return false
-	}
-
+func (s *sorter) add(item *badger.Item) {
 	ts, _ := timestamp.From14ToTime(strings.Split(string(item.Key()), " ")[1])
 	v := []interface{}{ts.Unix(), item.KeyCopy(nil)}
 	s.values = append(s.values, v)
-
-	return false
 }
 
-func (s *sorter) write(txn *badger.Txn) error {
+func (s *sorter) walk(txn *badger.Txn, perItemFn index.PerItemFunction) error {
 	s.sort()
 
 	for _, i := range s.values {
@@ -68,7 +62,7 @@ func (s *sorter) write(txn *badger.Txn) error {
 		if err != nil {
 			return err
 		}
-		if s.cdxApi.writeItem(item) {
+		if perItemFn(item) {
 			break
 		}
 	}

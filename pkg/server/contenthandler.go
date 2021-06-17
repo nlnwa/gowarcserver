@@ -20,26 +20,25 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarc/warcrecord"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
+	"github.com/nlnwa/gowarcserver/pkg/server/handlers"
 	"github.com/sirupsen/logrus"
 )
 
 type contentHandler struct {
 	loader   *loader.Loader
-	children *localhttp.Children
+	children *handlers.Children
 }
 
 func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	localhttp.FirstQuery(h, w, r, time.Second*3)
+	handlers.FirstQuery(h, w, r, time.Second*3)
 }
 
-func (h *contentHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
+func (h *contentHandler) ServeLocalHTTP(w http.ResponseWriter, r *http.Request) (*handlers.Writer, error) {
 	warcid := mux.Vars(r)["id"]
 	if len(warcid) > 0 && warcid[0] != '<' {
 		warcid = "<" + warcid + ">"
@@ -55,7 +54,7 @@ func (h *contentHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*l
 	}
 	defer record.Close()
 
-	localWriter := localhttp.NewWriter()
+	localWriter := handlers.NewWriter(w)
 	switch v := record.Block().(type) {
 	case *warcrecord.RevisitBlock:
 		r, err := v.Response()
@@ -98,6 +97,6 @@ func (h *contentHandler) PredicateFn(r *http.Response) bool {
 	return r.StatusCode == 200
 }
 
-func (h *contentHandler) Children() *localhttp.Children {
+func (h *contentHandler) Children() *handlers.Children {
 	return h.children
 }

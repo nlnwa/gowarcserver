@@ -14,17 +14,15 @@
  * limitations under the License.
  */
 
-package warcserver
+package handlers
 
 import (
 	"fmt"
 	"net/http"
 )
 
-func handleError(err error, w http.ResponseWriter) {
-	if err != nil {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(404)
-		fmt.Fprintf(w, "Error: %v\n", err)
-	}
+func HandleError(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(404)
+	fmt.Fprintf(w, "Error: %v\n", err)
 }

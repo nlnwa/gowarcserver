@@ -25,7 +25,6 @@ import (
 	"github.com/gorilla/mux"
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 	"github.com/nlnwa/whatwg-url/url"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -33,7 +32,7 @@ import (
 
 var jsonMarshaler = &protojson.MarshalOptions{}
 
-type RenderFunc func(w *localhttp.Writer, record *cdx.Cdx, cdxApi *cdxServerApi) error
+type RenderFunc func(record *cdx.Cdx, cdxApi *cdxServerApi) error
 
 type cdxServerApi struct {
 	collection string
@@ -44,17 +43,13 @@ type cdxServerApi struct {
 	filter     *filters
 	sort       *sorter
 	output     string
-	w          *localhttp.Writer
 	count      int
-	renderFunc RenderFunc
 }
 
-func parseCdxServerApi(w *localhttp.Writer, r *http.Request, renderFunc RenderFunc) (*cdxServerApi, error) {
+func parseCdxServerApi(r *http.Request) (*cdxServerApi, error) {
 	var err error
 	c := &cdxServerApi{
 		collection: mux.Vars(r)["collection"],
-		w:          w,
-		renderFunc: renderFunc,
 		output:     r.URL.Query().Get("output"),
 	}
 
@@ -85,12 +80,12 @@ func parseCdxServerApi(w *localhttp.Writer, r *http.Request, renderFunc RenderFu
 	return c, nil
 }
 
-func (c *cdxServerApi) writeItem(item *badger.Item) (stopIteration bool) {
+func (c *cdxServerApi) writeItem(item *badger.Item, renderFunc RenderFunc) (stopIteration bool) {
 	result := &cdx.Cdx{}
 	err := item.Value(func(v []byte) error {
 		proto.Unmarshal(v, result)
 		if c.filter.eval(result) {
-			if err := c.renderFunc(c.w, result, c); err != nil {
+			if err := renderFunc(result, c); err != nil {
 				return err
 			}
 
@@ -107,21 +102,37 @@ func (c *cdxServerApi) writeItem(item *badger.Item) (stopIteration bool) {
 	return false
 }
 
-func (c *cdxServerApi) sortedSearch(db *index.DB, perItemFn index.PerItemFunction, afterIterFn index.AfterIterationFunction) {
-	if c.sort.closest != "" {
-		db.Search(c.key, false, c.sort.add, c.sort.write)
-	} else {
-		db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
+func (c *cdxServerApi) sortedSearch(db *index.DB, renderFunc RenderFunc, perItemFn index.PerItemFunction, afterIterFn index.AfterIterationFunction) error {
+	perSortItemFn := func(item *badger.Item) bool {
+		if !c.dateRange.eval(item.Key()) {
+			return false
+		}
+		c.sort.add(item)
+		return false
 	}
-
+	afterSorterFn := func(txn *badger.Txn) error {
+		return c.sort.walk(txn, func(item *badger.Item) bool {
+			return c.writeItem(item, renderFunc)
+		})
+	}
+	var err error
+	if c.sort.closest != "" {
+		err = db.Search(c.key, false, perSortItemFn, afterSorterFn)
+	} else {
+		err = db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
+	}
+	if err != nil {
+		return err
+	}
 	// If no hits with http, try https
 	if c.count == 0 && strings.Contains(c.key, "http:") {
 		c.key = strings.ReplaceAll(c.key, "http:", "https:")
 
 		if c.sort.closest != "" {
-			db.Search(c.key, false, c.sort.add, c.sort.write)
+			return db.Search(c.key, false, perSortItemFn, afterSorterFn)
 		} else {
-			db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
+			return db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
 		}
 	}
+	return nil
 }

@@ -31,7 +31,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 	"github.com/nlnwa/gowarcserver/pkg/server/warcserver"
 )
 
@@ -45,17 +44,12 @@ func Serve(db *index.DB, port int, childUrls []url.URL, childTimeout time.Durati
 		NoUnpack: false,
 	}
 
-	children := &localhttp.Children{
-		Urls:    childUrls,
-		Timeout: childTimeout,
-	}
-
 	r := mux.NewRouter()
-	r.Handle("/id/{id}", &contentHandler{l, children})
-	r.Handle("/files/", &fileHandler{l, db, children})
-	r.Handle("/search", &searchHandler{l, db, children})
+	r.Handle("/id/{id}", &contentHandler{l, childUrls, childTimeout})
+	r.Handle("/files/", &fileHandler{l, db, childUrls, childTimeout})
+	r.Handle("/search", &searchHandler{l, db, childUrls, childTimeout})
 	warcserverRoutes := r.PathPrefix("/warcserver").Subrouter()
-	warcserver.RegisterRoutes(warcserverRoutes, db, l, children)
+	warcserver.RegisterRoutes(warcserverRoutes, db, l, childUrls, childTimeout)
 	http.Handle("/", r)
 
 	loggingMw := func(h http.Handler) http.Handler {

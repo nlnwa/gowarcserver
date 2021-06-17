@@ -27,7 +27,7 @@ import (
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
+	"github.com/nlnwa/gowarcserver/pkg/server/handlers"
 	"github.com/nlnwa/gowarcserver/pkg/surt"
 	log "github.com/sirupsen/logrus"
 )
@@ -35,24 +35,25 @@ import (
 type searchHandler struct {
 	loader   *loader.Loader
 	db       *index.DB
-	children *localhttp.Children
+	children *handlers.Children
 }
 
 var jsonMarshaler = &jsonpb.Marshaler{}
 
 func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	localhttp.AggregatedQuery(h, w, r)
+	handlers.AggregatedQuery(w, r, h)
 }
 
-func (h *searchHandler) ServeLocalHTTP(wg *sync.WaitGroup, r *http.Request) (*localhttp.Writer, error) {
+func (h *searchHandler) ServeLocalHTTP(w http.ResponseWriter, r *http.Request) {
 	uri := r.URL.Query().Get("url")
 	key, err := surt.SsurtString(uri, true)
 	if err != nil {
+
 		return nil, err
 	}
 
 	log.Infof("request url: %v, key: %v", uri, key)
-	localWriter := localhttp.NewWriter()
+	localWriter := handlers.NewWriter()
 
 	perItemFn := func(item *badger.Item) bool {
 		result := &cdx.Cdx{}
@@ -84,6 +85,6 @@ func (h *searchHandler) PredicateFn(r *http.Response) bool {
 	return r.StatusCode >= 200 && r.StatusCode < 300
 }
 
-func (h *searchHandler) Children() *localhttp.Children {
+func (h *searchHandler) Children() *handlers.Children {
 	return h.children
 }
