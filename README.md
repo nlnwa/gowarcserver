@@ -12,6 +12,13 @@ go 1.15 or newer
 
 Run `go build ./cmd/warcserver/`
 
+# Local linting
+The project CI uses [golangci-lint](https://golangci-lint.run) to lint any incoming PR. It's recommended to set up the linter locally to save everyone involved some time. You can do so by following the steps described in golangci-lint's [local installation](https://golangci-lint.run/usage/install/#local-installation) guide. 
+
+Note that in the case of **linux** the guide expects that you have `$GOPATH/bin` included in your `PATH` variable.
+
+When you are able to run `golangci-lint --version` in your terminal of choice, then it's also recommended to set up the optional git hook which you can read more about in the [githook folder](https://github.com/nlnwa/gowarcserver/tree/master/githooks)  
+
 # Config file
 
 You can configure certain aspect of gowarcserver with a config file. Here are all posible fields. These can also be overwritten by environment variables with same name
