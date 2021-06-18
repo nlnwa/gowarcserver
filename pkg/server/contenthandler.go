@@ -18,21 +18,27 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarc/warcrecord"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
+	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 	log "github.com/sirupsen/logrus"
 )
 
 type contentHandler struct {
-	loader *loader.Loader
+	loader   *loader.Loader
+	children *localhttp.Children
 }
 
 func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	localhttp.FirstQuery(h, w, r, time.Second*3)
+}
+
+func (h *contentHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
 	warcid := mux.Vars(r)["id"]
 	if len(warcid) > 0 && warcid[0] != '<' {
 		warcid = "<" + warcid + ">"
@@ -41,51 +47,44 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Debugf("request id: %v", warcid)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	record, err := h.loader.Get(ctx, warcid)
 	if err != nil {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(404)
-		if _, werr := w.Write([]byte("Document not found\n")); werr != nil {
-			log.Warn("Failed to write 404 message to body: ", werr)
-		}
-		return
+		return nil, err
 	}
 	defer record.Close()
 
+	localWriter := localhttp.NewWriter()
 	switch v := record.Block().(type) {
 	case *warcrecord.RevisitBlock:
 		r, err := v.Response()
 		if err != nil {
-			log.Warnf("%v", err)
-			return
+			return nil, err
 		}
-		renderContent(w, v, r)
+		renderContent(localWriter, v, r)
 	case warcrecord.HttpResponseBlock:
 		r, err := v.Response()
 		if err != nil {
-			log.Warnf("%v", err)
-			return
+			return nil, err
 		}
-		renderContent(w, v, r)
+		renderContent(localWriter, v, r)
 	default:
-		w.Header().Set("Content-Type", "text/plain")
-		_, err = record.WarcHeader().Write(w)
+		localWriter.Header().Set("Content-Type", "text/plain")
+		_, err = record.WarcHeader().Write(localWriter)
 		if err != nil {
-			log.Warnf("Failed to write response header to %s", r.URL)
-			return
+			return nil, err
 		}
 
-		fmt.Fprintln(w)
 		rb, err := v.RawBytes()
 		if err != nil {
-			log.Warnf("Failed to get raw bytes: %v", err)
-			return
+			return nil, err
 		}
-		_, err = io.Copy(w, rb)
+		_, err = io.Copy(localWriter, rb)
 		if err != nil {
-			log.Warnf("Failed to writer content for request to %s", r.URL)
+			return nil, err
 		}
 	}
+	return localWriter, nil
 }
 
 func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Response) {
@@ -102,4 +101,12 @@ func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Res
 	if err != nil {
 		log.Warnf("Failed to writer content for request to %s", r.Request.URL)
 	}
+}
+
+func (h *contentHandler) PredicateFn(r *http.Response) bool {
+	return r.StatusCode == 200
+}
+
+func (h *contentHandler) Children() *localhttp.Children {
+	return h.children
 }

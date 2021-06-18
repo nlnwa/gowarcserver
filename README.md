@@ -25,3 +25,8 @@ You can configure certain aspect of gowarcserver with a config file. Here are al
 | warcPort      |  int           | The port that the serve command will use if not overridden as argument to serve      | 9999      |
 | logLevel      |  string        | Change the application log level manually                                            | "info"    |
 | compression   |  string        | Change the db table compression. Legal values are: 'none', 'snappy', 'zstd'          | "none"    |
+| idDb          |  bool          | true *Disables* id db, false *Enables* id db                                         | false     |
+| fileDb        |  bool          | true *Disables* file db, false *Enables* file db                                     | false     | 
+| cdxDb         |  bool          | true *Disables* cdx db, false *Enables* cdx db                                       | false     |
+| childUrls     |  []string      | Register urls pointing to gowarcserver processes which are 'children'                | [""]      |
+| childQueryTimeout | int        | How long in miliseconds a request to a child can take before resulting in timeout    | 300       |

@@ -1,1 +1,3 @@
-logLevel: warn
+logLevel: info
+warcDir:
+  - ./testdata

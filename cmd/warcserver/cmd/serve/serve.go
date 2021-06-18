@@ -16,6 +16,9 @@
 package serve
 
 import (
+	"net/url"
+	"time"
+
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/server"
 	log "github.com/sirupsen/logrus"
@@ -41,12 +44,14 @@ func NewCommand() *cobra.Command {
 
 	// Stub to hold flags
 	c := &struct {
-		warcPort   int
-		watchDepth int
-		autoIndex  bool
-		noIdDB     bool
-		noFileDB   bool
-		noCdxDB    bool
+		warcPort          int
+		watchDepth        int
+		autoIndex         bool
+		noIdDB            bool
+		noFileDB          bool
+		noCdxDB           bool
+		childUrls         []string
+		childQueryTimeout time.Duration
 	}{}
 	cmd.Flags().IntVarP(&c.warcPort, "warcPort", "p", 9999, "Port that should be used to serve, will use config value otherwise")
 	cmd.Flags().IntVarP(&c.watchDepth, "watchDepth", "w", 4, "Maximum depth when indexing warc")
@@ -54,6 +59,8 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVarP(&c.noIdDB, "idDb", "i", false, "Turn off id db")
 	cmd.Flags().BoolVarP(&c.noFileDB, "fileDb", "f", false, "Turn off file db")
 	cmd.Flags().BoolVarP(&c.noCdxDB, "cdxDb", "x", false, "Turn off cdx db")
+	cmd.Flags().StringSliceVarP(&c.childUrls, "childUrls", "u", []string{""}, "specify urls to other gowarcserver instances, queries are propagated to these urls")
+	cmd.Flags().DurationVarP(&c.childQueryTimeout, "childQueryTimeout", "t", time.Millisecond*300, "Time before query to child node times out")
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
 		log.Fatalf("Failed to bind serve flags, err: %v", err)
 	}
@@ -83,13 +90,27 @@ func runE(warcDirs []string) error {
 		defer autoindexer.Shutdown()
 	}
 
+	childUrls := BuildUrlSlice(viper.GetStringSlice("childUrls"))
+	childQueryTimeout := viper.GetDuration("childQueryTimeout")
 	port := viper.GetInt("warcPort")
 	log.Infof("Starting web server at http://localhost:%v", port)
-	err = server.Serve(db, port)
+	err = server.Serve(db, port, childUrls, childQueryTimeout)
 	if err != nil {
 		log.Warnf("%v", err)
 	}
 	return nil
+}
+
+func BuildUrlSlice(urlStrs []string) []url.URL {
+	var childUrls []url.URL
+	for _, urlstr := range urlStrs {
+		if u, err := url.Parse(urlstr); err != nil {
+			log.Warnf("Parsing config child url %s failed with error %v", urlstr, err)
+		} else {
+			childUrls = append(childUrls, *u)
+		}
+	}
+	return childUrls
 }
 
 func ConfigToDBMask(noIdDB bool, noFileDB bool, noCdxDB bool) int32 {

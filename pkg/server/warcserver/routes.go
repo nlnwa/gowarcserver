@@ -20,10 +20,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
+	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 )
 
-func RegisterRoutes(r *mux.Router, db *index.DB, loader *loader.Loader) {
+func RegisterRoutes(r *mux.Router, db *index.DB, loader *loader.Loader, children *localhttp.Children) {
 	r.Handle("/", &rootHandler{})
-	r.Handle("/{collection}/index", &indexHandler{loader: loader, db: db})
-	r.Handle("/{collection}/resource", &resourceHandler{loader: loader, db: db})
+	r.Handle("/{collection}/index", &indexHandler{loader: loader, db: db, children: children})
+	r.Handle("/{collection}/resource", &resourceHandler{loader: loader, db: db, children: children})
 }

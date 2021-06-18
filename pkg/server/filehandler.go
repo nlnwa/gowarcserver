@@ -22,21 +22,37 @@ import (
 
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	log "github.com/sirupsen/logrus"
+	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 )
 
 type fileHandler struct {
-	loader *loader.Loader
-	db     *index.DB
+	loader   *loader.Loader
+	db       *index.DB
+	children *localhttp.Children
 }
 
 func (h *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	localhttp.AggregatedQuery(h, w, r)
+}
+
+func (h *fileHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
 	files, err := h.db.ListFileNames()
 	if err != nil {
-		log.Fatalf("error reading files: %v", err)
+		return nil, fmt.Errorf("error reading files: %v", err)
 	}
-	w.Header().Set("Content-Type", "text/plain")
+
+	localWriter := localhttp.NewWriter()
+	localWriter.Header().Set("Content-Type", "text/plain")
 	for _, f := range files {
-		fmt.Fprintf(w, "%v\n", f)
+		fmt.Fprintf(localWriter, "%v\n", f)
 	}
+	return localWriter, nil
+}
+
+func (h *fileHandler) PredicateFn(r *http.Response) bool {
+	return r.StatusCode >= 200 && r.StatusCode < 300
+}
+
+func (h *fileHandler) Children() *localhttp.Children {
+	return h.children
 }

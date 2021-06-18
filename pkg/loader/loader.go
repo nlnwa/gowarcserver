@@ -18,6 +18,7 @@ package loader
 
 import (
 	"context"
+
 	"github.com/nlnwa/gowarc/warcrecord"
 	log "github.com/sirupsen/logrus"
 )

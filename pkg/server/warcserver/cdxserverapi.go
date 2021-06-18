@@ -19,15 +19,18 @@ package warcserver
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gorilla/mux"
 	cdx "github.com/nlnwa/gowarc/proto"
-	"github.com/nlnwa/whatwg-url/url"
+	"github.com/nlnwa/gowarcserver/pkg/index"
+	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
+	whatUrl "github.com/nlnwa/whatwg-url/url"
 	"google.golang.org/protobuf/proto"
 )
 
-type RenderFunc func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error
+type RenderFunc func(w *localhttp.Writer, record *cdx.Cdx, cdxApi *cdxServerApi) error
 
 type cdxServerApi struct {
 	collection string
@@ -38,12 +41,12 @@ type cdxServerApi struct {
 	filter     *filters
 	sort       *sorter
 	output     string
-	w          http.ResponseWriter
+	w          *localhttp.Writer
 	count      int
 	renderFunc RenderFunc
 }
 
-func parseCdxServerApi(w http.ResponseWriter, r *http.Request, renderFunc RenderFunc) (*cdxServerApi, error) {
+func parseCdxServerApi(w *localhttp.Writer, r *http.Request, renderFunc RenderFunc) (*cdxServerApi, error) {
 	var err error
 	c := &cdxServerApi{
 		collection: mux.Vars(r)["collection"],
@@ -60,7 +63,7 @@ func parseCdxServerApi(w http.ResponseWriter, r *http.Request, renderFunc Render
 		sort = r.URL.Query().Get("sort")
 	}
 
-	url, err := url.ParseRef("http://example.com", r.RequestURI)
+	url, err := whatUrl.ParseRef("http://example.com", r.RequestURI)
 	if err != nil {
 		return nil, err
 	}
@@ -107,4 +110,25 @@ func (c *cdxServerApi) writeItem(item *badger.Item) (stopIteration bool) {
 		return true
 	}
 	return false
+}
+
+func (c *cdxServerApi) sortedSearch(db *index.DB, perItemFn index.PerItemFunction, afterIterFn index.AfterIterationFunction) error {
+	var err error
+	if c.sort.closest != "" {
+		err = db.Search(c.key, false, c.sort.add, c.sort.write)
+	} else {
+		err = db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
+	}
+
+	// If no hits with http, try https
+	if c.count == 0 && strings.Contains(c.key, "http:") {
+		c.key = strings.ReplaceAll(c.key, "http:", "https:")
+
+		if c.sort.closest != "" {
+			err = db.Search(c.key, false, c.sort.add, c.sort.write)
+		} else {
+			err = db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
+		}
+	}
+	return err
 }

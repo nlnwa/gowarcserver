@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -30,11 +31,12 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
+	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 	"github.com/nlnwa/gowarcserver/pkg/server/warcserver"
 	"github.com/sirupsen/logrus"
 )
 
-func Serve(db *index.DB, port int) error {
+func Serve(db *index.DB, port int, childUrls []url.URL, childTimeout time.Duration) error {
 	l := &loader.Loader{
 		Resolver: &storageRefResolver{db: db},
 		Loader: &loader.FileStorageLoader{FilePathResolver: func(fileName string) (filePath string, err error) {
@@ -44,12 +46,17 @@ func Serve(db *index.DB, port int) error {
 		NoUnpack: false,
 	}
 
+	children := &localhttp.Children{
+		Urls:    childUrls,
+		Timeout: childTimeout,
+	}
+
 	r := mux.NewRouter()
-	r.Handle("/id/{id}", &contentHandler{l})
-	r.Handle("/files/", &fileHandler{l, db})
-	r.Handle("/search", &searchHandler{l, db})
+	r.Handle("/id/{id}", &contentHandler{l, children})
+	r.Handle("/files/", &fileHandler{l, db, children})
+	r.Handle("/search", &searchHandler{l, db, children})
 	warcserverRoutes := r.PathPrefix("/warcserver").Subrouter()
-	warcserver.RegisterRoutes(warcserverRoutes, db, l)
+	warcserver.RegisterRoutes(warcserverRoutes, db, l, children)
 	http.Handle("/", r)
 
 	loggingMw := func(h http.Handler) http.Handler {

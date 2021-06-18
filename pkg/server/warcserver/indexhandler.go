@@ -26,16 +26,21 @@ import (
 	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	log "github.com/sirupsen/logrus"
+	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 )
 
 type indexHandler struct {
-	loader *loader.Loader
-	db     *index.DB
+	loader   *loader.Loader
+	db       *index.DB
+	children *localhttp.Children
 }
 
 func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var renderFunc RenderFunc = func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error {
+	localhttp.AggregatedQuery(h, w, r)
+}
+
+func (h *indexHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
+	var renderFunc RenderFunc = func(w *localhttp.Writer, record *cdx.Cdx, cdxApi *cdxServerApi) error {
 		cdxj, err := json.Marshal(cdxjTopywbJson(record))
 		if err != nil {
 			return err
@@ -49,13 +54,13 @@ func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 
-	cdxApi, err := parseCdxServerApi(w, r, renderFunc)
+	localWriter := localhttp.NewWriter()
+	cdxApi, err := parseCdxServerApi(localWriter, r, renderFunc)
 	if err != nil {
-		handleError(err, w)
-		return
+		return nil, err
 	}
 
-	var defaultPerItemFunc index.PerItemFunction = func(item *badger.Item) (stopIteration bool) {
+	defaultPerItemFunc := func(item *badger.Item) (stopIteration bool) {
 		k := item.Key()
 		if !cdxApi.dateRange.eval(k) {
 			return false
@@ -64,38 +69,23 @@ func (h *indexHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return cdxApi.writeItem(item)
 	}
 
-	var defaultAfterIterationFunc index.AfterIterationFunction = func(txn *badger.Txn) error {
+	defaultAfterIterationFunc := func(txn *badger.Txn) error {
 		return nil
 	}
 
-	if cdxApi.sort.closest != "" {
-		err := h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
-		if err != nil {
-			log.Warnf("Failed to search db: %v", err)
-		}
-	} else {
-		err := h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
-		if err != nil {
-			log.Warnf("Failed to search db: %v", err)
-		}
+	err = cdxApi.sortedSearch(h.db, defaultPerItemFunc, defaultAfterIterationFunc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search db: %w", err)
 	}
+	return localWriter, nil
+}
 
-	// If no hits with http, try https
-	if cdxApi.count == 0 && strings.Contains(cdxApi.key, "http:") {
-		cdxApi.key = strings.ReplaceAll(cdxApi.key, "http:", "https:")
+func (h *indexHandler) PredicateFn(r *http.Response) bool {
+	return r.StatusCode == 200
+}
 
-		if cdxApi.sort.closest != "" {
-			err := h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
-			if err != nil {
-				log.Warnf("Failed to search db: %v", err)
-			}
-		} else {
-			err := h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
-			if err != nil {
-				log.Warnf("Failed to search db: %v", err)
-			}
-		}
-	}
+func (h *indexHandler) Children() *localhttp.Children {
+	return h.children
 }
 
 type pywbJson struct {
