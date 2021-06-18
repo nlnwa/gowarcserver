@@ -31,13 +31,21 @@ func FirstQuery(lh LocalHandler, w http.ResponseWriter, r *http.Request, timeAft
 					w.Header().Add(key, value)
 				}
 			}
-			w.Write(localWriter.Bytes())
+			_, err := w.Write(localWriter.Bytes())
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			w.WriteHeader(localWriter.status)
 		case <-time.After(timeAfter):
 			// TODO: LocalHandler should have a 'noResponseFn' that is called here
 			w.Header().Set("Content-Type", "text/plain")
-			w.WriteHeader(404)
-			w.Write([]byte("Document not found\n"))
+			_, err := w.Write([]byte("Document not found\n"))
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
 		}
 	}
 
@@ -56,14 +64,22 @@ func AggregatedQuery(lh LocalHandler, w http.ResponseWriter, r *http.Request) {
 					w.Header().Add(key, value)
 				}
 			}
-			w.Write(localWriter.Bytes())
+			_, err := w.Write(localWriter.Bytes())
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			i += 1
 		}
 		if i <= 0 {
 			// TODO: LocalHandler should have a 'noResponseFn' that is called here
 			w.Header().Set("Content-Type", "text/plain")
+			_, err := w.Write([]byte("Document not found\n"))
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			w.WriteHeader(404)
-			w.Write([]byte("Document not found\n"))
 		}
 	}
 
