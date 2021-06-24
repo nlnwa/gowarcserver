@@ -17,94 +17,284 @@
 package warcserver
 
 import (
-	"net/http"
-	"strconv"
-
+	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gorilla/mux"
-	cdx "github.com/nlnwa/gowarc/proto"
-	"github.com/nlnwa/whatwg-url/url"
+	"github.com/nlnwa/gowarcserver/pkg/index"
+	"github.com/nlnwa/gowarcserver/pkg/timestamp"
+	cdx "github.com/nlnwa/gowarcserver/proto"
 	"google.golang.org/protobuf/proto"
+	"net/http"
+	"strconv"
+	"strings"
 )
 
-type RenderFunc func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error
+type RenderFunc func(record *cdx.Cdx) error
 
-type cdxServerApi struct {
-	collection string
-	key        string
-	matchType  string
-	dateRange  *dateRange
-	limit      int
-	filter     *filters
-	sort       *sorter
-	output     string
-	w          http.ResponseWriter
-	count      int
-	renderFunc RenderFunc
+type pywbJson struct {
+	Urlkey    string `json:"urlkey"`
+	Timestamp string `json:"timestamp"`
+	Url       string `json:"url"`
+	Mime      string `json:"mime"`
+	Status    string `json:"status"`
+	Digest    string `json:"digest"`
+	Length    string `json:"length"`
+	Offset    string `json:"offset"`
+	Filename  string `json:"filename"`
 }
 
-func parseCdxServerApi(w http.ResponseWriter, r *http.Request, renderFunc RenderFunc) (*cdxServerApi, error) {
-	var err error
-	c := &cdxServerApi{
-		collection: mux.Vars(r)["collection"],
-		w:          w,
-		renderFunc: renderFunc,
-		output:     r.URL.Query().Get("output"),
+func cdxjToPywbJson(record *cdx.Cdx) *pywbJson {
+	js := &pywbJson{
+		Urlkey:    record.Ssu,
+		Timestamp: record.Sts,
+		Url:       strings.ReplaceAll(record.Uri, "&", "%26"),
+		Mime:      record.Mct,
+		Status:    record.Hsc,
+		Digest:    record.Sha,
+		Length:    record.Rle,
+		Offset:    "",
+		Filename:  "",
+	}
+	return js
+}
+
+const (
+	SortClosest = "closest"
+	SortReverse = "reverse"
+)
+
+var sorts = []string{SortClosest, SortReverse}
+
+const (
+	MatchTypeExact  = "exact"
+	MatchTypePrefix = "prefix"
+	MatchTypeHost   = "host"
+	MatchTypeDomain = "domain"
+)
+
+var matchTypes = []string{MatchTypeDomain, MatchTypePrefix, MatchTypeHost, MatchTypeExact}
+
+const (
+	OutputCdxj = "cdxj"
+	OutputJson = "json"
+	OutputLink = "link"
+	OutputText = "text"
+)
+
+var outputs = []string{OutputCdxj, OutputJson, OutputLink, OutputText}
+
+type CdxjServerApi struct {
+	Collection string
+	Url        string
+	From       string
+	To         string
+	MatchType  string
+	Limit      int
+	Sort       string
+	Closest    int64
+	Output     string
+	Filter     []string
+	Fields     []string
+}
+
+// Contains retuns true if string e is contained in string slice.
+func Contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
+func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
+	cdxjApi := new(CdxjServerApi)
+	vars := mux.Vars(r)
+	query := r.URL.Query()
+	cdxjApi.Collection = vars["collection"]
+
+	url := query.Get("url")
+	if url == "" {
+		return nil, fmt.Errorf("missing required query parameter \"url\"")
+	}
+	cdxjApi.Url = url
+
+	from := query.Get("from")
+	if from != "" {
+		cdxjApi.From = From(from)
 	}
 
-	var sort string
-	closest := r.URL.Query().Get("closest")
-	if closest != "" {
-		sort = "closest"
+	to := query.Get("to")
+	if to != "" {
+		cdxjApi.To = To(to)
+	}
+
+	matchType := query.Get("matchType")
+	if matchType != "" {
+		if !Contains(matchTypes, matchType) {
+			return nil, fmt.Errorf("matchType=\"%s\"; value must be one of: exact, prefix, host or domain", matchType)
+		}
+		cdxjApi.MatchType = matchType
 	} else {
-		sort = r.URL.Query().Get("sort")
+		cdxjApi.MatchType = MatchTypeExact
 	}
 
-	url, err := url.ParseRef("http://example.com", r.RequestURI)
-	if err != nil {
-		return nil, err
+	limit := query.Get("limit")
+	if limit != "" {
+		l, err := strconv.ParseUint(limit, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("limit must be a positive integer, was %s", limit)
+		}
+		cdxjApi.Limit = int(l)
 	}
 
-	c.key, c.matchType, err = parseKey(url.SearchParams().Get("url"), r.URL.Query().Get("matchType"))
-	if err != nil {
-		return nil, err
+	closest := query.Get("closest")
+	if closest != "" {
+		ts, err := timestamp.From14ToTime(closest)
+		if err != nil {
+			return nil, fmt.Errorf("closest failed to parse: %w", err)
+		}
+		cdxjApi.Closest = ts.Unix()
 	}
 
-	c.dateRange = parseDateRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"))
-	if c.limit, err = strconv.Atoi(r.URL.Query().Get("limit")); err != nil {
-		c.limit = 0
+	sort := query.Get("sort")
+	if sort != "" {
+		if !Contains(sorts, sort) {
+			return nil, fmt.Errorf("sort must be either reverse or closest, was: %s", matchType)
+		}
+		cdxjApi.Sort = sort
 	}
 
-	c.filter = parseFilter(r.URL.Query()["filter"])
-
-	if c.sort, err = c.parseSort(sort, closest, c.matchType); err != nil {
-		return nil, err
+	if cdxjApi.Sort == SortClosest && cdxjApi.MatchType != MatchTypeExact && closest == "" {
+		return nil, fmt.Errorf("sort=closest requires a closest parameter and matchType=exact")
 	}
 
-	return c, nil
+	output := query.Get("output")
+	if output != "" {
+		if !Contains(outputs, output) {
+			return nil, fmt.Errorf("output must be one of cdxj, json, link or text, was: %s", output)
+		}
+		cdxjApi.Output = output
+	} else {
+		cdxjApi.Output = OutputCdxj
+	}
+
+	filter, ok := query["filter"]
+	if ok {
+		cdxjApi.Filter = filter
+	}
+
+	fields := query.Get("fields")
+	if fields != "" {
+		cdxjApi.Fields = strings.Split(fields, ",")
+	}
+
+	return cdxjApi, nil
 }
 
-func (c *cdxServerApi) writeItem(item *badger.Item) (stopIteration bool) {
-	result := &cdx.Cdx{}
-	err := item.Value(func(v []byte) error {
-		if err := proto.Unmarshal(v, result); err != nil {
-			return err
+type Key string
+
+func (k Key) ts() string {
+	return strings.Split(string(k), " ")[1]
+}
+
+type DbCdxServer struct {
+	*index.DB
+}
+
+// search the db and render items with renderFunc
+func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (int, error) {
+	key, err := parseKey(api.Url, api.MatchType)
+	if err != nil {
+		return 0, err
+	}
+
+	dateRange := DateRange{
+		from: api.From,
+		to:   api.To,
+	}
+
+	filter := parseFilter(api.Filter)
+
+	//url, err := whatUrl.ParseRef("http://www.example.com", r.RequestURI)
+	//if err != nil {
+	//	return err
+	//}
+
+	sorter := parseSort(api.Sort, api.Closest)
+	count := 0
+
+	perItemFn := func(item *badger.Item) (stopIteration bool) {
+		key := Key(item.Key())
+
+		if !dateRange.contains(key.ts()) {
+			return false
 		}
 
-		if c.filter.eval(result) {
-			if err := c.renderFunc(c.w, result, c); err != nil {
+		result := new(cdx.Cdx)
+		err := item.Value(func(v []byte) error {
+			if err := proto.Unmarshal(v, result); err != nil {
 				return err
 			}
 
-			c.count++
+			if filter.eval(result) {
+				if err := renderFunc(result); err != nil {
+					return err
+				}
+				count++
+			}
+			return nil
+		})
+		if err != nil {
+			return true
 		}
+
+		if api.Limit > 0 && count <= api.Limit {
+			return true
+		} else {
+			return false
+		}
+	}
+
+	afterIterFn := func(txn *badger.Txn) error {
 		return nil
-	})
-	if c.limit > 0 && c.count >= c.limit {
-		return true
 	}
-	if err != nil {
-		return true
+
+	sortPerItemFn := func(item *badger.Item) bool {
+		key := Key(item.Key())
+
+		if !dateRange.contains(key.ts()) {
+			return false
+		}
+
+		sorter.add(item)
+		return false
 	}
-	return false
+
+	sortAfterIterFn := func(txn *badger.Txn) error {
+		sorter.sort()
+		return sorter.walk(txn, perItemFn)
+	}
+
+	f := perItemFn
+	a := afterIterFn
+
+	if api.Closest != 0 {
+		f = sortPerItemFn
+		a = sortAfterIterFn
+	}
+
+	for {
+		err := c.DB.Search(key, api.Sort == SortReverse, f, a)
+		if err != nil {
+			return count, err
+		}
+
+		if strings.Contains(key, "http:") {
+			// no results found, try https
+			key = strings.ReplaceAll(key, "http:", "https:")
+		} else {
+			return count, nil
+		}
+	}
 }

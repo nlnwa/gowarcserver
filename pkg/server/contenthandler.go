@@ -18,7 +18,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 
@@ -41,13 +40,10 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Debugf("request id: %v", warcid)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	record, err := h.loader.Get(ctx, warcid)
 	if err != nil {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(404)
-		if _, werr := w.Write([]byte("Document not found\n")); werr != nil {
-			log.Warn("Failed to write 404 message to body: ", werr)
-		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer record.Close()
@@ -56,14 +52,14 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case *warcrecord.RevisitBlock:
 		r, err := v.Response()
 		if err != nil {
-			log.Warnf("%v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		renderContent(w, v, r)
 	case warcrecord.HttpResponseBlock:
 		r, err := v.Response()
 		if err != nil {
-			log.Warnf("%v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		renderContent(w, v, r)
@@ -71,19 +67,19 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, err = record.WarcHeader().Write(w)
 		if err != nil {
-			log.Warnf("Failed to write response header to %s", r.URL)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		fmt.Fprintln(w)
 		rb, err := v.RawBytes()
 		if err != nil {
-			log.Warnf("Failed to get raw bytes: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		_, err = io.Copy(w, rb)
 		if err != nil {
-			log.Warnf("Failed to writer content for request to %s", r.URL)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 }

@@ -19,10 +19,10 @@ package index
 import (
 	"strconv"
 
-	"github.com/nlnwa/gowarc/pkg/surt"
-	"github.com/nlnwa/gowarc/pkg/timestamp"
-	cdx "github.com/nlnwa/gowarc/proto"
 	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarcserver/pkg/surt"
+	"github.com/nlnwa/gowarcserver/pkg/timestamp"
+	cdx "github.com/nlnwa/gowarcserver/proto"
 	log "github.com/sirupsen/logrus"
 )
 

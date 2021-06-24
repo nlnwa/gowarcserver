@@ -18,23 +18,23 @@ package server
 
 import (
 	"fmt"
-	"net/http"
-
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	log "github.com/sirupsen/logrus"
+	"net/http"
 )
 
 type fileHandler struct {
-	loader *loader.Loader
-	db     *index.DB
+	loader   *loader.Loader
+	db       *index.DB
 }
 
 func (h *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	files, err := h.db.ListFileNames()
 	if err != nil {
-		log.Fatalf("error reading files: %v", err)
+		http.Error(w, fmt.Sprintf("error reading files: %v", err), http.StatusInternalServerError)
+		return
 	}
+
 	w.Header().Set("Content-Type", "text/plain")
 	for _, f := range files {
 		fmt.Fprintf(w, "%v\n", f)

@@ -22,6 +22,7 @@ import (
 	"github.com/nlnwa/gowarcserver/cmd/warcserver/cmd"
 )
 
+// go generate
 func main() {
 	c := cmd.NewCommand()
 	if err := c.Execute(); err != nil {

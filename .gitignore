@@ -5,6 +5,9 @@
 *.so
 *.dylib
 
+#vscode debug binary
+__debug_bin
+
 # Test binary, build with `go test -c`
 *.test
 
@@ -15,10 +18,11 @@
 /warcserver
 
 # Gowarc cache
-/warcdb
+/warcdb*
 
 # User specific config
-/config.yaml
+/config*.yaml
 
 .idea
 /proto/tools/
+/.vscode

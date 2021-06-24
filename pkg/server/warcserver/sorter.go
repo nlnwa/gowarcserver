@@ -17,70 +17,58 @@
 package warcserver
 
 import (
-	"fmt"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/nlnwa/gowarcserver/pkg/index"
+	"github.com/nlnwa/gowarcserver/pkg/timestamp"
 	"sort"
 	"strings"
-
-	"github.com/dgraph-io/badger/v3"
-	"github.com/nlnwa/gowarc/pkg/timestamp"
-	"github.com/nlnwa/gowarc/pkg/utils"
 )
 
-type sorter struct {
-	cdxApi  *cdxServerApi
-	reverse bool
-	closest string
-	values  [][]interface{}
+type value struct {
+	ts int64
+	v  []byte
 }
 
-func (c *cdxServerApi) parseSort(sort, closest, matchType string) (*sorter, error) {
-	s := &sorter{cdxApi: c}
+type sorter struct {
+	reverse bool
+	closest int64
+	values  []value
+}
+
+func parseSort(sort string, closest int64) *sorter {
+	s := new(sorter)
 	switch sort {
-	case "reverse":
+	case SortReverse:
 		s.reverse = true
-	case "closest":
-		if closest == "" || matchType != "exact" {
-			return nil, fmt.Errorf("sort=closest requires a closest parameter and matchType=exact")
-		}
+	case SortClosest:
 		s.closest = closest
 	}
-	return s, nil
+	return s
 }
 
-func (s *sorter) add(item *badger.Item) (stopIteration bool) {
-	k := item.Key()
-	if !s.cdxApi.dateRange.eval(k) {
-		return false
-	}
-
+func (s *sorter) add(item *badger.Item) {
 	ts, _ := timestamp.From14ToTime(strings.Split(string(item.Key()), " ")[1])
-	v := []interface{}{ts.Unix(), item.KeyCopy(nil)}
+	v := value{ts.Unix(), item.KeyCopy(nil)}
 	s.values = append(s.values, v)
-
-	return false
 }
 
-func (s *sorter) write(txn *badger.Txn) error {
-	s.sort()
+func (s *sorter) sort() {
+	sort.Slice(s.values, func(i, j int) bool {
+		ts1 := s.values[i].ts
+		ts2 := s.values[j].ts
+		return timestamp.AbsInt64(s.closest-ts1) < timestamp.AbsInt64(s.closest-ts2)
+	})
+}
 
-	for _, i := range s.values {
-		item, err := txn.Get(i[1].([]byte))
+func (s *sorter) walk(txn *badger.Txn, perItemFn index.PerItemFunction) error {
+	for _, value := range s.values {
+		item, err := txn.Get(value.v)
 		if err != nil {
 			return err
 		}
-		if s.cdxApi.writeItem(item) {
+		if perItemFn(item) {
 			break
 		}
 	}
 	return nil
-}
-
-func (s *sorter) sort() {
-	ts, _ := timestamp.From14ToTime(s.closest)
-	closestTs := ts.Unix()
-	sort.Slice(s.values, func(i, j int) bool {
-		ts1 := s.values[i][0].(int64)
-		ts2 := s.values[j][0].(int64)
-		return utils.AbsInt64(closestTs-ts1) < utils.AbsInt64(closestTs-ts2)
-	})
 }

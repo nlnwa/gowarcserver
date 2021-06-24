@@ -1,167 +1,113 @@
-/*
- * Copyright 2020 National Library of Norway.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package warcserver
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nlnwa/gowarc/warcoptions"
+	"github.com/nlnwa/gowarc/warcwriter"
 	"io"
 	"net/http"
-	"strings"
 
-	"github.com/dgraph-io/badger/v3"
-	cdx "github.com/nlnwa/gowarc/proto"
-	"github.com/nlnwa/gowarc/warcoptions"
 	"github.com/nlnwa/gowarc/warcrecord"
-	"github.com/nlnwa/gowarc/warcwriter"
-	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	log "github.com/sirupsen/logrus"
+	cdx "github.com/nlnwa/gowarcserver/proto"
 )
 
-type resourceHandler struct {
-	loader *loader.Loader
-	db     *index.DB
+type ResourceHandler struct {
+	DbCdxServer
+	loader loader.ResourceLoader
 }
 
-func (h *resourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var renderFunc RenderFunc = func(w http.ResponseWriter, record *cdx.Cdx, cdxApi *cdxServerApi) error {
-		warcid := record.Rid
-		if len(warcid) > 0 && warcid[0] != '<' {
-			warcid = "<" + warcid + ">"
+func (rh *ResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	api, err := ParseCdxjApi(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	api.Limit = 1
+
+	n, err := rh.search(api, rh.render(w, api))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	} else if n == 0 {
+		http.NotFound(w, r)
+	}
+}
+
+func (rh *ResourceHandler) render(w http.ResponseWriter, api *CdxjServerApi) RenderFunc {
+	return func(record * cdx.Cdx) error{
+		warcId := record.Rid
+		if len(warcId) > 0 && warcId[0] != '<'{
+			warcId = "<" + warcId + ">"
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		warcRecord, err := h.loader.Get(ctx, warcid)
-		if err != nil {
+		warcRecord, err := rh.loader.Get(ctx, warcId)
+		if err != nil{
 			return err
 		}
 		defer warcRecord.Close()
 
-		cdxj, err := json.Marshal(cdxjTopywbJson(record))
-		if err != nil {
-			return err
-		}
-		switch cdxApi.output {
-		case "json":
-			renderWarcContent(w, warcRecord, cdxApi, fmt.Sprintf("%s\n", cdxj))
+		switch api.Output{
 		case "content":
-			switch v := warcRecord.Block().(type) {
-			case *warcrecord.RevisitBlock:
-				r, err := v.Response()
-				if err != nil {
-					return err
-				}
-				renderContent(w, v, r)
+			switch v := warcRecord.Block().(type){
 			case warcrecord.HttpResponseBlock:
 				r, err := v.Response()
-				if err != nil {
+				if err != nil{
 					return err
 				}
-				renderContent(w, v, r)
+				return renderContent(w, r, v)
 			default:
-				w.Header().Set("Content-Type", "text/plain")
-				_, err = warcRecord.WarcHeader().Write(w)
-				if err != nil {
-					return err
-				}
-				_, err = fmt.Fprintln(w)
-				if err != nil {
-					return err
-				}
-
-				rb, err := v.RawBytes()
-				if err != nil {
-					return err
-				}
-
-				_, err = io.Copy(w, rb)
-				if err != nil {
-					return err
-				}
+				return renderBlock(w, warcRecord)
 			}
+		case OutputJson:
+			cdxj, err := json.Marshal(cdxjToPywbJson(record))
+			if err != nil{
+				return err
+			}
+			renderWarcContent(w, warcRecord, api, fmt.Sprintf("%s\n", cdxj))
 		default:
-			renderWarcContent(w, warcRecord, cdxApi, fmt.Sprintf("%s %s %s\n", record.Ssu, record.Sts, cdxj))
+			cdxj, err := json.Marshal(cdxjToPywbJson(record))
+			if err != nil{
+				return err
+			}
+			renderWarcContent(w, warcRecord, api, fmt.Sprintf("%s %s %s\n", record.Ssu, record.Sts, cdxj))
 		}
 
 		return nil
-	}
-
-	cdxApi, err := parseCdxServerApi(w, r, renderFunc)
-	if err != nil {
-		handleError(err, w)
-		return
-	}
-	cdxApi.limit = 1
-
-	var defaultPerItemFunc index.PerItemFunction = func(item *badger.Item) (stopIteration bool) {
-		k := item.Key()
-		if !cdxApi.dateRange.eval(k) {
-			return false
-		}
-
-		return cdxApi.writeItem(item)
-	}
-
-	var defaultAfterIterationFunc index.AfterIterationFunction = func(txn *badger.Txn) error {
-		return nil
-	}
-
-	if cdxApi.sort.closest != "" {
-		err := h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
-		if err != nil {
-			log.Warnf("Failed to search db: %v", err)
-		}
-	} else {
-		err := h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
-		if err != nil {
-			log.Warnf("Failed to search db: %v", err)
-		}
-	}
-
-	// If no hits with http, try https
-	if cdxApi.count == 0 && strings.Contains(cdxApi.key, "http:") {
-		cdxApi.key = strings.ReplaceAll(cdxApi.key, "http:", "https:")
-
-		if cdxApi.sort.closest != "" {
-			err := h.db.Search(cdxApi.key, false, cdxApi.sort.add, cdxApi.sort.write)
-			if err != nil {
-				log.Warnf("Failed to search db: %v", err)
-			}
-		} else {
-			err := h.db.Search(cdxApi.key, cdxApi.sort.reverse, defaultPerItemFunc, defaultAfterIterationFunc)
-			if err != nil {
-				log.Warnf("Failed to search db: %v", err)
-			}
-		}
-	}
-
-	if cdxApi.count == 0 {
-		handleError(fmt.Errorf("Not found"), w)
 	}
 }
 
-func renderWarcContent(w http.ResponseWriter, warcRecord warcrecord.WarcRecord, cdxApi *cdxServerApi, cdx string) {
+func renderBlock(w http.ResponseWriter, record warcrecord.WarcRecord) error {
+	w.Header().Set("Content-Type", "text/plain")
+
+	_, err := record.WarcHeader().Write(w)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(w)
+	if err != nil {
+		return err
+	}
+	rb, err := record.Block().RawBytes()
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(w, rb)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func renderWarcContent(w http.ResponseWriter, warcRecord warcrecord.WarcRecord, api *CdxjServerApi, cdx string) {
 	w.Header().Set("Warcserver-Cdx", cdx)
 	w.Header().Set("Link", "<"+warcRecord.WarcHeader().Get(warcrecord.WarcTargetURI)+">; rel=\"original\"")
 	w.Header().Set("WARC-Target-URI", warcRecord.WarcHeader().Get(warcrecord.WarcTargetURI))
-	w.Header().Set("Warcserver-Source-Coll", cdxApi.collection)
+	w.Header().Set("Warcserver-Source-Coll", api.Collection)
 	w.Header().Set("Content-Type", "application/warc-record")
 	w.Header().Set("Memento-Datetime", warcRecord.WarcHeader().Get(warcrecord.WarcDate))
 	w.Header().Set("Warcserver-Type", "warc")
@@ -176,7 +122,7 @@ func renderWarcContent(w http.ResponseWriter, warcRecord warcrecord.WarcRecord, 
 	}
 }
 
-func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Response) {
+func renderContent(w http.ResponseWriter, r *http.Response, v warcrecord.PayloadBlock) error {
 	for k, vl := range r.Header {
 		for _, v := range vl {
 			w.Header().Set(k, v)
@@ -185,12 +131,12 @@ func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Res
 	w.WriteHeader(r.StatusCode)
 	p, err := v.PayloadBytes()
 	if err != nil {
-		log.Warnf("Failed to retrieve payload bytes for request to %s", r.Request.URL)
-		return
+		return fmt.Errorf("failed to retrieve payload bytes for request to %s", r.Request.URL)
 	}
 
 	_, err = io.Copy(w, p)
 	if err != nil {
-		log.Warnf("Failed to writer content for request to %s", r.Request.URL)
+		return fmt.Errorf("failed to write content for request to %s", r.Request.URL)
 	}
+	return nil
 }

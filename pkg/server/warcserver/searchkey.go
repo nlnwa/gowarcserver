@@ -17,40 +17,36 @@
 package warcserver
 
 import (
-	"fmt"
-	"github.com/nlnwa/gowarc/pkg/surt"
 	"strings"
+
+	"github.com/nlnwa/gowarcserver/pkg/surt"
 )
 
-func parseKey(uri, matchType string) (string, string, error) {
+func parseKey(uri string, matchType string) (string, error) {
 	key, err := surt.SsurtString(uri, true)
 	if err != nil {
-		return "", matchType, err
+		return "", err
 	}
 
 	switch matchType {
-	case "":
-		matchType = "exact"
-		fallthrough
-	case "exact":
+	case MatchTypeExact:
 		key += " "
-	case "prefix":
+	case MatchTypePrefix:
 		i := strings.IndexAny(key, "?#")
 		if i > 0 {
 			key = key[:i]
 		}
-	case "host":
+	case MatchTypeHost:
 		i := strings.Index(key, "//")
 		if i > 0 {
 			key = key[:i+2]
 		}
-	case "domain":
+	case MatchTypeDomain:
 		i := strings.Index(key, "//")
 		if i > 0 {
 			key = key[:i]
 		}
-	default:
-		return "", matchType, fmt.Errorf("unknown matchType: %s", matchType)
 	}
-	return key, matchType, nil
+
+	return key, nil
 }

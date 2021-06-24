@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -34,7 +35,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func Serve(db *index.DB, port int) error {
+func Serve(db *index.DB, port int, children []url.URL, childTimeout time.Duration) error {
 	l := &loader.Loader{
 		Resolver: &storageRefResolver{db: db},
 		Loader: &loader.FileStorageLoader{FilePathResolver: func(fileName string) (filePath string, err error) {
@@ -49,7 +50,7 @@ func Serve(db *index.DB, port int) error {
 	r.Handle("/files/", &fileHandler{l, db})
 	r.Handle("/search", &searchHandler{l, db})
 	warcserverRoutes := r.PathPrefix("/warcserver").Subrouter()
-	warcserver.RegisterRoutes(warcserverRoutes, db, l)
+	warcserver.RegisterRoutes(warcserverRoutes, db, l, children, childTimeout)
 	http.Handle("/", r)
 
 	loggingMw := func(h http.Handler) http.Handler {
