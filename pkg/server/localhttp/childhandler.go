@@ -2,6 +2,7 @@ package localhttp
 
 import (
 	"bytes"
+	"context"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -47,9 +48,18 @@ func ChildQuery(queryData ChildQueryData) {
 				Timeout: queryData.Children.Timeout,
 			}
 			urlStr := BuildChildURLString(u, queryData.NodeUrl)
-			resp, err := client.Get(urlStr)
+			ctx, cancel := context.WithTimeout(context.Background(), queryData.Children.Timeout)
+			defer cancel()
+
+			request, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 			if err != nil {
-				log.Warnf("Query to %s resultet in error: %v", u, err)
+				log.Errorf("Failed to create request: %v", err)
+				return
+			}
+
+			resp, err := client.Do(request)
+			if err != nil {
+				log.Warnf("Query to %s failed: %v", u, err)
 				return
 			}
 			defer resp.Body.Close()

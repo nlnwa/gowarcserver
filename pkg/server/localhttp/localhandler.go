@@ -38,7 +38,6 @@ func FirstQuery(lh LocalHandler, w http.ResponseWriter, r *http.Request, timeAft
 			}
 			w.WriteHeader(localWriter.status)
 		case <-time.After(timeAfter):
-			// TODO: LocalHandler should have a 'noResponseFn' that is called here
 			w.Header().Set("Content-Type", "text/plain")
 			_, err := w.Write([]byte("Document not found\n"))
 			if err != nil {

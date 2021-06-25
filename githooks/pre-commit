@@ -7,5 +7,8 @@ HOOK_PATH=$(realpath $0)
 PROJECT_ROOT=$(echo $HOOK_PATH | rev | cut -d'/' -f4- | rev)
 # Run test and lint in parallel, source: https://stackoverflow.com/a/41762802
 go test $PROJECT_ROOT/... & TEST_JOB=$!
-golangci-lint run $PROJECT_ROOT/... & LINT_JOB=$!
+golangci-lint run -E "bodyclose" -E "dogsled" -E "durationcheck" -E "errorlint" \
+    -E "forcetypeassert" -E "noctx" -E "exhaustive" \
+    -E "exportloopref" $PROJECT_ROOT/... \
+    & LINT_JOB=$!
 wait $TEST_JOB $LINT_JOB

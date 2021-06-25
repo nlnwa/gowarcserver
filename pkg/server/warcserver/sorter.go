@@ -24,6 +24,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/nlnwa/gowarc/pkg/timestamp"
 	"github.com/nlnwa/gowarc/pkg/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 type sorter struct {
@@ -79,8 +80,16 @@ func (s *sorter) sort() {
 	ts, _ := timestamp.From14ToTime(s.closest)
 	closestTs := ts.Unix()
 	sort.Slice(s.values, func(i, j int) bool {
-		ts1 := s.values[i][0].(int64)
-		ts2 := s.values[j][0].(int64)
+		ts1, ok1 := s.values[i][0].(int64)
+		if !ok1 {
+			log.Errorf("failed to assert type of s.values[%d][0]", i)
+			ts1 = 0
+		}
+		ts2, ok2 := s.values[j][0].(int64)
+		if !ok2 {
+			log.Errorf("failed to assert type of s.values[%d][0]", j)
+			ts2 = 0
+		}
 		return utils.AbsInt64(closestTs-ts1) < utils.AbsInt64(closestTs-ts2)
 	})
 }

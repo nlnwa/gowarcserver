@@ -17,6 +17,7 @@
 package index
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -128,10 +129,10 @@ func indexFile(db *DB, fileName string) {
 	count := 0
 	for {
 		wr, currentOffset, err := wf.Next()
-		if err == io.EOF {
-			break
-		}
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			log.Errorf("Error: %v, rec num: %v, Offset %v\n", err.Error(), strconv.Itoa(count), currentOffset)
 			break
 		}
