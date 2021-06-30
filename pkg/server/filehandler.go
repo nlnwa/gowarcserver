@@ -38,7 +38,7 @@ func (h *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *fileHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
 	files, err := h.db.ListFileNames()
 	if err != nil {
-		return nil, fmt.Errorf("error reading files: %v", err)
+		return nil, fmt.Errorf("error reading files: %w", err)
 	}
 
 	localWriter := localhttp.NewWriter()

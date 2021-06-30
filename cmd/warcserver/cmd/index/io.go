@@ -1,6 +1,7 @@
 package index
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -43,11 +44,11 @@ func ReadFile(c *conf, writer index.CdxWriter) error {
 
 	for {
 		wr, currentOffset, err := wf.Next()
-		if err == io.EOF {
-			break
-		}
 		if err != nil {
-			return fmt.Errorf("Error: %v, rec num: %v, Offset %v\n", err.Error(), strconv.Itoa(count), currentOffset)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("failed iterating warc file: %w, rec num: %v, offset %v", err, strconv.Itoa(count), currentOffset)
 		}
 		count++
 

@@ -51,6 +51,5 @@ func TestFrom14ToTimeSucceedsOnValidString(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error on valid date string, err: %s", err)
 	}
-
 	// TODO: Maybe test time returned here
 }

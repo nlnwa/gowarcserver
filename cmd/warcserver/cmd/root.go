@@ -16,6 +16,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 
@@ -101,9 +102,7 @@ func initConfig() {
 	})
 
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Config file not found; ignore error
-		} else {
+		if !errors.As(err, &viper.ConfigFileNotFoundError{}) {
 			// Config file was found but another error was produced
 			log.Fatalf("error reading config file: %v", err)
 		}

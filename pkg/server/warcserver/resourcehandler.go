@@ -134,7 +134,7 @@ func (h *resourceHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, er
 		return nil, err
 	}
 	if cdxApi.count == 0 {
-		return nil, fmt.Errorf("Not found")
+		return nil, fmt.Errorf("not found")
 	}
 
 	return localWriter, nil
