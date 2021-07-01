@@ -17,24 +17,25 @@
 package warcserver
 
 import (
-	cdx "github.com/nlnwa/gowarc/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	regexp2 "regexp"
+	"regexp"
 	"strings"
+
+	cdx "github.com/nlnwa/gowarcserver/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
+
+type Op int
 
 const (
-	contains = iota
-	exact
-	regexp
+	OpContains Op = iota
+	OpExact
+	OpRegexp
 )
 
-type filters struct {
-	filter []*filter
-}
+type Filter []filter
 
-func (f *filters) eval(c *cdx.Cdx) bool {
-	for _, ff := range f.filter {
+func (f Filter) eval(c *cdx.Cdx) bool {
+	for _, ff := range f {
 		if !ff.eval(c) {
 			return false
 		}
@@ -42,51 +43,52 @@ func (f *filters) eval(c *cdx.Cdx) bool {
 	return true
 }
 
-func parseFilter(filterStrings []string) *filters {
-	ff := &filters{}
+func parseFilter(filterStrings []string) Filter {
+	var filters Filter
+
 	for _, f := range filterStrings {
 		not := false
 		if f[0] == '!' {
 			f = f[1:]
 			not = true
 		}
-		var op int
+		var op Op
 		switch f[0] {
 		case '=':
 			f = f[1:]
-			op = exact
+			op = OpExact
 		case '~':
 			f = f[1:]
-			op = regexp
+			op = OpRegexp
 		default:
-			op = contains
+			op = OpContains
 		}
 
 		t := strings.SplitN(f, ":", 2)
-		filter := &filter{
+		filter := filter{
 			field:       t[0],
 			filterValue: t[1],
 			invert:      not,
 		}
 
 		switch op {
-		case contains:
+		case OpContains:
 			filter.matcher = func(filterValue, fieldValue string) bool {
 				return strings.Contains(fieldValue, filterValue)
 			}
-		case exact:
+		case OpExact:
 			filter.matcher = func(filterValue, fieldValue string) bool {
 				return fieldValue == filterValue
 			}
-		case regexp:
+		case OpRegexp:
 			filter.matcher = func(filterValue, fieldValue string) bool {
-				return regexp2.MustCompile(filterValue).MatchString(fieldValue)
+				return regexp.MustCompile(filterValue).MatchString(fieldValue)
 			}
 		}
-		ff.filter = append(ff.filter, filter)
+		filters = append(filters, filter)
 	}
 
-	return ff
+	return filters
 }
 
 type filter struct {
@@ -96,7 +98,7 @@ type filter struct {
 	matcher     func(filterValue, fieldValue string) bool
 }
 
-func (f *filter) eval(c *cdx.Cdx) bool {
+func (f filter) eval(c *cdx.Cdx) bool {
 	result := false
 	if fieldValue, found := f.findFieldValue(c); found {
 		result = f.matcher(f.filterValue, fieldValue)
@@ -108,7 +110,7 @@ func (f *filter) eval(c *cdx.Cdx) bool {
 	}
 }
 
-func (f *filter) findFieldValue(c *cdx.Cdx) (fieldValue string, found bool) {
+func (f filter) findFieldValue(c *cdx.Cdx) (fieldValue string, found bool) {
 	c.ProtoReflect().Range(func(descriptor protoreflect.FieldDescriptor, value protoreflect.Value) bool {
 		if string(descriptor.Name()) == f.field {
 			found = true

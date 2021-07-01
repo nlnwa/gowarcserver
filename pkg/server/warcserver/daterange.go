@@ -18,25 +18,24 @@ package warcserver
 
 import (
 	"fmt"
-	"strings"
 )
 
-type dateRange struct {
+type DateRange struct {
 	from string
 	to   string
 }
 
-func parseDateRange(from, to string) *dateRange {
-	from = fmt.Sprintf("%s%0*d", from, 14-len(from), 0)
-	to = fmt.Sprintf("%s%.*s", to, 14-len(to), "99999999999999")
-	d := &dateRange{from: from, to: to}
-	return d
+// contains returns true if the timestamp ts contained by the bounds defined by the DateRange d.
+func (d DateRange) contains(ts string) bool {
+	return ts >= d.from && ts <= d.to
 }
 
-func (d *dateRange) eval(key []byte) bool {
-	ts := strings.Split(string(key), " ")[1]
-	if ts < d.from || ts > d.to {
-		return false
-	}
-	return true
+// From pads the timestamp f with 0's on the right until the string is 14 characters in length.
+func From(f string) string {
+	return fmt.Sprintf("%s%0*d", f, 14-len(f), 0)
+}
+
+// To pads the timestamp t with 9's on the right until the string is 14 characters in length.
+func To(t string) string {
+	return fmt.Sprintf("%s%.*s", t, 14-len(t), "99999999999999")
 }

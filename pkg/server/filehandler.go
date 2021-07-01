@@ -18,41 +18,28 @@ package server
 
 import (
 	"fmt"
-	"net/http"
-
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
+	"net/http"
 )
 
 type fileHandler struct {
 	loader   *loader.Loader
 	db       *index.DB
-	children *localhttp.Children
 }
 
 func (h *fileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	localhttp.AggregatedQuery(h, w, r)
-}
-
-func (h *fileHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
 	files, err := h.db.ListFileNames()
 	if err != nil {
-		return nil, fmt.Errorf("error reading files: %w", err)
+		http.Error(w, fmt.Sprintf("error reading files: %v", err), http.StatusInternalServerError)
+		return
 	}
 
-	localWriter := localhttp.NewWriter()
-	localWriter.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Type", "text/plain")
 	for _, f := range files {
-		fmt.Fprintf(localWriter, "%v\n", f)
+		_, err := fmt.Fprintf(w, "%v\n", f)
+		if err != nil {
+			panic(err)
+		}
 	}
-	return localWriter, nil
-}
-
-func (h *fileHandler) PredicateFn(r *http.Response) bool {
-	return r.StatusCode >= 200 && r.StatusCode < 300
-}
-
-func (h *fileHandler) Children() *localhttp.Children {
-	return h.children
 }

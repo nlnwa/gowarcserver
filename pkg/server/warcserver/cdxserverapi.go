@@ -17,118 +17,294 @@
 package warcserver
 
 import (
+	"fmt"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/gorilla/mux"
+	"github.com/nlnwa/gowarcserver/pkg/index"
+	"github.com/nlnwa/gowarcserver/pkg/timestamp"
+	cdx "github.com/nlnwa/gowarcserver/proto"
+	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/proto"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/dgraph-io/badger/v3"
-	"github.com/gorilla/mux"
-	cdx "github.com/nlnwa/gowarc/proto"
-	"github.com/nlnwa/gowarcserver/pkg/index"
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
-	whatUrl "github.com/nlnwa/whatwg-url/url"
-	"google.golang.org/protobuf/proto"
 )
 
-type RenderFunc func(w *localhttp.Writer, record *cdx.Cdx, cdxApi *cdxServerApi) error
+type RenderFunc func(record *cdx.Cdx) error
 
-type cdxServerApi struct {
-	collection string
-	key        string
-	matchType  string
-	dateRange  *dateRange
-	limit      int
-	filter     *filters
-	sort       *sorter
-	output     string
-	w          *localhttp.Writer
-	count      int
-	renderFunc RenderFunc
+type pywbJson struct {
+	Urlkey    string `json:"urlkey"`
+	Timestamp string `json:"timestamp"`
+	Url       string `json:"url"`
+	Mime      string `json:"mime"`
+	Status    string `json:"status"`
+	Digest    string `json:"digest"`
+	Length    string `json:"length"`
+	Offset    string `json:"offset"`
+	Filename  string `json:"filename"`
 }
 
-func parseCdxServerApi(w *localhttp.Writer, r *http.Request, renderFunc RenderFunc) (*cdxServerApi, error) {
-	var err error
-	c := &cdxServerApi{
-		collection: mux.Vars(r)["collection"],
-		w:          w,
-		renderFunc: renderFunc,
-		output:     r.URL.Query().Get("output"),
+func cdxjToPywbJson(record *cdx.Cdx) *pywbJson {
+	js := &pywbJson{
+		Urlkey:    record.Ssu,
+		Timestamp: record.Sts,
+		Url:       strings.ReplaceAll(record.Uri, "&", "%26"),
+		Mime:      record.Mct,
+		Status:    record.Hsc,
+		Digest:    record.Sha,
+		Length:    record.Rle,
+		// Offset must be empty string or else pywb will try to use it's internal index.
+		Offset:    "",
+		// Filename must be an empty string or else pywb will try to use it's internal index.
+		Filename:  "",
 	}
-
-	var sort string
-	closest := r.URL.Query().Get("closest")
-	if closest != "" {
-		sort = "closest"
-	} else {
-		sort = r.URL.Query().Get("sort")
-	}
-
-	url, err := whatUrl.ParseRef("http://example.com", r.RequestURI)
-	if err != nil {
-		return nil, err
-	}
-
-	c.key, c.matchType, err = parseKey(url.SearchParams().Get("url"), r.URL.Query().Get("matchType"))
-	if err != nil {
-		return nil, err
-	}
-
-	c.dateRange = parseDateRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"))
-	if c.limit, err = strconv.Atoi(r.URL.Query().Get("limit")); err != nil {
-		c.limit = 0
-	}
-
-	c.filter = parseFilter(r.URL.Query()["filter"])
-
-	if c.sort, err = c.parseSort(sort, closest, c.matchType); err != nil {
-		return nil, err
-	}
-
-	return c, nil
+	return js
 }
 
-func (c *cdxServerApi) writeItem(item *badger.Item) (stopIteration bool) {
-	result := &cdx.Cdx{}
-	err := item.Value(func(v []byte) error {
-		if err := proto.Unmarshal(v, result); err != nil {
-			return err
-		}
+const (
+	SortClosest = "closest"
+	SortReverse = "reverse"
+)
 
-		if c.filter.eval(result) {
-			if err := c.renderFunc(c.w, result, c); err != nil {
-				return err
-			}
+var sorts = []string{SortClosest, SortReverse}
 
-			c.count++
+const (
+	MatchTypeExact  = "exact"
+	MatchTypePrefix = "prefix"
+	MatchTypeHost   = "host"
+	MatchTypeDomain = "domain"
+)
+
+var matchTypes = []string{MatchTypeDomain, MatchTypePrefix, MatchTypeHost, MatchTypeExact}
+
+const (
+	OutputCdxj = "cdxj"
+	OutputJson = "json"
+
+	// The following outputs is not implemented:
+	// OutputLink = "link"
+	// OutputText = "text"
+
+	// OutputContent is not part of the CDXJ API but is used by pywb to request warc record content from it's warcserver
+	// and used in a similar fashion by the ResourceHandler.
+	OutputContent = "content"
+)
+
+var outputs = []string{OutputCdxj, OutputJson, OutputContent}
+
+// CdxjServerApi implements https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html.
+type CdxjServerApi struct {
+	Collection string
+	Url        string
+	From       string
+	To         string
+	MatchType  string
+	Limit      uint
+	Sort       string
+	Closest    int64
+	Output     string
+	Filter     []string
+	Fields     []string
+}
+
+// Contains returns true if string e is contained in string slice s.
+func Contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
 		}
-		return nil
-	})
-	if c.limit > 0 && c.count >= c.limit {
-		return true
-	}
-	if err != nil {
-		return true
 	}
 	return false
 }
 
-func (c *cdxServerApi) sortedSearch(db *index.DB, perItemFn index.PerItemFunction, afterIterFn index.AfterIterationFunction) error {
-	var err error
-	if c.sort.closest != "" {
-		err = db.Search(c.key, false, c.sort.add, c.sort.write)
+// ParseCdxjApi parses a *http.Request into an *CdxjServerApi.
+func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
+	vars := mux.Vars(r)
+	query := r.URL.Query()
+
+	cdxjApi := new(CdxjServerApi)
+
+	cdxjApi.Collection = vars["collection"]
+
+	url := query.Get("url")
+	if url == "" {
+		return nil, fmt.Errorf("missing required query parameter \"url\"")
+	}
+	cdxjApi.Url = url
+
+	from := query.Get("from")
+	cdxjApi.From = From(from)
+
+	to := query.Get("to")
+	cdxjApi.To = To(to)
+
+	matchType := query.Get("matchType")
+	if matchType != "" {
+		if !Contains(matchTypes, matchType) {
+			return nil, fmt.Errorf("matchType must be one of %v, was: %s", matchTypes, matchType)
+		}
+		cdxjApi.MatchType = matchType
 	} else {
-		err = db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
+		// Default to exact
+		cdxjApi.MatchType = MatchTypeExact
 	}
 
-	// If no hits with http, try https
-	if c.count == 0 && strings.Contains(c.key, "http:") {
-		c.key = strings.ReplaceAll(c.key, "http:", "https:")
+	limit := query.Get("limit")
+	if limit != "" {
+		l, err := strconv.ParseUint(limit, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("limit must be a positive integer, was %s", limit)
+		}
+		cdxjApi.Limit = uint(l)
+	}
 
-		if c.sort.closest != "" {
-			err = db.Search(c.key, false, c.sort.add, c.sort.write)
+	closest := query.Get("closest")
+	if closest != "" {
+		ts, err := timestamp.From14ToTime(closest)
+		if err != nil {
+			return nil, fmt.Errorf("closest failed to parse: %w", err)
+		}
+		cdxjApi.Closest = ts.Unix()
+	}
+
+	sort := query.Get("sort")
+	if sort != "" {
+		if !Contains(sorts, sort) {
+			return nil, fmt.Errorf("sort must be one of %v, was: %s", sorts, sort)
+		}
+		cdxjApi.Sort = sort
+	}
+
+	if cdxjApi.Sort == SortClosest && cdxjApi.MatchType != MatchTypeExact && closest == "" {
+		return nil, fmt.Errorf("sort=closest requires a closest parameter and matchType=exact")
+	}
+
+	output := query.Get("output")
+	if output != "" {
+		if !Contains(outputs, output) {
+			return nil, fmt.Errorf("output must be one of %v, was: %s", outputs, output)
+		}
+		cdxjApi.Output = output
+	} else {
+		cdxjApi.Output = OutputCdxj
+	}
+
+	filter, ok := query["filter"]
+	if ok {
+		cdxjApi.Filter = filter
+	}
+
+	fields := query.Get("fields")
+	if fields != "" {
+		cdxjApi.Fields = strings.Split(fields, ",")
+	}
+
+	return cdxjApi, nil
+}
+
+type Key string
+
+func (k Key) ts() string {
+	return strings.Split(string(k), " ")[1]
+}
+
+// DbCdxServer implements searching the index database via a CDXJ API
+type DbCdxServer struct {
+	*index.DB
+}
+
+// search the index database and render each item with the provided renderFunc.
+func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, error) {
+	key, err := parseKey(api.Url, api.MatchType)
+	if err != nil {
+		return 0, err
+	}
+
+	dateRange := DateRange{
+		from: api.From,
+		to:   api.To,
+	}
+
+	filter := parseFilter(api.Filter)
+
+	sorter := &sorter{
+		closest: api.Closest,
+	}
+
+	count := uint(0)
+
+	perItemFn := func(item *badger.Item) (stopIteration bool) {
+		key := Key(item.Key())
+
+		if !dateRange.contains(key.ts()) {
+			log.Debugf("key timestamp not in range")
+			return false
+		}
+
+		result := new(cdx.Cdx)
+		err := item.Value(func(v []byte) error {
+			if err := proto.Unmarshal(v, result); err != nil {
+				return err
+			}
+
+			if filter.eval(result) {
+				if err := renderFunc(result); err != nil {
+					return err
+				}
+				count++
+			}
+			return nil
+		})
+		if err != nil {
+			log.WithError(err).WithField("url", api.Url).WithField("key", key).Error("failed to process item value")
+			return true
+		}
+
+		if api.Limit > 0 && count <= api.Limit {
+			return true
 		} else {
-			err = db.Search(c.key, c.sort.reverse, perItemFn, afterIterFn)
+			return false
 		}
 	}
-	return err
+
+	afterIterFn := func(txn *badger.Txn) error {
+		return nil
+	}
+
+	sortPerItemFn := func(item *badger.Item) bool {
+		key := Key(item.Key())
+
+		if !dateRange.contains(key.ts()) {
+			return false
+		}
+
+		sorter.add(item)
+		return false
+	}
+
+	sortAfterIterFn := func(txn *badger.Txn) error {
+		sorter.sort()
+		return sorter.walk(txn, perItemFn)
+	}
+
+	f := perItemFn
+	a := afterIterFn
+
+	if api.Sort == SortClosest {
+		f = sortPerItemFn
+		a = sortAfterIterFn
+	}
+
+	for {
+		err := c.DB.Search(key, api.Sort == SortReverse, f, a)
+		if err != nil {
+			return count, err
+		}
+		if count == 0 && strings.Contains(key, "http:") {
+			// no results found, try https next round
+			key = strings.Replace(key, "http:", "https:", 1)
+		} else {
+			return count, nil
+		}
+	}
 }

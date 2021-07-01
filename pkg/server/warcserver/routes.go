@@ -17,14 +17,37 @@
 package warcserver
 
 import (
+	"net/http"
+	"net/url"
+	"time"
+
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
+	"github.com/nlnwa/gowarcserver/pkg/server/handlers"
 )
 
-func RegisterRoutes(r *mux.Router, db *index.DB, loader *loader.Loader, children *localhttp.Children) {
+func RegisterRoutes(r *mux.Router, db *index.DB, loader *loader.Loader, children []*url.URL, timeout time.Duration) {
+	var resourceHandler http.Handler
+	var indexHandler http.Handler
+
+	if len(children) > 0 {
+		indexHandler = handlers.AggregatedHandler(children, timeout)
+		resourceHandler = handlers.FirstHandler(children, timeout)
+	} else {
+		indexHandler = &IndexHandler{DbCdxServer{db},}
+		resourceHandler = &ResourceHandler{
+			DbCdxServer: DbCdxServer{db},
+			loader: loader,
+		}
+	}
+
+	// https://pywb.readthedocs.io/en/latest/manual/warcserver.html#warcserver-api
+
+	// JSON list of available endpoints
 	r.Handle("/", &rootHandler{})
-	r.Handle("/{collection}/index", &indexHandler{loader: loader, db: db, children: children})
-	r.Handle("/{collection}/resource", &resourceHandler{loader: loader, db: db, children: children})
+	// Direct index
+	r.Handle("/{collection}/index", indexHandler)
+	// Direct resource
+	r.Handle("/{collection}/resource", resourceHandler)
 }
