@@ -30,6 +30,13 @@ func To14(s string) (string, error) {
 }
 
 func From14ToTime(s string) (time.Time, error) {
-	t, err := time.Parse("20060102150405", s)
-	return t, err
+	return time.Parse("20060102150405", s)
+}
+
+// Source: http://cavaliercoder.com/blog/optimized-abs-for-int64-in-go.html:
+//
+// AbsInt64 returns the absolute value of an int64
+func AbsInt64(n int64) int64 {
+	y := n >> 63
+	return (n ^ y) - y
 }

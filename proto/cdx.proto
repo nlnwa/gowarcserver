@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package gowarc.cdx;
 
-option go_package = "github.com/nlnwa/gowarc/gowarcpb";
+option go_package = "github.com/nlnwa/gowarcserver/gowarcpb";
 
 message Cdx {
     // uri (required) - The value should be the non-transformed URI used for the searchable URI (first sortable field).

@@ -14,13 +14,13 @@ func TestBuildUrlSlice(t *testing.T) {
 	tests := []struct {
 		name           string
 		urlStrs        []string
-		expectedUrls   []url.URL
+		expectedUrls   []*url.URL
 		expectedErrors int
 	}{
 		{
 			"parsing empty slice",
 			[]string{},
-			[]url.URL{},
+			[]*url.URL{},
 			0,
 		},
 		{
@@ -29,7 +29,7 @@ func TestBuildUrlSlice(t *testing.T) {
 				"http://192.148.38.150:8888",
 				"http://192.148.38.150:7777",
 			},
-			[]url.URL{
+			[]*url.URL{
 				{
 					Scheme: "http",
 					Host:   "192.148.38.150:8888",
@@ -46,7 +46,7 @@ func TestBuildUrlSlice(t *testing.T) {
 			[]string{
 				"1.22.333:4444",
 			},
-			[]url.URL{},
+			[]*url.URL{},
 			1,
 		},
 	}
@@ -62,14 +62,13 @@ func TestBuildUrlSlice(t *testing.T) {
 			println(urls)
 			for i, url := range urls {
 				expected := tt.expectedUrls[i]
-				if url != expected {
+				if *url != *expected {
 					t.Errorf("Expected %v got %v", expected, url)
 				}
 			}
 		})
 	}
 }
-
 
 func TestConfigToDBMask(t *testing.T) {
 	tests := []struct {

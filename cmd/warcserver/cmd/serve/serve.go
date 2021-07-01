@@ -94,20 +94,20 @@ func runE(warcDirs []string) error {
 	childQueryTimeout := viper.GetDuration("childQueryTimeout")
 	port := viper.GetInt("warcPort")
 	log.Infof("Starting web server at http://localhost:%v", port)
-	err = server.Serve(db, port, childUrls, childQueryTimeout)
+	err = server.Serve(port, db, childUrls, childQueryTimeout)
 	if err != nil {
 		log.Warnf("%v", err)
 	}
 	return nil
 }
 
-func BuildUrlSlice(urlStrs []string) []url.URL {
-	var childUrls []url.URL
+func BuildUrlSlice(urlStrs []string) []*url.URL {
+	var childUrls []*url.URL
 	for _, urlstr := range urlStrs {
 		if u, err := url.Parse(urlstr); err != nil {
 			log.Warnf("Parsing config child url %s failed with error %v", urlstr, err)
 		} else {
-			childUrls = append(childUrls, *u)
+			childUrls = append(childUrls, u)
 		}
 	}
 	return childUrls

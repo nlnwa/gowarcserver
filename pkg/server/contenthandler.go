@@ -20,25 +20,18 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarc/warcrecord"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
-	"github.com/nlnwa/gowarcserver/pkg/server/localhttp"
 	log "github.com/sirupsen/logrus"
 )
 
 type contentHandler struct {
-	loader   *loader.Loader
-	children *localhttp.Children
+	loader *loader.Loader
 }
 
 func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	localhttp.FirstQuery(h, w, r, time.Second*3)
-}
-
-func (h *contentHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, error) {
 	warcid := mux.Vars(r)["id"]
 	if len(warcid) > 0 && warcid[0] != '<' {
 		warcid = "<" + warcid + ">"
@@ -50,41 +43,45 @@ func (h *contentHandler) ServeLocalHTTP(r *http.Request) (*localhttp.Writer, err
 
 	record, err := h.loader.Get(ctx, warcid)
 	if err != nil {
-		return nil, err
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	defer record.Close()
 
-	localWriter := localhttp.NewWriter()
 	switch v := record.Block().(type) {
 	case *warcrecord.RevisitBlock:
 		r, err := v.Response()
 		if err != nil {
-			return nil, err
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		renderContent(localWriter, v, r)
+		renderContent(w, v, r)
 	case warcrecord.HttpResponseBlock:
 		r, err := v.Response()
 		if err != nil {
-			return nil, err
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		renderContent(localWriter, v, r)
+		renderContent(w, v, r)
 	default:
-		localWriter.Header().Set("Content-Type", "text/plain")
-		_, err = record.WarcHeader().Write(localWriter)
+		w.Header().Set("Content-Type", "text/plain")
+		_, err = record.WarcHeader().Write(w)
 		if err != nil {
-			return nil, err
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		rb, err := v.RawBytes()
 		if err != nil {
-			return nil, err
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		_, err = io.Copy(localWriter, rb)
+		_, err = io.Copy(w, rb)
 		if err != nil {
-			return nil, err
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
-	return localWriter, nil
 }
 
 func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Response) {
@@ -101,12 +98,4 @@ func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Res
 	if err != nil {
 		log.Warnf("Failed to writer content for request to %s", r.Request.URL)
 	}
-}
-
-func (h *contentHandler) PredicateFn(r *http.Response) bool {
-	return r.StatusCode == 200
-}
-
-func (h *contentHandler) Children() *localhttp.Children {
-	return h.children
 }

@@ -17,8 +17,9 @@
 package surt
 
 import (
-	"github.com/nlnwa/whatwg-url/url"
 	"strings"
+
+	"github.com/nlnwa/whatwg-url/url"
 )
 
 func SurtU(u *url.Url, includeScheme bool) (string, error) {

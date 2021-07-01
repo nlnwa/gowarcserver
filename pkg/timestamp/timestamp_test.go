@@ -3,7 +3,7 @@ package timestamp_test
 import (
 	"testing"
 
-	"github.com/nlnwa/gowarc/pkg/timestamp"
+	"github.com/nlnwa/gowarcserver/pkg/timestamp"
 )
 
 type TestData struct {

@@ -26,7 +26,7 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
-	gowarcpb "github.com/nlnwa/gowarc/proto"
+	gowarcpb "github.com/nlnwa/gowarcserver/proto"
 	"github.com/nlnwa/gowarc/warcrecord"
 	"github.com/nlnwa/gowarcserver/pkg/compressiontype"
 	log "github.com/sirupsen/logrus"
@@ -233,12 +233,8 @@ func (d *DB) Add(warcRecord warcrecord.WarcRecord, filePath string, offset int64
 		offset:   offset,
 	}
 
-	var err error
 	if warcRecord.Type() == warcrecord.RESPONSE || warcRecord.Type() == warcrecord.REVISIT {
 		rec.cdx = NewCdxRecord(warcRecord, filePath, offset)
-	}
-	if err != nil {
-		return err
 	}
 
 	d.batchMutex.Lock()

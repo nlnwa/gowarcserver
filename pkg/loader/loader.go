@@ -28,7 +28,11 @@ type StorageRefResolver interface {
 }
 
 type StorageLoader interface {
-	Load(ctx context.Context, storageRef string) (record warcrecord.WarcRecord, err error)
+	Load(ctx context.Context, storageRef string) (warcrecord.WarcRecord, error)
+}
+
+type ResourceLoader interface {
+	Get(ctx context.Context, warcId string) (warcrecord.WarcRecord, error)
 }
 
 type Loader struct {
