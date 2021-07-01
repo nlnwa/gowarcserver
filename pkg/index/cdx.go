@@ -23,7 +23,6 @@ import (
 	"github.com/nlnwa/gowarcserver/pkg/surt"
 	"github.com/nlnwa/gowarcserver/pkg/timestamp"
 	cdx "github.com/nlnwa/gowarcserver/proto"
-	log "github.com/sirupsen/logrus"
 )
 
 func NewCdxRecord(wr warcrecord.WarcRecord, fileName string, offset int64) *cdx.Cdx {
@@ -53,8 +52,6 @@ func NewCdxRecord(wr warcrecord.WarcRecord, fileName string, offset int64) *cdx.
 			cdx.Mct = resp.Header.Get("Content-Type")
 			cdx.Ple = resp.Header.Get("Content-Length")
 		}
-	default:
-		log.Fatal("Unreachable") // This is fatal and should never happen
 	}
 
 	return cdx
