@@ -86,6 +86,7 @@ func ChildHandler(children []*url.URL, timeout time.Duration, responseHandler Re
 			req.URL = BuildChildURLString(childUrl, req.URL)
 			go func() {
 				defer wg.Done()
+				// The consumer of the http response is responsible for closing the response body
 				//nolint:bodyclose
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
