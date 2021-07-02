@@ -1,11 +1,13 @@
 name: Docker
 
 on:
-  # Only trigger, when the linting & testing workflow complete
-  workflow_run:
-    workflows: ["golangci-lint", "golangci-test"]
-    types:
-      - completed
+  push:
+    # Publish `master` as Docker `latest` image.
+    branches:
+      - master
+  # Publish `v1.2.3` tags as releases.
+  tags:
+    - v*
 
 env:
   IMAGE_NAME: gowarcserver
@@ -17,7 +19,6 @@ jobs:
   push:
     runs-on: ubuntu-latest
     # only run the push job if linting and testing was successfull
-    if: ${{github.event.workflow_run.conclusion == 'success'}}
     steps:
       - uses: actions/checkout@v2
 
