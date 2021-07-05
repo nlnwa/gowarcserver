@@ -11,6 +11,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+var client = &http.Client{
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
 func AggregatedHandler(children []*url.URL, timeout time.Duration) http.Handler {
 	responseHandler := func(w http.ResponseWriter, r *http.Request, responses <-chan *http.Response) {
 		written := false
@@ -59,7 +65,7 @@ func FirstHandler(children []*url.URL, timeout time.Duration) http.Handler {
 			_ = resp.Body.Close()
 		}
 		if !written {
-			http.Error(w, "Not found",  http.StatusNotFound)
+			http.Error(w, "Not found", http.StatusNotFound)
 		}
 	}
 	return ChildHandler(children, timeout, responseHandler)
@@ -86,11 +92,12 @@ func ChildHandler(children []*url.URL, timeout time.Duration, responseHandler Re
 			req.URL = BuildChildURLString(childUrl, req.URL)
 			go func() {
 				defer wg.Done()
+
 				// The consumer of the http response is responsible for closing the response body
 				//nolint:bodyclose
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := client.Do(req)
 				if err != nil {
-					log.Errorf("request failed: %v", err)
+					log.Errorf("request failed: %v: %v", req, err)
 				} else {
 					responses <- resp
 				}
