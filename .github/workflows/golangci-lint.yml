@@ -28,7 +28,7 @@ jobs:
 
           # golangci-lint command line arguments.
           # Enable additional linters (see: https://golangci-lint.run/usage/linters/)
-          args: -E "bodyclose" -E "dogsled" -E "durationcheck" -E "errorlint" -E "forcetypeassert" -E "noctx" -E "exhaustive" -E "exportloopref"
+          args: -E "bodyclose" -E "dogsled" -E "durationcheck" -E "errorlint" -E "forcetypeassert" -E "noctx" -E "exhaustive" -E "exportloopref" --timeout 3m0s
 
           # Optional: show only new issues if it's a pull request. The default value is `false`.
           # only-new-issues: true
