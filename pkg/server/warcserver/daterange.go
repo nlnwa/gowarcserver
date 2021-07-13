@@ -18,6 +18,7 @@ package warcserver
 
 import (
 	"fmt"
+	"strconv"
 )
 
 type DateRange struct {
@@ -26,8 +27,20 @@ type DateRange struct {
 }
 
 // contains returns true if the timestamp ts contained by the bounds defined by the DateRange d.
-func (d DateRange) contains(ts string) bool {
-	return ts >= d.from && ts <= d.to
+func (d DateRange) contains(ts string) (bool, error) {
+	from, err := strconv.Atoi(d.from)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse DateRange.from: %w", err)
+	}
+	to, err := strconv.Atoi(d.to)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse DateRange.to: %w", err)
+	}
+	timestamp, err := strconv.Atoi(ts)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse timestamp: %w", err)
+	}
+	return timestamp >= from && timestamp <= to, nil
 }
 
 // From pads the timestamp f with 0's on the right until the string is 14 characters in length.
