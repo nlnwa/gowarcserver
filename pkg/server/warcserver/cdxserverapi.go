@@ -97,8 +97,7 @@ var outputs = []string{OutputCdxj, OutputJson, OutputContent}
 type CdxjServerApi struct {
 	Collection string
 	Url        string
-	From       string
-	To         string
+	FromTo     DateRange
 	MatchType  string
 	Limit      uint
 	Sort       string
@@ -133,11 +132,11 @@ func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
 	}
 	cdxjApi.Url = url
 
-	from := query.Get("from")
-	cdxjApi.From = From(from)
-
-	to := query.Get("to")
-	cdxjApi.To = To(to)
+	var err error
+	cdxjApi.FromTo, err = NewDateRange(query.Get("from"), query.Get("to"))
+	if err != nil {
+		return nil, err
+	}
 
 	matchType := query.Get("matchType")
 	if matchType != "" {
@@ -221,11 +220,6 @@ func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, er
 		return 0, err
 	}
 
-	dateRange := DateRange{
-		from: api.From,
-		to:   api.To,
-	}
-
 	filter := parseFilter(api.Filter)
 
 	sorter := &sorter{
@@ -236,8 +230,7 @@ func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, er
 
 	perItemFn := func(item *badger.Item) (stopIteration bool) {
 		key := Key(item.Key())
-
-		contains, err := dateRange.contains(key.ts())
+		contains, err := api.FromTo.contains(key.ts())
 		if err != nil {
 			log.Warnf("%s", err)
 			return false
@@ -280,7 +273,7 @@ func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, er
 	sortPerItemFn := func(item *badger.Item) bool {
 		key := Key(item.Key())
 
-		contains, err := dateRange.contains(key.ts())
+		contains, err := api.FromTo.contains(key.ts())
 		if err != nil {
 			log.Warnf("%s", err)
 			return false

@@ -35,10 +35,10 @@ func RegisterRoutes(r *mux.Router, db *index.DB, loader *loader.Loader, children
 		indexHandler = handlers.AggregatedHandler(children, timeout)
 		resourceHandler = handlers.FirstHandler(children, timeout)
 	} else {
-		indexHandler = &IndexHandler{DbCdxServer{db},}
+		indexHandler = &IndexHandler{DbCdxServer{db}}
 		resourceHandler = &ResourceHandler{
 			DbCdxServer: DbCdxServer{db},
-			loader: loader,
+			loader:      loader,
 		}
 	}
 

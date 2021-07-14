@@ -18,37 +18,130 @@ package warcserver
 
 import (
 	"fmt"
-	"strconv"
+	"math"
+	"strings"
+	"time"
 )
 
 type DateRange struct {
-	from string
-	to   string
+	from int64
+	to   int64
+}
+
+const timeLayout = "20060102150405"
+
+func NewDateRange(fromstr string, tostr string) (DateRange, error) {
+	from, err := From(fromstr)
+	if err != nil {
+		return DateRange{0, 0}, err
+	}
+	to, err := To(tostr)
+	if err != nil {
+		return DateRange{0, 0}, err
+	}
+
+	return DateRange{
+		from,
+		to,
+	}, nil
 }
 
 // contains returns true if the timestamp ts contained by the bounds defined by the DateRange d.
+// input 'ts' is 'trusted' and does not have the same parsing complexity as a From or To string
 func (d DateRange) contains(ts string) (bool, error) {
-	from, err := strconv.Atoi(d.from)
+	timestamp, err := time.Parse(timeLayout, ts)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse DateRange.from: %w", err)
+		return false, fmt.Errorf("failed to parse ts: %w", err)
 	}
-	to, err := strconv.Atoi(d.to)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse DateRange.to: %w", err)
-	}
-	timestamp, err := strconv.Atoi(ts)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse timestamp: %w", err)
-	}
-	return timestamp >= from && timestamp <= to, nil
+	unixTs := timestamp.Unix()
+
+	return unixTs >= d.from && unixTs <= d.to, nil
 }
 
-// From pads the timestamp f with 0's on the right until the string is 14 characters in length.
-func From(f string) string {
-	return fmt.Sprintf("%s%0*d", f, 14-len(f), 0)
+// Implemented according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to
+func From(f string) (int64, error) {
+	fLen := len(f)
+	if fLen%2 != 0 {
+		return 0, fmt.Errorf("'from' string was not an odd number, len: %d", fLen)
+	}
+	if fLen > 14 {
+		return 0, fmt.Errorf("expected from string len less than 14, len: %d", fLen)
+	}
+
+	// No specified from date
+	if fLen < 4 {
+		return math.MinInt64, nil
+	}
+
+	builder := strings.Builder{}
+	builder.Grow(14)
+	builder.WriteString(f)
+	if builder.Len() <= 4 {
+		builder.WriteString("01")
+	}
+	if builder.Len() <= 6 {
+		builder.WriteString("01")
+	}
+	if builder.Len() <= 8 {
+		builder.WriteString("00")
+	}
+	if builder.Len() <= 10 {
+		builder.WriteString("00")
+	}
+	if builder.Len() <= 12 {
+		builder.WriteString("00")
+	}
+
+	date := builder.String()
+	from, err := time.Parse(timeLayout, date)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse 'from' date %s, %w", date, err)
+	}
+
+	return from.Unix(), nil
 }
 
-// To pads the timestamp t with 9's on the right until the string is 14 characters in length.
-func To(t string) string {
-	return fmt.Sprintf("%s%.*s", t, 14-len(t), "99999999999999")
+// Implemented according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
+func To(t string) (int64, error) {
+	fLen := len(t)
+	if fLen%2 != 0 {
+		return 0, fmt.Errorf("'to' string was not an odd number, len: %d", fLen)
+	}
+	if fLen > 14 {
+		return 0, fmt.Errorf("expected from string len less than 14, len: %d", fLen)
+	}
+
+	// No specified from date
+	if fLen < 4 {
+		return math.MaxInt64, nil
+	}
+
+	builder := strings.Builder{}
+	builder.Grow(14)
+	builder.WriteString(t)
+	if builder.Len() <= 4 {
+		builder.WriteString("12")
+	}
+	// Assumption: there is no harm in having a timestamp with a month with less than 31 days
+	// 			   be assigned 31 days
+	if builder.Len() <= 6 {
+		builder.WriteString("31")
+	}
+	if builder.Len() <= 8 {
+		builder.WriteString("23")
+	}
+	if builder.Len() <= 10 {
+		builder.WriteString("59")
+	}
+	if builder.Len() <= 12 {
+		builder.WriteString("59")
+	}
+
+	date := builder.String()
+	to, err := time.Parse(timeLayout, date)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse 'to' date %s, %w", date, err)
+	}
+
+	return to.Unix(), nil
 }
