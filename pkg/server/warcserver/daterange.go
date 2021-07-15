@@ -19,7 +19,6 @@ package warcserver
 import (
 	"fmt"
 	"math"
-	"strings"
 	"time"
 )
 
@@ -33,11 +32,11 @@ const timeLayout = "20060102150405"
 func NewDateRange(fromstr string, tostr string) (DateRange, error) {
 	from, err := From(fromstr)
 	if err != nil {
-		return DateRange{0, 0}, err
+		return DateRange{}, err
 	}
 	to, err := To(tostr)
 	if err != nil {
-		return DateRange{0, 0}, err
+		return DateRange{}, err
 	}
 
 	return DateRange{
@@ -58,44 +57,24 @@ func (d DateRange) contains(ts string) (bool, error) {
 	return unixTs >= d.from && unixTs <= d.to, nil
 }
 
-// Implemented according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to
+// Implemented according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
 func From(f string) (int64, error) {
 	fLen := len(f)
 	if fLen%2 != 0 {
-		return 0, fmt.Errorf("'from' string was not an odd number, len: %d", fLen)
+		return 0, fmt.Errorf("'from' string was an odd number, len: %d", fLen)
 	}
 	if fLen > 14 {
-		return 0, fmt.Errorf("expected from string len less than 14, len: %d", fLen)
+		return 0, fmt.Errorf("expected 'from' string len less than 14, len: %d", fLen)
 	}
 
 	// No specified from date
 	if fLen < 4 {
-		return math.MinInt64, nil
+		return time.Time{}.Unix(), nil
 	}
 
-	builder := strings.Builder{}
-	builder.Grow(14)
-	builder.WriteString(f)
-	if builder.Len() <= 4 {
-		builder.WriteString("01")
-	}
-	if builder.Len() <= 6 {
-		builder.WriteString("01")
-	}
-	if builder.Len() <= 8 {
-		builder.WriteString("00")
-	}
-	if builder.Len() <= 10 {
-		builder.WriteString("00")
-	}
-	if builder.Len() <= 12 {
-		builder.WriteString("00")
-	}
-
-	date := builder.String()
-	from, err := time.Parse(timeLayout, date)
+	from, err := time.Parse(timeLayout[:fLen], f)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse 'from' date %s, %w", date, err)
+		return 0, fmt.Errorf("failed to parse 'from' date %s, %w", f, err)
 	}
 
 	return from.Unix(), nil
@@ -103,44 +82,38 @@ func From(f string) (int64, error) {
 
 // Implemented according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
 func To(t string) (int64, error) {
-	fLen := len(t)
-	if fLen%2 != 0 {
-		return 0, fmt.Errorf("'to' string was not an odd number, len: %d", fLen)
+	tLen := len(t)
+	if tLen%2 != 0 {
+		return 0, fmt.Errorf("'to' string was an odd number, len: %d", tLen)
 	}
-	if fLen > 14 {
-		return 0, fmt.Errorf("expected from string len less than 14, len: %d", fLen)
+	if tLen > 14 {
+		return 0, fmt.Errorf("expected 'to' string len less than 14, len: %d", tLen)
 	}
 
 	// No specified from date
-	if fLen < 4 {
+	if tLen < 4 {
 		return math.MaxInt64, nil
 	}
 
-	builder := strings.Builder{}
-	builder.Grow(14)
-	builder.WriteString(t)
-	if builder.Len() <= 4 {
-		builder.WriteString("12")
-	}
-	// Assumption: there is no harm in having a timestamp with a month with less than 31 days
-	// 			   be assigned 31 days
-	if builder.Len() <= 6 {
-		builder.WriteString("31")
-	}
-	if builder.Len() <= 8 {
-		builder.WriteString("23")
-	}
-	if builder.Len() <= 10 {
-		builder.WriteString("59")
-	}
-	if builder.Len() <= 12 {
-		builder.WriteString("59")
+	to, err := time.Parse(timeLayout[:tLen], t)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse 'to' date %s, %w", t, err)
 	}
 
-	date := builder.String()
-	to, err := time.Parse(timeLayout, date)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse 'to' date %s, %w", date, err)
+	switch tLen {
+	case 4:
+		to = to.AddDate(0, 12, -1) // 31 days in decemeber
+		to = to.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+	case 6:
+		// add one month - one day, i.e: user supplies january, we add 29 - 1
+		to = to.AddDate(0, 1, -1)
+		to = to.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+	case 8:
+		to = to.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+	case 10:
+		to = to.Add(time.Minute*59 + time.Second*59)
+	case 12:
+		to = to.Add(time.Second * 59)
 	}
 
 	return to.Unix(), nil

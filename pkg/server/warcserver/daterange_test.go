@@ -3,19 +3,20 @@ package warcserver
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 type dateRangeTestData struct {
 	name      string
 	daterange DateRange
-	timestamp string
+	datestr   string
 	expect    bool
 }
 
 func TestValidDateRangeContains(t *testing.T) {
 	tests := []dateRangeTestData{
 		{
-			"'timestamp' in range returns true",
+			"date string in range returns true",
 			DateRange{
 				from: 0,
 				to:   60,
@@ -24,7 +25,7 @@ func TestValidDateRangeContains(t *testing.T) {
 			true,
 		},
 		{
-			"'timestamp' same as 'from' returns true",
+			"date string same as 'from' returns true",
 			DateRange{
 				from: 0,
 				to:   60,
@@ -33,7 +34,7 @@ func TestValidDateRangeContains(t *testing.T) {
 			true,
 		},
 		{
-			"'timestamp' same as 'to' returns true",
+			"date string same as 'to' returns true",
 			DateRange{
 				from: 0,
 				to:   60,
@@ -42,7 +43,7 @@ func TestValidDateRangeContains(t *testing.T) {
 			true,
 		},
 		{
-			"'timestamp' below range returns false",
+			"date string below range returns false",
 			DateRange{
 				from: 59,
 				to:   60,
@@ -51,7 +52,7 @@ func TestValidDateRangeContains(t *testing.T) {
 			false,
 		},
 		{
-			"'timestamp' above range returns false",
+			"date string above range returns false",
 			DateRange{
 				from: 0,
 				to:   1,
@@ -63,7 +64,7 @@ func TestValidDateRangeContains(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			contains, err := tt.daterange.contains(tt.timestamp)
+			contains, err := tt.daterange.contains(tt.datestr)
 			if err != nil {
 				t.Errorf("Unexpected error: %s", err)
 			}
@@ -76,7 +77,7 @@ func TestValidDateRangeContains(t *testing.T) {
 
 func TestInvalidContainData(t *testing.T) {
 	test := dateRangeTestData{
-		"invalid 'to' value fails",
+		"invalid date string value fails",
 		DateRange{
 			from: 0,
 			to:   60,
@@ -86,7 +87,7 @@ func TestInvalidContainData(t *testing.T) {
 	}
 
 	t.Run(test.name, func(t *testing.T) {
-		contains, err := test.daterange.contains(test.timestamp)
+		contains, err := test.daterange.contains(test.datestr)
 		if err == nil {
 			t.Errorf("Expected error, got %v", err)
 		}
@@ -97,7 +98,7 @@ func TestInvalidContainData(t *testing.T) {
 	})
 }
 
-func TestInFromAndToParsing(t *testing.T) {
+func TestFromAndToParsing(t *testing.T) {
 	tests := []struct {
 		name         string
 		fromAndTo    string
@@ -113,16 +114,30 @@ func TestInFromAndToParsing(t *testing.T) {
 			false,
 		},
 		{
-			"valid partial date string succeeds",
+			"missing seconds date string succeeds",
 			"197001010000",
 			0,
 			59,
 			false,
 		},
 		{
+			"missing minutes date string succeeds",
+			"1970010100",
+			0,
+			59*60 + 59,
+			false,
+		},
+		{
+			"missing hours date string succeeds",
+			"19700101",
+			0,
+			23*60*60 + 60*59 + 59,
+			false,
+		},
+		{
 			"empty date string succeeds",
 			"",
-			math.MinInt64,
+			time.Time{}.Unix(),
 			math.MaxInt64,
 			false,
 		},
@@ -156,14 +171,14 @@ func TestInFromAndToParsing(t *testing.T) {
 				t.Errorf("Unexpected 'from' error: %s", err)
 			}
 			if from != tt.expectedFrom {
-				t.Errorf("Expected %d, got %d", tt.expectedFrom, from)
+				t.Errorf("From expected %d, got %d", tt.expectedFrom, from)
 			}
 			to, err := To(tt.fromAndTo)
 			if err != nil && !tt.expectError {
 				t.Errorf("Unexpected 'to' error: %s", err)
 			}
 			if to != tt.expectedTo {
-				t.Errorf("Expected %d, got %d", tt.expectedTo, to)
+				t.Errorf("To expected %d, got %d", tt.expectedTo, to)
 			}
 		})
 	}
