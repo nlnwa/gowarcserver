@@ -18,24 +18,101 @@ package warcserver
 
 import (
 	"fmt"
+	"math"
+	"time"
 )
 
 type DateRange struct {
-	from string
-	to   string
+	from int64
+	to   int64
+}
+
+const timeLayout = "20060102150405"
+
+func NewDateRange(fromstr string, tostr string) (DateRange, error) {
+	from, err := From(fromstr)
+	if err != nil {
+		return DateRange{}, err
+	}
+	to, err := To(tostr)
+	if err != nil {
+		return DateRange{}, err
+	}
+
+	return DateRange{
+		from,
+		to,
+	}, nil
 }
 
 // contains returns true if the timestamp ts contained by the bounds defined by the DateRange d.
-func (d DateRange) contains(ts string) bool {
-	return ts >= d.from && ts <= d.to
+// input 'ts' is 'trusted' and does not have the same parsing complexity as a From or To string
+func (d DateRange) contains(ts string) (bool, error) {
+	timestamp, err := time.Parse(timeLayout, ts)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse ts: %w", err)
+	}
+	unixTs := timestamp.Unix()
+
+	return unixTs >= d.from && unixTs <= d.to, nil
 }
 
-// From pads the timestamp f with 0's on the right until the string is 14 characters in length.
-func From(f string) string {
-	return fmt.Sprintf("%s%0*d", f, 14-len(f), 0)
+// Implemented according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
+func From(f string) (int64, error) {
+	fLen := len(f)
+	if fLen%2 != 0 {
+		return 0, fmt.Errorf("'from' string was an odd number, len: %d", fLen)
+	}
+	if fLen > 14 {
+		return 0, fmt.Errorf("expected 'from' string len less than 14, len: %d", fLen)
+	}
+
+	// No specified from date
+	if fLen < 4 {
+		return time.Time{}.Unix(), nil
+	}
+
+	from, err := time.Parse(timeLayout[:fLen], f)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse 'from' date %s, %w", f, err)
+	}
+
+	return from.Unix(), nil
 }
 
-// To pads the timestamp t with 9's on the right until the string is 14 characters in length.
-func To(t string) string {
-	return fmt.Sprintf("%s%.*s", t, 14-len(t), "99999999999999")
+// Implemented according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
+func To(t string) (int64, error) {
+	tLen := len(t)
+	if tLen%2 != 0 {
+		return 0, fmt.Errorf("'to' string was an odd number, len: %d", tLen)
+	}
+	if tLen > 14 {
+		return 0, fmt.Errorf("expected 'to' string len less than 14, len: %d", tLen)
+	}
+
+	// No specified from date
+	if tLen < 4 {
+		return math.MaxInt64, nil
+	}
+
+	to, err := time.Parse(timeLayout[:tLen], t)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse 'to' date %s, %w", t, err)
+	}
+
+	switch tLen {
+	case 4:
+		to = to.AddDate(0, 12, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+	case 6:
+		// add one month - one day, i.e: user supplies january, we add 29 - 1
+		to = to.AddDate(0, 1, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+	case 8:
+		to = to.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+	case 10:
+		to = to.Add(time.Minute*59 + time.Second*59)
+	case 12:
+		to = to.Add(time.Second * 59)
+	}
+
+	return to.Unix(), nil
 }

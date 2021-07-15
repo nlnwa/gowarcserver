@@ -18,6 +18,10 @@ package warcserver
 
 import (
 	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarcserver/pkg/index"
@@ -25,9 +29,6 @@ import (
 	cdx "github.com/nlnwa/gowarcserver/proto"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
-	"net/http"
-	"strconv"
-	"strings"
 )
 
 type RenderFunc func(record *cdx.Cdx) error
@@ -54,9 +55,9 @@ func cdxjToPywbJson(record *cdx.Cdx) *pywbJson {
 		Digest:    record.Sha,
 		Length:    record.Rle,
 		// Offset must be empty string or else pywb will try to use it's internal index.
-		Offset:    "",
+		Offset: "",
 		// Filename must be an empty string or else pywb will try to use it's internal index.
-		Filename:  "",
+		Filename: "",
 	}
 	return js
 }
@@ -96,8 +97,7 @@ var outputs = []string{OutputCdxj, OutputJson, OutputContent}
 type CdxjServerApi struct {
 	Collection string
 	Url        string
-	From       string
-	To         string
+	FromTo     DateRange
 	MatchType  string
 	Limit      uint
 	Sort       string
@@ -132,11 +132,11 @@ func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
 	}
 	cdxjApi.Url = url
 
-	from := query.Get("from")
-	cdxjApi.From = From(from)
-
-	to := query.Get("to")
-	cdxjApi.To = To(to)
+	var err error
+	cdxjApi.FromTo, err = NewDateRange(query.Get("from"), query.Get("to"))
+	if err != nil {
+		return nil, err
+	}
 
 	matchType := query.Get("matchType")
 	if matchType != "" {
@@ -220,11 +220,6 @@ func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, er
 		return 0, err
 	}
 
-	dateRange := DateRange{
-		from: api.From,
-		to:   api.To,
-	}
-
 	filter := parseFilter(api.Filter)
 
 	sorter := &sorter{
@@ -235,14 +230,18 @@ func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, er
 
 	perItemFn := func(item *badger.Item) (stopIteration bool) {
 		key := Key(item.Key())
-
-		if !dateRange.contains(key.ts()) {
+		contains, err := api.FromTo.contains(key.ts())
+		if err != nil {
+			log.Warnf("%s", err)
+			return false
+		}
+		if !contains {
 			log.Debugf("key timestamp not in range")
 			return false
 		}
 
 		result := new(cdx.Cdx)
-		err := item.Value(func(v []byte) error {
+		err = item.Value(func(v []byte) error {
 			if err := proto.Unmarshal(v, result); err != nil {
 				return err
 			}
@@ -274,7 +273,12 @@ func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, er
 	sortPerItemFn := func(item *badger.Item) bool {
 		key := Key(item.Key())
 
-		if !dateRange.contains(key.ts()) {
+		contains, err := api.FromTo.contains(key.ts())
+		if err != nil {
+			log.Warnf("%s", err)
+			return false
+		}
+		if !contains {
 			return false
 		}
 
