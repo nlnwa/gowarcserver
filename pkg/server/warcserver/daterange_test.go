@@ -135,6 +135,20 @@ func TestFromAndToParsing(t *testing.T) {
 			false,
 		},
 		{
+			"normal year date string succeeds",
+			"197002",
+			time.Date(1970, 2, 1, 0, 0, 0, 0, time.UTC).Unix(),
+			time.Date(1970, 2, 28, 23, 59, 59, 0, time.UTC).Unix(),
+			false,
+		},
+		{
+			"leap year date string succeeds",
+			"200002",
+			time.Date(2000, 2, 1, 0, 0, 0, 0, time.UTC).Unix(),
+			time.Date(2000, 2, 29, 23, 59, 59, 0, time.UTC).Unix(),
+			false,
+		},
+		{
 			"empty date string succeeds",
 			"",
 			time.Time{}.Unix(),

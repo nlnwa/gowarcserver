@@ -102,12 +102,10 @@ func To(t string) (int64, error) {
 
 	switch tLen {
 	case 4:
-		to = to.AddDate(0, 12, -1) // 31 days in decemeber
-		to = to.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+		to = to.AddDate(0, 12, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
 	case 6:
 		// add one month - one day, i.e: user supplies january, we add 29 - 1
-		to = to.AddDate(0, 1, -1)
-		to = to.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+		to = to.AddDate(0, 1, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
 	case 8:
 		to = to.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
 	case 10:
