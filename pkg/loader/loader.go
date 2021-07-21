@@ -18,8 +18,9 @@ package loader
 
 import (
 	"context"
+	"errors"
 
-	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarc"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -28,11 +29,11 @@ type StorageRefResolver interface {
 }
 
 type StorageLoader interface {
-	Load(ctx context.Context, storageRef string) (warcrecord.WarcRecord, error)
+	Load(ctx context.Context, storageRef string) (gowarc.WarcRecord, error)
 }
 
 type ResourceLoader interface {
-	Get(ctx context.Context, warcId string) (warcrecord.WarcRecord, error)
+	Get(ctx context.Context, warcId string) (gowarc.WarcRecord, error)
 }
 
 type Loader struct {
@@ -41,34 +42,38 @@ type Loader struct {
 	NoUnpack bool
 }
 
-func (l *Loader) Get(ctx context.Context, warcId string) (record warcrecord.WarcRecord, err error) {
+func (l *Loader) Get(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
 	storageRef, err := l.Resolver.Resolve(warcId)
 	if err != nil {
-		return
+		return nil, err
 	}
-	record, err = l.Loader.Load(ctx, storageRef)
+	record, err := l.Loader.Load(ctx, storageRef)
 	if err != nil {
-		return
+		return nil, err
 	}
-
 	if l.NoUnpack {
-		return
+		return nil, errors.New("loader set to not unpack")
 	}
 
-	// TODO: Unpack revisits and continuation
-	if record.Type() == warcrecord.REVISIT {
-		log.Debugf("resolving revisit  %v -> %v", record.WarcHeader().Get(warcrecord.WarcRecordID), record.WarcHeader().Get(warcrecord.WarcRefersTo))
-		storageRef, err = l.Resolver.Resolve(record.WarcHeader().Get(warcrecord.WarcRefersTo))
+	// TODO: handle continuation blocks, see: https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/#continuation
+	var rtrRecord gowarc.WarcRecord
+	switch record.Type() {
+	case gowarc.Revisit:
+		log.Debugf("resolving revisit  %v -> %v", record.WarcHeader().Get(gowarc.WarcRecordID), record.WarcHeader().Get(gowarc.WarcRefersTo))
+		storageRef, err = l.Resolver.Resolve(record.WarcHeader().Get(gowarc.WarcRefersTo))
 		if err != nil {
-			return
+			return nil, err
 		}
-		var revisitOf warcrecord.WarcRecord
+		var revisitOf gowarc.WarcRecord
 		revisitOf, err = l.Loader.Load(ctx, storageRef)
 		if err != nil {
-			return
+			return nil, err
 		}
-		record, err = warcrecord.Merge(record, revisitOf)
+		// TODO: there was a 'Merge(record, revisitOf)' call here. We need to do something similar
+		rtrRecord = revisitOf
+	default:
+		rtrRecord = record
 	}
 
-	return
+	return rtrRecord, nil
 }

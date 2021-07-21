@@ -26,9 +26,9 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
-	gowarcpb "github.com/nlnwa/gowarcserver/proto"
-	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/pkg/compressiontype"
+	gowarcpb "github.com/nlnwa/gowarcserver/proto"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -226,14 +226,14 @@ func (d *DB) Close() {
 	_ = d.cdxIndex.close()
 }
 
-func (d *DB) Add(warcRecord warcrecord.WarcRecord, filePath string, offset int64) error {
+func (d *DB) Add(warcRecord gowarc.WarcRecord, filePath string, offset int64) error {
 	rec := &record{
-		id:       warcRecord.WarcHeader().Get(warcrecord.WarcRecordID),
+		id:       warcRecord.WarcHeader().Get(gowarc.WarcRecordID),
 		filePath: filePath,
 		offset:   offset,
 	}
 
-	if warcRecord.Type() == warcrecord.RESPONSE || warcRecord.Type() == warcrecord.REVISIT {
+	if warcRecord.Type() == gowarc.Response || warcRecord.Type() == gowarc.Revisit {
 		rec.cdx = NewCdxRecord(warcRecord, filePath, offset)
 	}
 

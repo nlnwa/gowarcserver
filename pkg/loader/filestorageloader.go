@@ -19,13 +19,10 @@ package loader
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
-	"github.com/nlnwa/gowarc/warcoptions"
-	"github.com/nlnwa/gowarc/warcreader"
-	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarc"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -33,28 +30,33 @@ type FileStorageLoader struct {
 	FilePathResolver func(fileName string) (filePath string, err error)
 }
 
-func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record warcrecord.WarcRecord, err error) {
+func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record gowarc.WarcRecord, err error) {
 	filePath, offset, err := f.parseStorageRef(storageRef)
 	if err != nil {
 		return nil, err
 	}
 	log.Debugf("loading record from file: %s, offset: %v", filePath, offset)
 
-	opts := &warcoptions.WarcOptions{Strict: false}
-	wf, err := warcreader.NewWarcFilename(filePath, offset, opts)
+	opts := gowarc.WithStrictValidation()
+	wf, err := gowarc.NewWarcFileReader(filePath, offset, opts)
 	if err != nil {
+		log.Infof("failed creating WarcFileReader: %s", err)
 		return
 	}
 
 	go func() {
 		<-ctx.Done()
-		log.Tracef("File: %v closed\n", filePath)
+		log.Tracef("file: %v closed\n", filePath)
 		wf.Close()
 	}()
 
-	record, _, err = wf.Next()
+	record, offset, validation, err := wf.Next()
+	if !validation.Valid() {
+		log.Warn(validation.String())
+		return nil, fmt.Errorf("validation error in warcfile at offset %d", offset)
+	}
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Error: %v, Offset %v\n", err.Error(), offset)
+		log.Errorf("%s, offset %v\n", err, offset)
 		return nil, err
 	}
 	return

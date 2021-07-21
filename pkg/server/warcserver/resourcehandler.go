@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nlnwa/gowarc/warcoptions"
-	"github.com/nlnwa/gowarc/warcwriter"
-	log "github.com/sirupsen/logrus"
+
 	"io"
 	"net/http"
 
-	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarc"
+	log "github.com/sirupsen/logrus"
+
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	cdx "github.com/nlnwa/gowarcserver/proto"
 )
@@ -39,106 +39,95 @@ func (rh *ResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rh *ResourceHandler) render(w http.ResponseWriter, api *CdxjServerApi) RenderFunc {
-	return func(record * cdx.Cdx) error{
-		warcId := record.Rid
-		if len(warcId) > 0 && warcId[0] != '<'{
+	return func(cdxRecord *cdx.Cdx) error {
+		warcId := cdxRecord.Rid
+		if len(warcId) > 0 && warcId[0] != '<' {
 			warcId = "<" + warcId + ">"
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		warcRecord, err := rh.loader.Get(ctx, warcId)
-		if err != nil{
+		if err != nil {
 			return err
 		}
-		defer warcRecord.Close()
+		defer func() {
+			err := warcRecord.Close()
+			if err != nil {
+				log.Warnf("failed to close warc record: %s", err)
+			}
+		}()
 
-		switch api.Output{
+		switch api.Output {
 		case OutputContent:
-			switch v := warcRecord.Block().(type){
-			case warcrecord.HttpResponseBlock:
-				r, err := v.Response()
-				if err != nil{
+			switch v := warcRecord.Block().(type) {
+			case gowarc.HttpResponseBlock:
+				_, err = warcRecord.WarcHeader().Write(w)
+				if err != nil {
 					return err
 				}
-				return renderContent(w, r, v)
+				byteReader, err := v.PayloadBytes()
+				if err != nil {
+					return err
+				}
+				_, err = io.Copy(w, byteReader)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return err
+				}
 			default:
-				return renderBlock(w, warcRecord)
+				w.Header().Set("Content-Type", "text/plain")
+				_, err := warcRecord.WarcHeader().Write(w)
+				if err != nil {
+					return err
+				}
+				_, err = fmt.Fprintln(w)
+				if err != nil {
+					return err
+				}
+				rb, err := warcRecord.Block().RawBytes()
+				if err != nil {
+					return err
+				}
+				_, err = io.Copy(w, rb)
+				if err != nil {
+					return err
+				}
+				return nil
 			}
 		case OutputJson:
-			cdxj, err := json.Marshal(cdxjToPywbJson(record))
-			if err != nil{
+			cdxj, err := json.Marshal(cdxjToPywbJson(cdxRecord))
+			if err != nil {
 				return err
 			}
 			renderWarcContent(w, warcRecord, api, fmt.Sprintf("%s\n", cdxj))
 		default:
-			cdxj, err := json.Marshal(cdxjToPywbJson(record))
-			if err != nil{
+			cdxj, err := json.Marshal(cdxjToPywbJson(cdxRecord))
+			if err != nil {
 				return err
 			}
-			renderWarcContent(w, warcRecord, api, fmt.Sprintf("%s %s %s\n", record.Ssu, record.Sts, cdxj))
+			renderWarcContent(w, warcRecord, api, fmt.Sprintf("%s %s %s\n", cdxRecord.Ssu, cdxRecord.Sts, cdxj))
 		}
 
 		return nil
 	}
 }
 
-func renderBlock(w http.ResponseWriter, record warcrecord.WarcRecord) error {
-	w.Header().Set("Content-Type", "text/plain")
-
-	_, err := record.WarcHeader().Write(w)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(w)
-	if err != nil {
-		return err
-	}
-	rb, err := record.Block().RawBytes()
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(w, rb)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func renderWarcContent(w http.ResponseWriter, warcRecord warcrecord.WarcRecord, api *CdxjServerApi, cdx string) {
+func renderWarcContent(w http.ResponseWriter, warcRecord gowarc.WarcRecord, api *CdxjServerApi, cdx string) {
 	w.Header().Set("Warcserver-Cdx", cdx)
-	w.Header().Set("Link", "<"+warcRecord.WarcHeader().Get(warcrecord.WarcTargetURI)+">; rel=\"original\"")
-	w.Header().Set("WARC-Target-URI", warcRecord.WarcHeader().Get(warcrecord.WarcTargetURI))
+	w.Header().Set("Link", "<"+warcRecord.WarcHeader().Get(gowarc.WarcTargetURI)+">; rel=\"original\"")
+	w.Header().Set("WARC-Target-URI", warcRecord.WarcHeader().Get(gowarc.WarcTargetURI))
 	w.Header().Set("Warcserver-Source-Coll", api.Collection)
 	w.Header().Set("Content-Type", "application/warc-record")
-	w.Header().Set("Memento-Datetime", warcRecord.WarcHeader().Get(warcrecord.WarcDate))
+	w.Header().Set("Memento-Datetime", warcRecord.WarcHeader().Get(gowarc.WarcDate))
 	w.Header().Set("Warcserver-Type", "warc")
 
-	warcWriter := warcwriter.NewWriter(&warcoptions.WarcOptions{
-		Strict:   false,
-		Compress: false,
-	})
-	_, err := warcWriter.WriteRecord(w, warcRecord)
+	marshaler := gowarc.NewMarshaler()
+	_, bytes, err := marshaler.Marshal(w, warcRecord, 0)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		log.Errorf("failed to render warc content: %s", err)
 	}
-}
-
-func renderContent(w http.ResponseWriter, r *http.Response, v warcrecord.PayloadBlock) error {
-	for k, vl := range r.Header {
-		for _, v := range vl {
-			w.Header().Set(k, v)
-		}
+	if bytes <= 0 {
+		log.Warnf("rendered %d bytes from the warc content", bytes)
 	}
-	w.WriteHeader(r.StatusCode)
-	p, err := v.PayloadBytes()
-	if err != nil {
-		return fmt.Errorf("failed to retrieve payload bytes for request to %s", r.Request.URL)
-	}
-
-	_, err = io.Copy(w, p)
-	if err != nil {
-		return fmt.Errorf("failed to write content for request to %s", r.Request.URL)
-	}
-	return nil
 }

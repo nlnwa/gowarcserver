@@ -6,8 +6,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/nlnwa/gowarc/warcoptions"
-	"github.com/nlnwa/gowarc/warcreader"
+	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/pkg/index"
 	log "github.com/sirupsen/logrus"
 )
@@ -26,9 +25,10 @@ func ParseFormat(format string) (index.CdxWriter, error) {
 	return nil, fmt.Errorf("unknwon format %v, valid formats are: 'cdx', 'cdxj', 'cdxpb', 'db'", format)
 }
 
+/// reads a file using the supplied config and writes with a CdxWriter.
 func ReadFile(c *conf, writer index.CdxWriter) error {
-	opts := &warcoptions.WarcOptions{Strict: false}
-	wf, err := warcreader.NewWarcFilename(c.fileName, 0, opts)
+	opts := gowarc.WithNoValidation()
+	wf, err := gowarc.NewWarcFileReader(c.fileName, 0, opts)
 	if err != nil {
 		return err
 	}
@@ -36,14 +36,18 @@ func ReadFile(c *conf, writer index.CdxWriter) error {
 
 	count := 0
 
-	// avoid defer copy value by using a anonymous function
-	// At the end, print count even if an error occurs
+	// print count even if an error occurs
 	defer func() {
 		log.Printf("Count: %d", count)
 	}()
 
 	for {
-		wr, currentOffset, err := wf.Next()
+		record, currentOffset, validation, err := wf.Next()
+		if !validation.Valid() {
+			// return validation message to end user
+			return errors.New(validation.String())
+
+		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -52,7 +56,7 @@ func ReadFile(c *conf, writer index.CdxWriter) error {
 		}
 		count++
 
-		err = writer.Write(wr, c.fileName, currentOffset)
+		err = writer.Write(record, c.fileName, currentOffset)
 		if err != nil {
 			log.Warnf("Failed to write to %s at offset %d: %v", c.fileName, currentOffset, err)
 		}

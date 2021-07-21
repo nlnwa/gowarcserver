@@ -19,39 +19,38 @@ package index
 import (
 	"strconv"
 
-	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/pkg/surt"
 	"github.com/nlnwa/gowarcserver/pkg/timestamp"
 	cdx "github.com/nlnwa/gowarcserver/proto"
 )
 
-func NewCdxRecord(wr warcrecord.WarcRecord, fileName string, offset int64) *cdx.Cdx {
+func NewCdxRecord(wr gowarc.WarcRecord, fileName string, offset int64) *cdx.Cdx {
 	cdx := &cdx.Cdx{
-		Uri: wr.WarcHeader().Get(warcrecord.WarcTargetURI),
-		Sha: wr.WarcHeader().Get(warcrecord.WarcPayloadDigest),
-		Dig: wr.WarcHeader().Get(warcrecord.WarcPayloadDigest),
+		Uri: wr.WarcHeader().Get(gowarc.WarcTargetURI),
+		Sha: wr.WarcHeader().Get(gowarc.WarcPayloadDigest),
+		Dig: wr.WarcHeader().Get(gowarc.WarcPayloadDigest),
 		Ref: "warcfile:" + fileName + "#" + strconv.FormatInt(offset, 10),
-		Rid: wr.WarcHeader().Get(warcrecord.WarcRecordID),
-		Cle: wr.WarcHeader().Get(warcrecord.ContentLength),
+		Rid: wr.WarcHeader().Get(gowarc.WarcRecordID),
+		Cle: wr.WarcHeader().Get(gowarc.ContentLength),
 		//Rle: wr.WarcHeader().Get(warcrecord.ContentLength),
-		Rct: wr.WarcHeader().Get(warcrecord.WarcConcurrentTo),
-		Rou: wr.WarcHeader().Get(warcrecord.WarcRefersToTargetURI),
-		Rod: wr.WarcHeader().Get(warcrecord.WarcRefersToDate),
-		Roi: wr.WarcHeader().Get(warcrecord.WarcRefersTo),
+		Rct: wr.WarcHeader().Get(gowarc.WarcConcurrentTo),
+		Rou: wr.WarcHeader().Get(gowarc.WarcRefersToTargetURI),
+		Rod: wr.WarcHeader().Get(gowarc.WarcRefersToDate),
+		Roi: wr.WarcHeader().Get(gowarc.WarcRefersTo),
 	}
-	if ssu, err := surt.SsurtString(wr.WarcHeader().Get(warcrecord.WarcTargetURI), true); err == nil {
+	if ssu, err := surt.SsurtString(wr.WarcHeader().Get(gowarc.WarcTargetURI), true); err == nil {
 		cdx.Ssu = ssu
 	}
-	cdx.Sts, _ = timestamp.To14(wr.WarcHeader().Get(warcrecord.WarcDate))
+	cdx.Sts, _ = timestamp.To14(wr.WarcHeader().Get(gowarc.WarcDate))
 	cdx.Srt = wr.Type().String()
 
 	switch v := wr.Block().(type) {
-	case warcrecord.HttpResponseBlock:
-		if resp, err := v.Response(); err == nil {
-			cdx.Hsc = strconv.Itoa(resp.StatusCode)
-			cdx.Mct = resp.Header.Get("Content-Type")
-			cdx.Ple = resp.Header.Get("Content-Length")
-		}
+	case gowarc.HttpResponseBlock:
+		cdx.Hsc = strconv.Itoa(v.HttpStatusCode())
+		header := v.HttpHeader()
+		cdx.Mct = header.Get("Content-Type")
+		cdx.Ple = header.Get("Content-Length")
 	}
 
 	return cdx
