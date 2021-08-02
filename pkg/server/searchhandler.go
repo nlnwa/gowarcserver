@@ -31,8 +31,8 @@ import (
 )
 
 type searchHandler struct {
-	loader   *loader.Loader
-	db       *index.DB
+	loader *loader.Loader
+	db     *index.DB
 }
 
 var jsonMarshaler = protojson.MarshalOptions{}
@@ -42,6 +42,7 @@ func (h *searchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	key, err := surt.SsurtString(uri, true)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	log.Infof("request url: %v, key: %v", uri, key)
