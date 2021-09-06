@@ -55,8 +55,9 @@ func (l *Loader) Get(ctx context.Context, warcId string) (gowarc.WarcRecord, err
 		return nil, errors.New("loader set to not unpack")
 	}
 
-	// TODO: handle continuation blocks, see: https://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/#continuation
 	var rtrRecord gowarc.WarcRecord
+	// default accounts for other scenarios
+	//nolint:exhaustive
 	switch record.Type() {
 	case gowarc.Revisit:
 		log.Debugf("resolving revisit  %v -> %v", record.WarcHeader().Get(gowarc.WarcRecordID), record.WarcHeader().Get(gowarc.WarcRefersTo))
@@ -64,13 +65,17 @@ func (l *Loader) Get(ctx context.Context, warcId string) (gowarc.WarcRecord, err
 		if err != nil {
 			return nil, err
 		}
-		var revisitOf gowarc.WarcRecord
-		revisitOf, err = l.Loader.Load(ctx, storageRef)
+		revisitOf, err := l.Loader.Load(ctx, storageRef)
 		if err != nil {
 			return nil, err
 		}
-		// TODO: there was a 'Merge(record, revisitOf)' call here. We need to do something similar
-		rtrRecord = revisitOf
+		rtrRecord, err = record.Merge(revisitOf)
+		if err != nil {
+			return nil, err
+		}
+	case gowarc.Continuation:
+		// TODO
+		rtrRecord = record
 	default:
 		rtrRecord = record
 	}
