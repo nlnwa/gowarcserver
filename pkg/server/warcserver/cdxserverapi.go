@@ -49,7 +49,7 @@ func cdxjToPywbJson(record *cdx.Cdx) *pywbJson {
 	js := &pywbJson{
 		Urlkey:    record.Ssu,
 		Timestamp: record.Sts,
-		Url:       strings.ReplaceAll(record.Uri, "&", "%26"),
+		Url:       record.Uri,
 		Mime:      record.Mct,
 		Status:    record.Hsc,
 		Digest:    record.Sha,
