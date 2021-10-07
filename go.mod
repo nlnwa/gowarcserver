@@ -1,6 +1,6 @@
 module github.com/nlnwa/gowarcserver
 
-go 1.15
+go 1.16
 
 require (
 	github.com/dgraph-io/badger/v3 v3.2103.1
@@ -8,7 +8,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
-	github.com/nlnwa/gowarc v1.0.0-alpha.13
+	github.com/nlnwa/gowarc v1.0.0-alpha.14
 	github.com/nlnwa/whatwg-url v0.1.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.2.1
