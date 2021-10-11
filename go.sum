@@ -252,8 +252,8 @@ github.com/mitchellh/mapstructure v1.4.1/go.mod h1:bFUtVrKA4DC2yAKiSyO/QUcy7e+RR
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742/go.mod h1:bx2lNnkwVCuqBIxFjflWJWanXIb3RllmbCylyMrvgv0=
 github.com/modern-go/reflect2 v1.0.1/go.mod h1:bx2lNnkwVCuqBIxFjflWJWanXIb3RllmbCylyMrvgv0=
-github.com/nlnwa/gowarc v1.0.0-alpha.14 h1:Ynnn81uC/X1OszFDIvq8YMB3rwEovVCE6A9hpoLmSNM=
-github.com/nlnwa/gowarc v1.0.0-alpha.14/go.mod h1:k5NW4fhvdIWs1ecmnBNOZDwXf18zv7qm08xYJ/pJww4=
+github.com/nlnwa/gowarc v1.0.0-alpha.15 h1:B7xsoK7Hk8leL+4wSgE7Km0xBdY+W00XZm1sySKhEAI=
+github.com/nlnwa/gowarc v1.0.0-alpha.15/go.mod h1:k5NW4fhvdIWs1ecmnBNOZDwXf18zv7qm08xYJ/pJww4=
 github.com/nlnwa/whatwg-url v0.0.0-20200306110950-d1a95e2e8fc3/go.mod h1:v3hJLcAdjhIn7PA89dVhJ9GSWooX0z2/qPgwlhz0HD8=
 github.com/nlnwa/whatwg-url v0.1.0 h1:nJcUTPO+K/jjP7ZsrALylQ8a7XtDDvh0aqGDMdKO4co=
 github.com/nlnwa/whatwg-url v0.1.0/go.mod h1:L97nLsTBZQV+fZTyMl1z6RdDhqgGzZTMmrpTkZDEdts=
