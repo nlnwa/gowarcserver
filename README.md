@@ -6,7 +6,7 @@ The gowarc server module. This tool can be used to index and serve warc files
 
 # Requirements
 
-go 1.15 or newer
+go 1.16 or newer
 
 # Build
 
