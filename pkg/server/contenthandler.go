@@ -22,7 +22,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/pkg/loader"
 	log "github.com/sirupsen/logrus"
 )
@@ -46,23 +46,30 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer record.Close()
+	defer func() {
+		err := record.Close()
+		if err != nil {
+			log.Warnf("failed to close warc record: %s", err)
+		}
+	}()
 
 	switch v := record.Block().(type) {
-	case *warcrecord.RevisitBlock:
-		r, err := v.Response()
+	case gowarc.PayloadBlock:
+		_, err = record.WarcHeader().Write(w)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		renderContent(w, v, r)
-	case warcrecord.HttpResponseBlock:
-		r, err := v.Response()
+		byteReader, err := v.PayloadBytes()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		renderContent(w, v, r)
+		_, err = io.Copy(w, byteReader)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	default:
 		w.Header().Set("Content-Type", "text/plain")
 		_, err = record.WarcHeader().Write(w)
@@ -81,21 +88,5 @@ func (h *contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	}
-}
-
-func renderContent(w http.ResponseWriter, v warcrecord.PayloadBlock, r *http.Response) {
-	for k, vl := range r.Header {
-		for _, v := range vl {
-			w.Header().Set(k, v)
-		}
-	}
-	p, err := v.PayloadBytes()
-	if err != nil {
-		return
-	}
-	_, err = io.Copy(w, p)
-	if err != nil {
-		log.Warnf("Failed to writer content for request to %s", r.Request.URL)
 	}
 }

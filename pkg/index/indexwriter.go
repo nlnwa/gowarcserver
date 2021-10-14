@@ -19,7 +19,7 @@ package index
 import (
 	"fmt"
 
-	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -27,7 +27,7 @@ import (
 type CdxWriter interface {
 	Init(config *DbConfig) error
 	Close()
-	Write(wr warcrecord.WarcRecord, fileName string, offset int64) error
+	Write(wr gowarc.WarcRecord, fileName string, offset int64) error
 }
 
 type CdxLegacy struct {
@@ -53,7 +53,7 @@ func (c *CdxDb) Close() {
 	c.db.Close()
 }
 
-func (c *CdxDb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
+func (c *CdxDb) Write(wr gowarc.WarcRecord, fileName string, offset int64) error {
 	return c.db.Add(wr, fileName, offset)
 }
 
@@ -64,7 +64,7 @@ func (c *CdxLegacy) Init(config *DbConfig) (err error) {
 func (c *CdxLegacy) Close() {
 }
 
-func (c *CdxLegacy) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
+func (c *CdxLegacy) Write(wr gowarc.WarcRecord, fileName string, offset int64) error {
 	return nil
 }
 
@@ -75,8 +75,8 @@ func (c *CdxJ) Init(config *DbConfig) (err error) {
 func (c *CdxJ) Close() {
 }
 
-func (c *CdxJ) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
-	if wr.Type() == warcrecord.RESPONSE {
+func (c *CdxJ) Write(wr gowarc.WarcRecord, fileName string, offset int64) error {
+	if wr.Type() == gowarc.Response {
 		rec := NewCdxRecord(wr, fileName, offset)
 		cdxj := protojson.Format(rec)
 		fmt.Printf("%s %s %s %s\n", rec.Ssu, rec.Sts, rec.Srt, cdxj)
@@ -91,8 +91,8 @@ func (c *CdxPb) Init(config *DbConfig) (err error) {
 func (c *CdxPb) Close() {
 }
 
-func (c *CdxPb) Write(wr warcrecord.WarcRecord, fileName string, offset int64) error {
-	if wr.Type() == warcrecord.RESPONSE {
+func (c *CdxPb) Write(wr gowarc.WarcRecord, fileName string, offset int64) error {
+	if wr.Type() == gowarc.Response {
 		rec := NewCdxRecord(wr, fileName, offset)
 		cdxpb, err := proto.Marshal(rec)
 		if err != nil {

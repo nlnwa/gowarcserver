@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nlnwa/gowarc/warcrecord"
+	"github.com/nlnwa/gowarc"
 )
 
 func TestLoader_Get(t *testing.T) {
@@ -34,44 +34,52 @@ func TestLoader_Get(t *testing.T) {
 		warcId string
 	}
 
-	v1InfoRecord := warcrecord.New(warcrecord.V1_0, warcrecord.WARCINFO)
-	v1ResponseRecord := warcrecord.New(warcrecord.V1_0, warcrecord.RESPONSE)
-	v1RequestRecord := warcrecord.New(warcrecord.V1_0, warcrecord.REQUEST)
+	opts := gowarc.WithVersion(gowarc.V1_0)
+
+	infoBuilder := gowarc.NewRecordBuilder(gowarc.Warcinfo, opts)
+	v1InfoRecord, _, err := infoBuilder.Build()
+	if err != nil {
+		t.Fatalf("Warcinfo WarcRecord creation failed: %s", err)
+	}
+
+	v1ResponseRecord, _, err := gowarc.NewRecordBuilder(gowarc.Response, opts).Build()
+	if err != nil {
+		t.Fatalf("Warcinfo WarcRecord creation failed: %s", err)
+	}
+
+	v1RequestRecord, _, err := gowarc.NewRecordBuilder(gowarc.Request, opts).Build()
+	if err != nil {
+		t.Fatalf("Warcinfo WarcRecord creation failed: %s", err)
+	}
 	tests := []struct {
 		name       string
 		args       args
-		wantRecord warcrecord.WarcRecord
-		wantErr    bool
+		wantRecord gowarc.WarcRecord
 	}{
 		{
 			"base1",
 			args{"urn:uuid:e9a0cecc-0221-11e7-adb1-0242ac120008"},
 			v1InfoRecord,
-			false,
 		},
 		{
 			"base2",
 			args{"urn:uuid:a9c51e3e-0221-11e7-bf66-0242ac120005"},
 			v1ResponseRecord,
-			false,
 		},
 		{
 			"base3",
 			args{"urn:uuid:e9a0ee48-0221-11e7-adb1-0242ac120008"},
 			v1InfoRecord,
-			false,
 		},
 		{
 			"base4",
 			args{"urn:uuid:a9c5c23a-0221-11e7-8fe3-0242ac120007"},
 			v1RequestRecord,
-			false,
 		},
 		{
 			"base5",
 			args{"urn:uuid:e6e41fea-0221-11e7-8fe3-0242ac120007"},
 			v1RequestRecord,
-			false,
 		},
 	}
 	for _, tt := range tests {
@@ -80,8 +88,8 @@ func TestLoader_Get(t *testing.T) {
 			defer cancel()
 
 			gotRecord, err := loader.Get(ctx, tt.args.warcId)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Loader.Get() error = %v, wantErr %v", err, tt.wantErr)
+			if err != nil {
+				t.Errorf("Loader.Get() error = %v", err)
 				return
 			}
 
@@ -103,11 +111,11 @@ func (m *mockStorageRefResolver) Resolve(warcId string) (storageRef string, err 
 	case "urn:uuid:a9c51e3e-0221-11e7-bf66-0242ac120005":
 		storageRef = "warcfile:../../testdata/example.warc:1197"
 	case "urn:uuid:a9c5c23a-0221-11e7-8fe3-0242ac120007":
-		storageRef = "warcfile:../../testdata/example.warc:2566"
+		storageRef = "warcfile:../../testdata/example.warc:3078"
 	case "urn:uuid:e6e395ca-0221-11e7-a18d-0242ac120005":
 		storageRef = "warcfile:../../testdata/example.warc:3370"
 	case "urn:uuid:e6e41fea-0221-11e7-8fe3-0242ac120007":
-		storageRef = "warcfile:../../testdata/example.warc:4316"
+		storageRef = "warcfile:../../testdata/example.warc:4828"
 	}
 	return
 }

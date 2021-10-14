@@ -25,8 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nlnwa/gowarc/warcoptions"
-	"github.com/nlnwa/gowarc/warcreader"
+	"github.com/nlnwa/gowarc"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -118,8 +117,8 @@ func indexFile(db *DB, fileName string) {
 
 	log.Infof("indexing %v", fileName)
 	start := time.Now()
-	opts := &warcoptions.WarcOptions{Strict: false}
-	wf, err := warcreader.NewWarcFilename(fileName, 0, opts)
+	opts := gowarc.WithStrictValidation()
+	wf, err := gowarc.NewWarcFileReader(fileName, 0, opts)
 	if err != nil {
 		log.Warnf("error while indexing %v: %v", fileName, err)
 		return
@@ -128,7 +127,10 @@ func indexFile(db *DB, fileName string) {
 
 	count := 0
 	for {
-		wr, currentOffset, err := wf.Next()
+		record, currentOffset, validate, err := wf.Next()
+		if !validate.Valid() {
+			log.Warn(validate.String())
+		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -138,7 +140,7 @@ func indexFile(db *DB, fileName string) {
 		}
 		count++
 
-		err = db.Add(wr, fileName, currentOffset)
+		err = db.Add(record, fileName, currentOffset)
 		if err != nil {
 			log.Warnf("Got error when adding record to %s: %v", fileName, err)
 		}
