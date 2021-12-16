@@ -8,7 +8,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
-	github.com/nlnwa/gowarc v1.0.0-alpha.16
+	github.com/nlnwa/gowarc v1.0.0-beta.1
 	github.com/nlnwa/whatwg-url v0.1.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.2.1
