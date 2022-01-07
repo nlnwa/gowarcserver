@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package gowarcserver.schema;
+
+option go_package = "github.com/nlnwa/gowarcserver/schema";
+
+message Toc {
+    // Sortable hostname
+    string shn = 1;
+    // Timestamp - sts (sortable timestamp)
+    string sts = 16;
+}

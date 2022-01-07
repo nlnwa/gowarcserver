@@ -9,14 +9,16 @@ RUN go mod download
 
 COPY . .
 
-# Compile the binary statically, so it can be run without dynamic libraries.
-RUN go test ./... && \ 
-    CGO_ENABLED=0 GOOS=linux go install -a -ldflags '-extldflags "-s -w -static"' ./cmd/warcserver
+# -trimpath remove file system paths from executable
+# -ldflags arguments passed to go tool link:
+#   -s disable symbol table
+#   -w disable DWARF generation
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w"
 
-# Now copy it into our base image.
+
 FROM gcr.io/distroless/base
-COPY --from=build /go/bin/warcserver /
+COPY --from=build /build/gowarcserver /
 EXPOSE 9999
 
-ENTRYPOINT ["/warcserver"]
+ENTRYPOINT ["/gowarcserver"]
 CMD ["serve"]

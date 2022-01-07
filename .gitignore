@@ -15,7 +15,7 @@ __debug_bin
 *.out
 
 # Compiled binary
-/warcserver
+/gowarcserver
 
 # Gowarc cache
 /warcdb*
@@ -24,5 +24,4 @@ __debug_bin
 /config*.yaml
 
 .idea
-/proto/tools/
 /.vscode

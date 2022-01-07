@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package gowarcserver;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/nlnwa/gowarcserver/schema";
+
+message Fileinfo {
+    // Filename
+    string name = 1;
+    // Full path
+    string path = 2;
+    // Last modified
+    google.protobuf.Timestamp last_modified = 3;
+    // File size
+    int64 size = 4;
+}
