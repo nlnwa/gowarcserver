@@ -164,7 +164,7 @@ func (d *CdxDbIndex) Close() {
 }
 
 func (d *CdxDbIndex) Write(warcRecord gowarc.WarcRecord, filePath string, offset int64) error {
-	if warcRecord.Type() != gowarc.Response || warcRecord.Type() != gowarc.Revisit {
+	if warcRecord.Type() != gowarc.Response && warcRecord.Type() != gowarc.Revisit {
 		return nil
 	}
 
