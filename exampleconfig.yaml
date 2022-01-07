@@ -1,3 +1,25 @@
-logLevel: info
-warcDir:
-  - ./testdata
+port: 8880
+log-level: "debug"
+
+# server
+index: false
+watch: false
+
+# index
+db: .
+dirs:
+  - "./testdata"
+suffixes:
+  - ".warc"
+  - ".warc.gz"
+max-depth: 4
+workers: 8
+compression: "snappy"
+log-requests: true
+
+
+# proxy
+child-urls:
+  - "http://localhost:8888"
+  - "http://localhost:8889"
+child-query-timeout: "300ms"
