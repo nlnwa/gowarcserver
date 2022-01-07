@@ -39,12 +39,12 @@ type pywbJson struct {
 	Urlkey    string `json:"urlkey"`
 	Timestamp string `json:"timestamp"`
 	Url       string `json:"url"`
-	Mime      string `json:"mime"`
-	Status    string `json:"status"`
+	Mime      string `json:"mime,omitempty"`
+	Status    string `json:"status,omitempty"`
 	Digest    string `json:"digest"`
-	Length    string `json:"length"`
-	Offset    string `json:"offset"`
-	Filename  string `json:"filename"`
+	Length    string `json:"length,omitempty"`
+	Offset    string `json:"offset,omitempty"`
+	Filename  string `json:"filename,omitempty"`
 }
 
 func cdxjToPywbJson(record *cdx.Cdx) *pywbJson {
