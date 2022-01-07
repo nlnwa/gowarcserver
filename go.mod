@@ -3,6 +3,8 @@ module github.com/nlnwa/gowarcserver
 go 1.16
 
 require (
+	github.com/bits-and-blooms/bitset v1.2.1 // indirect
+	github.com/bits-and-blooms/bloom/v3 v3.1.0
 	github.com/dgraph-io/badger/v3 v3.2103.2
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
