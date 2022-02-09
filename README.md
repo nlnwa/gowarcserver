@@ -1,39 +1,56 @@
-![Docker](https://github.com/nlnwa/gowarcserver/workflows/Docker/badge.svg)
+![Test](https://github.com/nlnwa/gowarcserver/actions/workflows/test.yaml/badge.svg)
+![Release](https://github.com/nlnwa/gowarcserver/actions/workflows/release.yaml/badge.svg)
 
 # gowarcserver
 
-The gowarc server module. This tool can be used to index and serve warc files
+A tool to index and serve contents of WARC files.
 
-# Requirements
+## Development
 
-go 1.16 or newer
+### Requirements
 
-# Build
+go version 1.16 or newer
 
-Run `go build ./cmd/warcserver/`
+### Build
 
-# Local linting
-The project CI uses [golangci-lint](https://golangci-lint.run) to lint any incoming PR. It's recommended to set up the linter locally to save everyone involved some time. You can do so by following the steps described in golangci-lint's [local installation](https://golangci-lint.run/usage/install/#local-installation) guide. 
+    go build
 
-Note that in the case of **linux** the guide expects that you have `$GOPATH/bin` included in your `PATH` variable.
+### Test
 
-When you are able to run `golangci-lint --version` in your terminal of choice, then it's also recommended to set up the optional git hook which you can read more about in the [githook folder](https://github.com/nlnwa/gowarcserver/tree/master/githooks)  
+    go test ./...
 
-# Config file
+### Lint
 
-You can configure certain aspect of gowarcserver with a config file. Here are all posible fields. These can also be overwritten by environment variables with same name
+The GitHub Actions test workflow uses [golangci-lint](https://golangci-lint.run) for linting.
 
+Install the linter locally by
+following the steps described in
+golangci-lint's [local installation](https://golangci-lint.run/usage/install/#local-installation) guide.  Note that on **linux** the guide expects you to have `$GOPATH/bin` included in your `PATH` variable.
 
-| Name          | Type           | Description                                                                          | Default   |
-| ------------- | -------------  | -----------                                                                          | -------   |
-| warcDir       |  List of paths | The path to directories where warcs that should be auto indexed                      | ["."]     |
-| indexDir      |  path          | The root directory for index files                                                   | "."       |
-| autoIndex     |  bool          | Whether gowarc should index from the warcdir(s) when serving automatically or not    | true      |
-| warcPort      |  int           | The port that the serve command will use if not overridden as argument to serve      | 9999      |
-| logLevel      |  string        | Change the application log level manually                                            | "info"    |
-| compression   |  string        | Change the db table compression. Legal values are: 'none', 'snappy', 'zstd'          | "none"    |
-| idDb          |  bool          | true *Disables* id db, false *Enables* id db                                         | false     |
-| fileDb        |  bool          | true *Disables* file db, false *Enables* file db                                     | false     | 
-| cdxDb         |  bool          | true *Disables* cdx db, false *Enables* cdx db                                       | false     |
-| childUrls     |  []string      | Register urls pointing to gowarcserver processes which are 'children'                | [""]      |
-| childQueryTimeout | int        | How long in miliseconds a request to a child can take before resulting in timeout    | 300       |
+    golangci-lint run -E "bodyclose" -E "dogsled" -E "durationcheck" -E "errorlint" -E "forcetypeassert" -E "noctx" -E "exhaustive" -E "exportloopref" --timeout 3m0s
+
+## Configuration
+
+gowarcserver can be configured with a config file, environment variables and flags. Flags has precedence over
+environment variables that has precedence over config file entries. An environment variable match the uppercased flag
+name with underscore in place of dash.
+
+| Name                  | Type              | Description                                                                   | Default       | Sub command
+| -------------         | -------------     | -----------                                                                   | -------       | -------
+| config                | string            | Path to configuration file                                                    | ./config.yaml | global
+| log-level             | string            | Log level. Legal values are "trace" , "debug", "info", "warn"  or "error"     | "info"        | global
+| port                  | int               | Server port                                                                   | 9999          | serve
+| index                 | bool              | Enable indexing when running server                                           | true          | serve
+| watch                 | bool              | Update index when files change                                                | false         | serve
+| dirs                  | list of paths     | Comma separated list of directories to index                                  | ["."]         | index, serve
+| db-dir                | path              | Location of index database                                                    | "."           | index, serve
+| max-depth             | int               | Maximum index recursion depth                                                 | 4             | index, serve
+| log-requests          | bool              | Enable request logging                                                        | false         | serve
+| include               | list of suffixes  | Only index files that match one of these suffixes                             | []            | index, serve
+| workers               | int               | Number of index workers                                                       | 8             | index, serve
+| compression           | string            | Database compression type. Legal values are: 'none', 'snappy', 'zstd'         | "snappy"      | index, serve
+| bloom                 | bool              | Enable bloom filter when indexing with "toc" format                           | true          | index
+| bloom-capacity        | uint              | Estimated bloom filter capacity                                               | 1000          | index
+| bloom-fp              | float64           | Estimated bloom filter false positive rate                                    | 0.01          | index
+| child-urls            | []string          | Urls pointing to other gowarcserver processes running a server                | []            | proxy
+| child-query-timeout   | Duration          | Child query timeout a request to a child can take before resulting in timeout | 300ms         | proxy
