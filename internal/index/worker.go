@@ -25,20 +25,20 @@ type indexWorker struct {
 	jobs   chan string
 	done   chan struct{}
 	jobMap map[string]*time.Timer
-	mx     *sync.Mutex
+	mx     sync.Mutex
 	wg     sync.WaitGroup
 }
 
+// Indexer is the interface that wraps the Index method
 type Indexer interface {
 	Index(string) error
 }
 
-func NewIndexWorker(worker Indexer, nrOfWorkers int) *indexWorker {
+func Worker(a Indexer, nrOfWorkers int) *indexWorker {
 	iw := &indexWorker{
 		jobs:   make(chan string, nrOfWorkers),
 		done:   make(chan struct{}),
 		jobMap: map[string]*time.Timer{},
-		mx:     new(sync.Mutex),
 	}
 
 	for i := 0; i < nrOfWorkers; i++ {
@@ -46,7 +46,7 @@ func NewIndexWorker(worker Indexer, nrOfWorkers int) *indexWorker {
 			for {
 				select {
 				case job := <-iw.jobs:
-					_ = worker.Index(job)
+					_ = a.Index(job)
 					iw.wg.Done()
 					iw.mx.Lock()
 					delete(iw.jobMap, job)
@@ -68,11 +68,11 @@ func (iw *indexWorker) Close() {
 	close(iw.done)
 }
 
-func (iw *indexWorker) Accept(job string, batchWindow time.Duration) {
+func (iw *indexWorker) Schedule(job string, batchWindow time.Duration) {
 	iw.mx.Lock()
-	defer iw.mx.Unlock()
-
 	timer, ok := iw.jobMap[job]
+	iw.mx.Unlock()
+
 	if ok {
 		timer.Stop()
 		timer.Reset(batchWindow)

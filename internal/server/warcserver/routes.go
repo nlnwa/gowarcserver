@@ -45,8 +45,8 @@ func RegisterProxy(r *mux.Router, children []*url.URL, timeout time.Duration) {
 }
 
 func Register(r *mux.Router, loader *loader.Loader, db *database.CdxDbIndex) {
-	indexHandler := &IndexHandler{DbCdxServer{db}}
-	resourceHandler := &ResourceHandler{
+	indexHandler := IndexHandler{DbCdxServer{db}}
+	resourceHandler := ResourceHandler{
 		DbCdxServer: DbCdxServer{db},
 		loader:      loader,
 	}

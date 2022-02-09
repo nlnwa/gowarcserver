@@ -19,13 +19,11 @@ package coreserver
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-
-	"github.com/nlnwa/gowarcserver/internal/loader"
-
 	"github.com/gorilla/mux"
 	"github.com/nlnwa/gowarc"
+	"github.com/nlnwa/gowarcserver/internal/loader"
+	"io"
+	"net/http"
 )
 
 type contentHandler struct {

@@ -19,11 +19,10 @@ package loader
 import (
 	"context"
 	"fmt"
+	"github.com/nlnwa/gowarc"
+	"github.com/rs/zerolog/log"
 	"strconv"
 	"strings"
-
-	"github.com/nlnwa/gowarc"
-	log "github.com/sirupsen/logrus"
 )
 
 type FileStorageLoader struct {
@@ -35,7 +34,7 @@ func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Loading record from file: %s, offset: %v", filePath, offset)
+	log.Debug().Msgf("Loading record from file: %s, offset: %v", filePath, offset)
 
 	opts := gowarc.WithStrictValidation()
 	wf, err := gowarc.NewWarcFileReader(filePath, offset, opts)
@@ -45,17 +44,17 @@ func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record
 
 	go func() {
 		<-ctx.Done()
-		log.Tracef("file: %v closed\n", filePath)
+		log.Trace().Msgf("file: %v closed\n", filePath)
 		_ = wf.Close()
 	}()
 
 	record, offset, validation, err := wf.Next()
 	if !validation.Valid() {
-		log.Warn(validation.String())
+		log.Warn().Msg(validation.String())
 		return nil, fmt.Errorf("validation error in warcfile at offset %d", offset)
 	}
 	if err != nil {
-		log.Errorf("%s, offset %v\n", err, offset)
+		log.Error().Msgf("%s, offset %v\n", err, offset)
 		return nil, err
 	}
 	return

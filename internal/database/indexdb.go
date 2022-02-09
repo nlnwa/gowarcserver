@@ -19,18 +19,18 @@ package database
 import (
 	"errors"
 	"fmt"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/nlnwa/gowarc"
+	"github.com/nlnwa/gowarcserver/internal/cdx"
+	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/rs/zerolog/log"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"os"
 	"path"
 	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/dgraph-io/badger/v3"
-	"github.com/nlnwa/gowarc"
-	"github.com/nlnwa/gowarcserver/schema"
-	log "github.com/sirupsen/logrus"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type record struct {
@@ -137,7 +137,7 @@ func (d *CdxDbIndex) AddFile(fileName string) error {
 	// Check if file is indexed and has not changed since indexing
 	stat, err := os.Stat(fileName)
 	if err != nil {
-		return fmt.Errorf("failed to get file info: %s: %w", fileName, stat)
+		return fmt.Errorf("failed to get file info: %s: %w", fileName, err)
 	}
 
 	fileSize := stat.Size()
@@ -164,16 +164,13 @@ func (d *CdxDbIndex) Close() {
 }
 
 func (d *CdxDbIndex) Write(warcRecord gowarc.WarcRecord, filePath string, offset int64) error {
-	if warcRecord.Type() != gowarc.Response && warcRecord.Type() != gowarc.Revisit {
-		return nil
-	}
-
 	rec := &record{
 		id:       warcRecord.WarcHeader().Get(gowarc.WarcRecordID),
 		filePath: filePath,
 		offset:   offset,
-		cdx:      schema.NewCdxRecord(warcRecord, filePath, offset),
 	}
+
+	rec.cdx = cdx.New(warcRecord, filePath, offset)
 
 	select {
 	case <-d.done:
@@ -239,7 +236,7 @@ func (d *CdxDbIndex) flushBatch() {
 			storageRef := fmt.Sprintf("warcfile:%s:%d", fileName, r.offset)
 			err := txn.Set([]byte(r.id), []byte(storageRef))
 			if err != nil {
-				log.Errorf("Failed to save storage ref in id index: %s: %s: %v", r.id, storageRef, err)
+				log.Error().Msgf("Failed to save storage ref in id index: %s: %s: %v", r.id, storageRef, err)
 			}
 		}
 		return nil
@@ -251,12 +248,12 @@ func (d *CdxDbIndex) flushBatch() {
 				key := r.cdx.Ssu + " " + r.cdx.Sts + " " + r.cdx.Srt
 				value, err := proto.Marshal(r.cdx)
 				if err != nil {
-					log.Errorf("Failed to marshal cdx index value: %s, %v", key, err)
+					log.Error().Msgf("Failed to marshal cdx index value: %s, %v", key, err)
 					continue
 				}
 				err = txn.Set([]byte(key), value)
 				if err != nil {
-					log.Errorf("Failed to save cdx entry to database: %s: %v", key, err)
+					log.Error().Msgf("Failed to save cdx entry to database: %s: %v", key, err)
 				}
 			}
 		}

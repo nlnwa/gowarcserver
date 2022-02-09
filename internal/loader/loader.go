@@ -20,9 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
 	"github.com/nlnwa/gowarc"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 type StorageRefResolver interface {
@@ -57,7 +56,7 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 	//nolint:exhaustive
 	switch record.Type() {
 	case gowarc.Revisit:
-		log.Debugf("resolving revisit  %v -> %v", record.WarcHeader().Get(gowarc.WarcRecordID), record.WarcHeader().Get(gowarc.WarcRefersTo))
+		log.Debug().Msgf("Resolving revisit  %v -> %v", record.WarcHeader().Get(gowarc.WarcRecordID), record.WarcHeader().Get(gowarc.WarcRefersTo))
 		warcRefersTo := record.WarcHeader().Get(gowarc.WarcRefersTo)
 		if warcRefersTo == "" {
 			warcRefersToTargetURI := record.WarcHeader().Get(gowarc.WarcRefersToTargetURI)
@@ -77,8 +76,8 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 			return nil, err
 		}
 	case gowarc.Continuation:
-		// TODO
-		rtrRecord = record
+		// TODO continuation not implemented
+		fallthrough
 	default:
 		rtrRecord = record
 	}

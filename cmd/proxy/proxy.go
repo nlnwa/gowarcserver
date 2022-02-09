@@ -26,7 +26,7 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -46,8 +46,9 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().IntP("port", "p", port, "Server port")
 	cmd.Flags().StringSliceP("child-urls", "u", childUrls, "List of URLs to other gowarcserver instances, queries are propagated to these urls")
 	cmd.Flags().DurationP("child-query-timeout", "t", childQueryTimeout, "Time before query to child node times out")
+
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		log.Fatalf("Failed to bind flags, err: %v", err)
+		log.Fatal().Msgf("Failed to bind flags, err: %v", err)
 	}
 
 	return cmd

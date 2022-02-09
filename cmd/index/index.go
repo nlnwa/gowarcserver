@@ -18,13 +18,17 @@ package index
 
 import (
 	"fmt"
+	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/nlnwa/gowarcserver/internal/config"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/index"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"regexp"
+	"runtime"
+	"time"
 )
 
 func NewCommand() *cobra.Command {
@@ -40,25 +44,26 @@ func NewCommand() *cobra.Command {
 	compression := config.SnappyCompression
 	indexDepth := 4
 	indexWorkers := 8
-	indexTargets := []string{"."}
-	suffixes := []string{""}
-	useBloomFilter := true
+	indexDbBatchMaxSize := 1000
+	indexDbBatchMaxWait := 5 * time.Second
 	bloomCapacity := uint(1000)
 	bloomFp := 0.01
 
 	cmd.Flags().StringP("format", "f", format, `index format: "cdxj", "cdxpb", "cdxdb" or "toc"`)
-	cmd.Flags().StringSlice("include", suffixes, "only include filenames matching these suffixes")
+	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
+	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
 	cmd.Flags().IntP("max-depth", "d", indexDepth, "maximum directory recursion")
 	cmd.Flags().Int("workers", indexWorkers, "number of index workers")
-	cmd.Flags().StringSlice("dirs", indexTargets, "directories to search for warc files in")
+	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
 	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
+	cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
+	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max transaction batch size in badger")
 	cmd.Flags().String("compression", compression, `badger compression type: "none", "snappy" or "zstd"`)
-	cmd.Flags().Bool("bloom", useBloomFilter, "use a bloom filter when indexing toc")
 	cmd.Flags().Uint("bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
 	cmd.Flags().Float64("bloom-fp", bloomFp, "estimated bloom filter false positive rate")
 
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		log.Fatalf("Failed to bind index flags, err: %v", err)
+		log.Fatal().Msgf("Failed to bind index flags: %v", err)
 	}
 
 	return cmd
@@ -74,10 +79,14 @@ func indexCmd(_ *cobra.Command, args []string) error {
 	format := viper.GetString("format")
 	switch format {
 	case "cdxj":
-		w = new(index.CdxJ)
+		w = index.CdxJ{}
 	case "cdxpb":
-		w = new(index.CdxPb)
+		w = index.CdxPb{}
 	case "cdxdb":
+		// Increase GOMAXPROCS as recommended by badger
+		// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
+		runtime.GOMAXPROCS(128)
+
 		var c options.CompressionType
 		if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(config.CompressionDecodeHookFunc())); err != nil {
 			return err
@@ -85,28 +94,50 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		db, err := database.NewCdxIndexDb(
 			database.WithCompression(c),
 			database.WithDir(viper.GetString("db-dir")),
+			database.WithBatchMaxSize(viper.GetInt("db-batch-max-size")),
+			database.WithBatchMaxWait(viper.GetDuration("db-batch-max-wait")),
 		)
 		if err != nil {
 			return err
 		}
 		defer db.Close()
-		w = &index.CdxDb{CdxDbIndex: db}
-	case "toc":
-		toc := new(index.Toc)
-		if viper.GetBool("bloom") {
-			toc = index.NewTocWithBloom(viper.GetUint("bloom-capacity"), viper.GetFloat64("bloom-fp"))
+		w = index.CdxDb{
+			CdxDbIndex: db,
 		}
-		w = toc
+	case "toc":
+		w = &index.Toc{
+			BloomFilter: bloom.NewWithEstimates(viper.GetUint("bloom-capacity"), viper.GetFloat64("bloom-fp")),
+		}
 	default:
 		return fmt.Errorf("unsupported format %s", format)
 	}
 
-	indexWorker := index.NewIndexWorker(w, viper.GetInt("workers"))
+	indexWorker := index.Worker(w, viper.GetInt("workers"))
 	defer indexWorker.Close()
 
-	indexer, err := index.NewAutoIndexer(indexWorker.Accept, dirs,
+	var includes []*regexp.Regexp
+	for _, r := range viper.GetStringSlice("include") {
+		if re, err := regexp.Compile(r); err != nil {
+			return fmt.Errorf("%s: %w", r, err)
+		} else {
+			includes = append(includes, re)
+		}
+	}
+
+	var excludes []*regexp.Regexp
+	for _, r := range viper.GetStringSlice("exclude") {
+		if re, err := regexp.Compile(r); err != nil {
+			return fmt.Errorf("%s: %w", r, err)
+		} else {
+			excludes = append(excludes, re)
+		}
+	}
+
+	indexer, err := index.NewAutoIndexer(indexWorker, dirs,
 		index.WithMaxDepth(viper.GetInt("max-depth")),
-		index.WithSuffixes(viper.GetStringSlice("include")...))
+		index.WithIncludes(includes...),
+		index.WithExcludes(excludes...),
+	)
 	if err != nil {
 		return err
 	}

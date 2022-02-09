@@ -10,9 +10,9 @@ require (
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/mitchellh/mapstructure v1.4.1
-	github.com/nlnwa/gowarc v1.0.0-beta.1
+	github.com/nlnwa/gowarc v1.0.0-beta.2
 	github.com/nlnwa/whatwg-url v0.1.0
-	github.com/sirupsen/logrus v1.8.1
+	github.com/rs/zerolog v1.26.1
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.8.1
 	google.golang.org/protobuf v1.27.1

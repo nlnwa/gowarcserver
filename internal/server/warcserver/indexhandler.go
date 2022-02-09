@@ -35,7 +35,7 @@ func (ih IndexHandler) render(w http.ResponseWriter, api *CdxjServerApi) RenderF
 		}
 		switch api.Output {
 		case OutputJson:
-			_, err = fmt.Fprintf(w, "%s\n", cdxj)
+			_, err = fmt.Fprintln(w, cdxj)
 		default:
 			_, err = fmt.Fprintf(w, "%s %s %s\n", record.Ssu, record.Sts, cdxj)
 		}

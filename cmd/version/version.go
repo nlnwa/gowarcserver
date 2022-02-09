@@ -14,21 +14,22 @@
  * limitations under the License.
  */
 
-package proxy
+package version
 
 import (
-	"github.com/rs/zerolog/log"
-	"net/url"
+	"fmt"
+	"github.com/spf13/cobra"
 )
 
-func ParseUrls(urlStrs []string) []*url.URL {
-	var childUrls []*url.URL
-	for _, urlstr := range urlStrs {
-		if u, err := url.Parse(urlstr); err != nil {
-			log.Warn().Msgf("Failed to parse url: %v", err)
-		} else {
-			childUrls = append(childUrls, u)
-		}
+var Version string
+
+func NewCommand() *cobra.Command {
+	var cmd = &cobra.Command{
+		Use:   "version",
+		Short: "print version number",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println(Version)
+		},
 	}
-	return childUrls
+	return cmd
 }

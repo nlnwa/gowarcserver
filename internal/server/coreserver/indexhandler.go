@@ -18,10 +18,9 @@ package coreserver
 
 import (
 	"fmt"
+	"github.com/nlnwa/gowarcserver/internal/database"
 	"net/http"
 	"strconv"
-
-	"github.com/nlnwa/gowarcserver/internal/database"
 
 	"github.com/dgraph-io/badger/v3"
 )

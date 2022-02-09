@@ -17,17 +17,19 @@ package cmd
 
 import (
 	"errors"
-	"fmt"
-	"github.com/nlnwa/gowarcserver/cmd/proxy"
-	"runtime"
-	"strings"
-
 	"github.com/nlnwa/gowarcserver/cmd/index"
+	"github.com/nlnwa/gowarcserver/cmd/proxy"
 	"github.com/nlnwa/gowarcserver/cmd/serve"
-	log "github.com/sirupsen/logrus"
+	"github.com/nlnwa/gowarcserver/cmd/version"
+	"github.com/nlnwa/gowarcserver/internal/logger"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"strings"
 )
+
+func init() {
+}
 
 // NewCommand returns a new cobra.Command implementing the root command for warc
 func NewCommand() *cobra.Command {
@@ -36,33 +38,22 @@ func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "gowarcserver",
 		Short: "gowarcserver is a tool for indexing and serving WARC files",
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Increase GOMAXPROCS as recommended by badger
-			// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
-			runtime.GOMAXPROCS(128)
-
-			logLevel := viper.GetString("log-level")
-			level, err := log.ParseLevel(logLevel)
-			if err != nil {
-				return fmt.Errorf("'%s' is not part of the valid levels: 'panic', 'fatal', 'error', 'warn', 'warning', 'info', 'debug', 'trace'", logLevel)
-			}
-			log.SetLevel(level)
-
-			return nil
-		},
 	}
 
 	// Global flags
 	_ = cmd.PersistentFlags().StringP("config", "c", "", `path to config file, default paths is "./config.yaml", "$HOME/.gowarcserver/config.yaml" or "/etc/gowarcserver/config.yaml"`)
-	_ = cmd.PersistentFlags().StringP("log-level", "l", "info", `set log level: "trace", "debug", "info", "warn" or "error"`)
+	_ = cmd.PersistentFlags().StringP("log-level", "l", "info", `set log level, available levels are "panic", "fatal", "error", "warn", "info", "debug" and "trace"`)
+	_ = cmd.PersistentFlags().String("log-formatter", "logfmt", "log formatter, available values are logfmt and json")
+	_ = cmd.PersistentFlags().Bool("log-method", false, "log method caller")
 	if err := viper.BindPFlags(cmd.PersistentFlags()); err != nil {
-		log.Fatalf("Failed to bind root flags, err: %v", err)
+		log.Fatal().Msgf("Failed to bind root flags, err: %v", err)
 	}
 
 	// Subcommands
 	cmd.AddCommand(serve.NewCommand())
 	cmd.AddCommand(index.NewCommand())
 	cmd.AddCommand(proxy.NewCommand())
+	cmd.AddCommand(version.NewCommand())
 
 	return cmd
 }
@@ -88,7 +79,9 @@ func initConfig() {
 		if errors.As(err, new(viper.ConfigFileNotFoundError)) {
 			return
 		}
-		log.Fatalf("Failed to read config file: %v", err)
+		log.Fatal().Msgf("Failed to read config file: %v", err)
 	}
-	log.Debugf("Using config file: %s", viper.ConfigFileUsed())
+	logger.InitLog(viper.GetString("log-level"),viper.GetString("log-formatter"), viper.GetBool("log-method"))
+
+	log.Debug().Msgf("Using config file: %s", viper.ConfigFileUsed())
 }

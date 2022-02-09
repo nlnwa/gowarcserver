@@ -2,13 +2,12 @@ package handlers
 
 import (
 	"context"
+	"github.com/rs/zerolog/log"
 	"io"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 var client = &http.Client{
@@ -24,7 +23,11 @@ func AggregatedHandler(children []*url.URL, timeout time.Duration) http.Handler 
 			if resp.StatusCode == http.StatusOK {
 				_, err := io.Copy(w, resp.Body)
 				if err != nil {
-					log.WithField("uri", resp.Request.RequestURI).WithField("status", resp.Status).Errorln(err)
+					log.Error().
+						Err(err).
+						Str("uri", resp.Request.RequestURI).
+						Str("status", resp.Status).
+						Msg("Failed to write response body")
 				} else {
 					written = true
 				}
@@ -54,10 +57,10 @@ func FirstHandler(children []*url.URL, timeout time.Duration) http.Handler {
 					w.WriteHeader(resp.StatusCode)
 
 					if _, err := io.Copy(w, resp.Body); err != nil {
-						log.WithError(err).
-							WithField("uri", resp.Request.RequestURI).
-							WithField("status", resp.Status).
-							Errorln("Failed to write response body")
+						log.Error().Err(err).
+							Str("uri", resp.Request.RequestURI).
+							Str("status", resp.Status).
+							Msg("Failed to write response body")
 					}
 					written = true
 				}
@@ -97,7 +100,7 @@ func ChildHandler(children []*url.URL, timeout time.Duration, responseHandler Re
 				//nolint:bodyclose
 				resp, err := client.Do(req)
 				if err != nil {
-					log.Errorf("request failed: %v: %v", req, err)
+					log.Error().Msgf("request failed: %v: %v", req, err)
 				} else {
 					responses <- resp
 				}

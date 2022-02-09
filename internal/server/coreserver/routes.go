@@ -27,5 +27,5 @@ func Register(r *mux.Router, loader loader.RecordLoader, db *database.CdxDbIndex
 	r.HandleFunc("/ids", indexHandler.ListIds)
 	r.HandleFunc("/files", indexHandler.ListFileNames)
 	r.HandleFunc("/search", indexHandler.Search)
-	r.Handle("/id/{id}", &contentHandler{loader})
+	r.Handle("/id/{id}", contentHandler{loader})
 }

@@ -19,7 +19,7 @@ package warcserver
 import (
 	"fmt"
 	"net/http"
-	"regexp"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -28,12 +28,12 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gorilla/mux"
-	cdx "github.com/nlnwa/gowarcserver/schema"
-	log "github.com/sirupsen/logrus"
+	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
 )
 
-type RenderFunc func(record *cdx.Cdx) error
+type RenderFunc func(record *schema.Cdx) error
 
 type pywbJson struct {
 	Urlkey    string `json:"urlkey"`
@@ -47,7 +47,7 @@ type pywbJson struct {
 	Filename  string `json:"filename,omitempty"`
 }
 
-func cdxjToPywbJson(record *cdx.Cdx) *pywbJson {
+func cdxjToPywbJson(record *schema.Cdx) *pywbJson {
 	js := &pywbJson{
 		Urlkey:    record.Ssu,
 		Timestamp: record.Sts,
@@ -128,16 +128,19 @@ func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
 
 	cdxjApi.Collection = vars["collection"]
 
-	url := query.Get("url")
-	if url == "" {
+	uri := query.Get("url")
+	if uri == "" {
 		return nil, fmt.Errorf("missing required query parameter \"url\"")
 	}
-	if !regexp.MustCompile("^https?://").MatchString(url) {
-		url = "http://" + url
+	u, err := url.Parse(uri)
+	if err != nil{
+		return nil, fmt.Errorf(`invalid parameter "url": %w`, err)
 	}
-	cdxjApi.Url = url
+	if u.Scheme == "" {
+		u.Scheme = "http"
+	}
+	cdxjApi.Url = u.String()
 
-	var err error
 	cdxjApi.FromTo, err = NewDateRange(query.Get("from"), query.Get("to"))
 	if err != nil {
 		return nil, err
@@ -235,20 +238,17 @@ func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, er
 
 	perItemFn := func(item *badger.Item) (stopIteration bool) {
 		key := Key(item.Key())
-		contains, err := api.FromTo.contains(key.ts())
-		if err != nil {
-			log.Warnf("%s", err)
+		if contains, err := api.FromTo.contains(key.ts()); err != nil {
+			log.Warn().Msgf("%s", err)
 			return false
-		}
-		if !contains {
-			log.Debugf("key timestamp not in range")
+		} else if !contains {
 			return false
 		}
 
-		result := new(cdx.Cdx)
-		err = item.Value(func(v []byte) error {
+		result := new(schema.Cdx)
+		err := item.Value(func(v []byte) error {
 			if err := proto.Unmarshal(v, result); err != nil {
-				return err
+				return fmt.Errorf("he not found: %w", err)
 			}
 
 			if filter.eval(result) {
@@ -260,7 +260,7 @@ func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, er
 			return nil
 		})
 		if err != nil {
-			log.WithError(err).WithField("url", api.Url).WithField("key", key).Error("failed to process item value")
+			log.Error().Err(err).Str("url", api.Url).Str("key", string(key)).Msg("failed to process item value")
 			return true
 		}
 
@@ -280,7 +280,7 @@ func (c DbCdxServer) search(api *CdxjServerApi, renderFunc RenderFunc) (uint, er
 
 		contains, err := api.FromTo.contains(key.ts())
 		if err != nil {
-			log.Warnf("%s", err)
+			log.Warn().Msgf("%s", err)
 			return false
 		}
 		if !contains {

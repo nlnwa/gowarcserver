@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/nlnwa/gowarcserver/internal/surt"
-	cdx "github.com/nlnwa/gowarcserver/schema"
-	log "github.com/sirupsen/logrus"
+	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"net/http"
@@ -38,7 +38,7 @@ func (h IndexHandler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	perItemFn := func(item *badger.Item) bool {
-		result := &cdx.Cdx{}
+		result := &schema.Cdx{}
 		err := item.Value(func(v []byte) error {
 			err = proto.Unmarshal(v, result)
 			if err != nil {
@@ -52,7 +52,7 @@ func (h IndexHandler) Search(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 		if err != nil {
-			log.Errorf("failed to render cdx record: %v", err)
+			log.Error().Msgf("failed to render cdx record: %v", err)
 		}
 		return false
 	}

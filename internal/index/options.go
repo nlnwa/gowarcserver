@@ -1,19 +1,35 @@
 package index
 
-import "strings"
+import (
+	"regexp"
+)
 
 type Options struct {
 	Watch    bool
-	Suffixes []string
+	Includes []*regexp.Regexp
+	Excludes []*regexp.Regexp
 	MaxDepth int
 }
 
-func (o *Options) isWhitelisted(name string) bool {
-	if len(o.Suffixes) == 0 {
+func (o *Options) filter(name string) bool {
+	return o.isIncluded(name) && !o.isExcluded(name)
+}
+
+func (o *Options) isExcluded(name string) bool {
+	for _, re := range o.Excludes {
+		if re.MatchString(name) {
+			return true
+		}
+	}
+	return false
+}
+
+func (o *Options) isIncluded(name string) bool {
+	if len(o.Includes) == 0 {
 		return true
 	}
-	for _, suffix := range o.Suffixes {
-		if strings.HasSuffix(name, suffix) {
+	for _, re := range o.Includes {
+		if re.MatchString(name) {
 			return true
 		}
 	}
@@ -35,9 +51,15 @@ func WithMaxDepth(depth int) Option {
 	}
 }
 
-func WithSuffixes(suffixes ...string) Option {
+func WithIncludes(res ...*regexp.Regexp) Option {
 	return func(opts *Options) {
-		opts.Suffixes = suffixes
+		opts.Includes = res
+	}
+}
+
+func WithExcludes(res ...*regexp.Regexp) Option {
+	return func(opts *Options) {
+		opts.Excludes = res
 	}
 }
 

@@ -45,8 +45,10 @@ func CompressionDecodeHookFunc() mapstructure.DecodeHookFuncType {
 		if f.Kind() != reflect.String {
 			return data, nil
 		}
-
-		// Return the parsed value
-		return parseCompression(data.(string))
+		if s, ok := data.(string); ok {
+			return parseCompression(s)
+		} else {
+			return parseCompression("")
+		}
 	}
 }

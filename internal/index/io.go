@@ -19,41 +19,46 @@ package index
 import (
 	"errors"
 	"fmt"
-	"io"
-
 	"github.com/nlnwa/gowarc"
-	log "github.com/sirupsen/logrus"
+	log "github.com/rs/zerolog/log"
+	"io"
 )
 
 type RecordWriter interface {
 	Write(wr gowarc.WarcRecord, fileName string, offset int64) error
 }
 
+type Filter func(gowarc.WarcRecord) bool
+
 // ReadFile reads a file using the supplied config and writes with a IndexWriter.
-func ReadFile(filename string, writer RecordWriter, opts ...gowarc.WarcRecordOption) error {
+func ReadFile(filename string, writer RecordWriter, filter Filter, opts ...gowarc.WarcRecordOption) (int, int, error) {
 	wf, err := gowarc.NewWarcFileReader(filename, 0, opts...)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	defer func() {
 		_ = wf.Close()
 	}()
 
 	count := 0
+	total := 0
 
 	for {
-		record, offset, validation, err := wf.Next()
+		wr, offset, validation, err := wf.Next()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("failed to get record number %d in %s at offset %d: %w", count, filename, offset, err)
+			return count, total, fmt.Errorf("failed to get record number %d in %s at offset %d: %w", count, filename, offset, err)
 		}
 		if !validation.Valid() {
-			log.Warn(validation.String())
+			log.Warn().Msg(validation.String())
 		}
-		_ = writer.Write(record, filename, offset)
-		count++
+		if filter(wr) {
+			_ = writer.Write(wr, filename, offset)
+			count++
+		}
+		total++
 	}
-	return nil
+	return count, total, err
 }
