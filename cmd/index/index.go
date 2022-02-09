@@ -18,13 +18,11 @@ package index
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
-
+	"github.com/dgraph-io/badger/v3/options"
 	"github.com/nlnwa/gowarcserver/internal/config"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/index"
-
-	"github.com/dgraph-io/badger/v3/options"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -44,6 +42,9 @@ func NewCommand() *cobra.Command {
 	indexWorkers := 8
 	indexTargets := []string{"."}
 	suffixes := []string{""}
+	useBloomFilter := true
+	bloomCapacity := uint(1000)
+	bloomFp := 0.01
 
 	cmd.Flags().StringP("format", "f", format, `index format: "cdxj", "cdxpb", "cdxdb" or "toc"`)
 	cmd.Flags().StringSlice("include", suffixes, "only include filenames matching these suffixes")
@@ -52,6 +53,10 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringSlice("dirs", indexTargets, "directories to search for warc files in")
 	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
 	cmd.Flags().String("compression", compression, `badger compression type: "none", "snappy" or "zstd"`)
+	cmd.Flags().Bool("bloom", useBloomFilter, "use a bloom filter when indexing toc")
+	cmd.Flags().Uint("bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
+	cmd.Flags().Float64("bloom-fp", bloomFp, "estimated bloom filter false positive rate")
+
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
 		log.Fatalf("Failed to bind index flags, err: %v", err)
 	}
@@ -87,7 +92,11 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		defer db.Close()
 		w = &index.CdxDb{CdxDbIndex: db}
 	case "toc":
-		w = new(index.Toc)
+		toc := new(index.Toc)
+		if viper.GetBool("bloom") {
+			toc = index.NewTocWithBloom(viper.GetUint("bloom-capacity"), viper.GetFloat64("bloom-fp"))
+		}
+		w = toc
 	default:
 		return fmt.Errorf("unsupported format %s", format)
 	}

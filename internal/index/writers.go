@@ -18,6 +18,8 @@ package index
 
 import (
 	"fmt"
+	"github.com/bits-and-blooms/bloom/v3"
+	"sync"
 
 	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/internal/database"
@@ -77,7 +79,16 @@ func (c *CdxPb) Index(fileName string) error {
 	return ReadFile(fileName, c, gowarc.WithNoValidation())
 }
 
+func NewTocWithBloom(n uint, fp float64) *Toc {
+	return &Toc {
+		bf:  bloom.NewWithEstimates(n, fp),
+		m: new(sync.Mutex),
+	}
+}
+
 type Toc struct {
+	bf *bloom.BloomFilter
+	m  *sync.Mutex
 }
 
 func (t Toc) Write(wr gowarc.WarcRecord, fileName string, offset int64) error {
@@ -90,7 +101,16 @@ func (t Toc) Write(wr gowarc.WarcRecord, fileName string, offset int64) error {
 	if err != nil {
 		return nil
 	}
-	fmt.Println(surthost)
+
+	hasSurt := false
+	if t.bf != nil {
+		t.m.Lock()
+		hasSurt = t.bf.TestOrAddString(surthost)
+		t.m.Unlock()
+	}
+	if !hasSurt {
+		fmt.Println(surthost)
+	}
 
 	return nil
 }
