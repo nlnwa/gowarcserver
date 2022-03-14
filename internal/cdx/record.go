@@ -31,7 +31,7 @@ import (
 )
 
 // New parses a WARC record to a Cdx record
-func New(wr gowarc.WarcRecord, fileName string, offset int64) (cdx *schema.Cdx) {
+func New(wr gowarc.WarcRecord, fileName string, offset int64, length int64) (cdx *schema.Cdx) {
 	cdx = &schema.Cdx{
 		Uri: wr.WarcHeader().Get(gowarc.WarcTargetURI),
 		Sha: wr.WarcHeader().Get(gowarc.WarcPayloadDigest),
@@ -39,12 +39,13 @@ func New(wr gowarc.WarcRecord, fileName string, offset int64) (cdx *schema.Cdx) 
 		Ref: "warcfile:" + fileName + "#" + strconv.FormatInt(offset, 10),
 		Rid: wr.WarcHeader().Get(gowarc.WarcRecordID),
 		Cle: wr.WarcHeader().Get(gowarc.ContentLength),
+		Rle: strconv.FormatInt(length, 10),
 		Rct: wr.WarcHeader().Get(gowarc.WarcConcurrentTo),
 		Rou: wr.WarcHeader().Get(gowarc.WarcRefersToTargetURI),
 		Rod: wr.WarcHeader().Get(gowarc.WarcRefersToDate),
 		Roi: wr.WarcHeader().Get(gowarc.WarcRefersTo),
 	}
-	if ssu, err := surt.SsurtString(wr.WarcHeader().Get(gowarc.WarcTargetURI), true); err == nil {
+	if ssu, err := surt.StringToSsurt(wr.WarcHeader().Get(gowarc.WarcTargetURI)); err == nil {
 		cdx.Ssu = ssu
 	}
 	cdx.Sts, _ = timestamp.To14(wr.WarcHeader().Get(gowarc.WarcDate))
@@ -81,13 +82,17 @@ func New(wr gowarc.WarcRecord, fileName string, offset int64) (cdx *schema.Cdx) 
 					continue
 				}
 				log.Warn().Msgf("Failed to parse revisit block as HTTP headers: %v", err)
-				return
+				break
 			}
 			defer resp.Body.Close()
 			cdx.Mct = resp.Header.Get("Content-Type")
 			cdx.Cle = resp.Header.Get("Content-Length")
 			cdx.Hsc = strconv.Itoa(resp.StatusCode)
-			return
+			break
+		}
+		// fallback in case the revisit record payload is empty
+		if cdx.Mct == "" {
+			cdx.Mct = "warc/revisit"
 		}
 	}
 	return

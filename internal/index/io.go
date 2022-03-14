@@ -20,12 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nlnwa/gowarc"
-	log "github.com/rs/zerolog/log"
+	"github.com/rs/zerolog/log"
 	"io"
 )
 
 type RecordWriter interface {
-	Write(wr gowarc.WarcRecord, fileName string, offset int64) error
+	Write(wr gowarc.WarcRecord, fileName string, offset int64, length int64) error
 }
 
 type Filter func(gowarc.WarcRecord) bool
@@ -43,8 +43,18 @@ func ReadFile(filename string, writer RecordWriter, filter Filter, opts ...gowar
 	count := 0
 	total := 0
 
+	var prevOffset int64 = 0
+	var prevWr gowarc.WarcRecord = nil
+
+	// Note: The loop writes the record from the previous iteration to be able to calculate record length
+	// TODO: Make sure the last record returns correct offset on EOF
 	for {
 		wr, offset, validation, err := wf.Next()
+		if prevWr != nil {
+			_ = writer.Write(prevWr, filename, prevOffset, offset - prevOffset)
+			prevWr = nil
+		}
+		prevOffset = offset
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -55,7 +65,7 @@ func ReadFile(filename string, writer RecordWriter, filter Filter, opts ...gowar
 			log.Warn().Msg(validation.String())
 		}
 		if filter(wr) {
-			_ = writer.Write(wr, filename, offset)
+			prevWr = wr
 			count++
 		}
 		total++

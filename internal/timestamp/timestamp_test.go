@@ -46,7 +46,7 @@ func TestTo14ErrorOnInValidString(t *testing.T) {
 func TestFrom14ToTimeSucceedsOnValidString(t *testing.T) {
 	data := createTestData()
 
-	_, err := timestamp.From14ToTime(data.gowarc14Date)
+	_, err := timestamp.Parse(data.gowarc14Date)
 	if err != nil {
 		t.Errorf("Error on valid date string, err: %s", err)
 	}

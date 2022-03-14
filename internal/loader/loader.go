@@ -38,6 +38,20 @@ type Loader struct {
 	NoUnpack bool
 }
 
+type ErrResolveRevisit struct {
+	Profile   string
+	TargetURI string
+	Date      string
+}
+
+func (e ErrResolveRevisit) Error() string {
+	return fmt.Sprintf("Resolving via Warc-Refers-To-Date and Warc-Refers-To-Target-URI is not implemented: %s", e.String())
+}
+
+func (e ErrResolveRevisit) String() string {
+	return fmt.Sprintf("Warc-Refers-To-Date: %s, Warc-Refers-To-Target-URI: %s, Warc-Profile: %s", e.Date, e.TargetURI, e.Profile)
+}
+
 func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
 	storageRef, err := l.Resolver.Resolve(warcId)
 	if err != nil {
@@ -59,9 +73,11 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 		log.Debug().Msgf("Resolving revisit  %v -> %v", record.WarcHeader().Get(gowarc.WarcRecordID), record.WarcHeader().Get(gowarc.WarcRefersTo))
 		warcRefersTo := record.WarcHeader().Get(gowarc.WarcRefersTo)
 		if warcRefersTo == "" {
-			warcRefersToTargetURI := record.WarcHeader().Get(gowarc.WarcRefersToTargetURI)
-			warcRefersToDate := record.WarcHeader().Get(gowarc.WarcRefersToDate)
-			return nil, fmt.Errorf("revisit record is missing Warc-Refers-To header. Resolving via Warc-Refers-To-Target-URI [%s] and Warc-Refers-To-Date [%s] is not implemented", warcRefersToTargetURI, warcRefersToDate)
+			return nil, ErrResolveRevisit{
+				Profile:   record.WarcHeader().Get(gowarc.WarcProfile),
+				TargetURI: record.WarcHeader().Get(gowarc.WarcRefersToTargetURI),
+				Date:      record.WarcHeader().Get(gowarc.WarcRefersToDate),
+			}
 		}
 		storageRef, err = l.Resolver.Resolve(warcRefersTo)
 		if err != nil {

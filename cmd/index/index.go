@@ -70,9 +70,13 @@ func NewCommand() *cobra.Command {
 }
 
 func indexCmd(_ *cobra.Command, args []string) error {
-	// collect paths from args and --dirs flag
-	dirs := viper.GetStringSlice("dirs")
-	dirs = append(dirs, args...)
+	// collect paths from args or flag
+	var dirs []string
+	if len(args) > 0 {
+		dirs = append(dirs, args...)
+	} else {
+		dirs = viper.GetStringSlice("dirs")
+	}
 
 	var w index.Indexer
 

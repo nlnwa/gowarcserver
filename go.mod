@@ -9,6 +9,7 @@ require (
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
+	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/nlnwa/gowarc v1.0.0-beta.2
 	github.com/nlnwa/whatwg-url v0.1.0

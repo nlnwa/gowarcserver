@@ -36,8 +36,9 @@ func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record
 	}
 	log.Debug().Msgf("Loading record from file: %s, offset: %v", filePath, offset)
 
-	opts := gowarc.WithStrictValidation()
-	wf, err := gowarc.NewWarcFileReader(filePath, offset, opts)
+	wf, err := gowarc.NewWarcFileReader(filePath, offset,
+		gowarc.WithSyntaxErrorPolicy(gowarc.ErrIgnore),
+		gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore))
 	if err != nil {
 		return nil, err
 	}

@@ -29,7 +29,7 @@ func To14(s string) (string, error) {
 	return t.Format("20060102150405"), nil
 }
 
-func From14ToTime(s string) (time.Time, error) {
+func Parse(s string) (time.Time, error) {
 	return time.Parse("20060102150405", s)
 }
 

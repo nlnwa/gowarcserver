@@ -31,7 +31,7 @@ var jsonMarshaler = protojson.MarshalOptions{}
 
 func (h IndexHandler) Search(w http.ResponseWriter, r *http.Request) {
 	uri := r.URL.Query().Get("url")
-	key, err := surt.SsurtString(uri, true)
+	key, err := surt.StringToSsurt(uri)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

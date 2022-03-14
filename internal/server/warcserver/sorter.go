@@ -17,41 +17,56 @@
 package warcserver
 
 import (
+	"github.com/dgraph-io/badger/v3"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"sort"
-	"strings"
-
-	"github.com/dgraph-io/badger/v3"
 )
 
 type value struct {
 	ts int64
-	v  []byte
+	k  []byte
 }
 
 type sorter struct {
 	closest int64
+	reverse bool
 	values  []value
 }
 
-func (s *sorter) add(item *badger.Item) {
-	ts, _ := timestamp.From14ToTime(strings.Split(string(item.Key()), " ")[1])
-	v := value{ts.Unix(), item.KeyCopy(nil)}
-	s.values = append(s.values, v)
+func (s *sorter) add(k []byte) {
+	t, _ := timestamp.Parse(Key(k).ts())
+	ts := t.Unix()
+
+	s.values = append(s.values, value{ts, k})
 }
 
 func (s *sorter) sort() {
+	var cmp func(int64, int64) bool
+
+	// sort closest, reverse or forward
+	if s.closest > 0 {
+		cmp = func(ts1 int64, ts2 int64) bool {
+			return timestamp.AbsInt64(s.closest-ts1) < timestamp.AbsInt64(s.closest-ts2)
+		}
+	} else if s.reverse {
+		cmp = func(ts1 int64, ts2 int64) bool {
+			return ts2 < ts1
+		}
+	} else {
+		cmp = func(ts1 int64, ts2 int64) bool {
+			return ts1 < ts2
+		}
+	}
+
 	sort.Slice(s.values, func(i, j int) bool {
-		ts1 := s.values[i].ts
-		ts2 := s.values[j].ts
-		return timestamp.AbsInt64(s.closest-ts1) < timestamp.AbsInt64(s.closest-ts2)
+		return cmp(s.values[i].ts, s.values[j].ts)
 	})
 }
 
-func (s *sorter) walk(txn *badger.Txn, perItemFn database.PerItemFunction) error {
+func (s *sorter) walk(txn *badger.Txn, perItemFn database.PerItemFunc) error {
 	for _, value := range s.values {
-		item, err := txn.Get(value.v)
+		item, err := txn.Get(value.k)
 		if err != nil {
 			return err
 		}

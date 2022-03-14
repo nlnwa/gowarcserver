@@ -42,7 +42,7 @@ func newBadgerDB(dir string, compression options.CompressionType) (*badger.DB, e
 	return badger.Open(opts)
 }
 
-func walk(db *badger.DB, opts badger.IteratorOptions, fn PerItemFunction) error {
+func walk(db *badger.DB, opts badger.IteratorOptions, fn PerItemFunc) error {
 	return db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(opts)
 		defer it.Close()

@@ -41,11 +41,17 @@ type record struct {
 }
 
 type CdxDbIndex struct {
-	idIndex   *badger.DB
+	// idIndex maps record id to storage ref
+	idIndex *badger.DB
+
+	// fileIndex maps filepath to fileinfo
 	fileIndex *badger.DB
-	cdxIndex  *badger.DB
-	batch     chan *record
-	done      chan struct{}
+
+	// cdxIndex maps cdx key to cdx record
+	cdxIndex *badger.DB
+
+	batch chan *record
+	done  chan struct{}
 }
 
 func NewCdxIndexDb(options ...DbOption) (*CdxDbIndex, error) {
@@ -133,8 +139,8 @@ func (d *CdxDbIndex) runValueLogGC(discardRatio float64) {
 	wg.Wait()
 }
 
+// AddFile checks if file is indexed or has not changed since indexing, and adds file to file index.
 func (d *CdxDbIndex) AddFile(fileName string) error {
-	// Check if file is indexed and has not changed since indexing
 	stat, err := os.Stat(fileName)
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %s: %w", fileName, err)
@@ -156,6 +162,7 @@ func (d *CdxDbIndex) AddFile(fileName string) error {
 	return d.updateFilePath(fileName)
 }
 
+// Close stops the gc and batch workers and closes the index databases.
 func (d *CdxDbIndex) Close() {
 	close(d.done)
 	_ = d.idIndex.Close()
@@ -163,19 +170,22 @@ func (d *CdxDbIndex) Close() {
 	_ = d.cdxIndex.Close()
 }
 
-func (d *CdxDbIndex) Write(warcRecord gowarc.WarcRecord, filePath string, offset int64) error {
+// Write schedules a record to be added to the index via the batch channel.
+func (d *CdxDbIndex) Write(warcRecord gowarc.WarcRecord, filePath string, offset int64, length int64) error {
 	rec := &record{
 		id:       warcRecord.WarcHeader().Get(gowarc.WarcRecordID),
 		filePath: filePath,
 		offset:   offset,
+		cdx:      cdx.New(warcRecord, filePath, offset, length),
 	}
-
-	rec.cdx = cdx.New(warcRecord, filePath, offset)
 
 	select {
 	case <-d.done:
+		// do nothing
 	case d.batch <- rec:
+		// added record to batch
 	default:
+		// batch channel is full so flush batch channel before adding to record to batch
 		d.flushBatch()
 		d.batch <- rec
 	}
@@ -225,7 +235,6 @@ func (d *CdxDbIndex) collectBatch() []*record {
 
 func (d *CdxDbIndex) flushBatch() {
 	records := d.collectBatch()
-
 	if len(records) == 0 {
 		return
 	}
@@ -290,26 +299,33 @@ func (d *CdxDbIndex) GetFileInfo(fileName string) (*schema.Fileinfo, error) {
 	return val, err
 }
 
-type PerItemFunction func(*badger.Item) (stopIteration bool)
-type AfterIterationFunction func(txn *badger.Txn) error
+type PerItemFunc func(*badger.Item) (stopIteration bool)
+type AfterIterFunc func(txn *badger.Txn) error
 
-func (d *CdxDbIndex) Search(key string, reverse bool, f PerItemFunction, a AfterIterationFunction) error {
+func (d *CdxDbIndex) Walk(a AfterIterFunc) error {
+	return d.cdxIndex.View(a)
+}
+
+// Search iterates over keys prefixed with key and applies a PerItemFunc to each item value.
+func (d *CdxDbIndex) Search(key string, reverse bool, f PerItemFunc, a AfterIterFunc) error {
 	return d.cdxIndex.View(func(txn *badger.Txn) error {
+		prefix := []byte(key)
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
-		opts.Prefix = []byte(key)
+		opts.Prefix = prefix
 		opts.Reverse = reverse
+
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
+		// see https://github.com/dgraph-io/badger/issues/436 for details regarding reverse seeking
 		seekKey := key
 		if reverse {
 			seekKey += string(rune(0xff))
 		}
 
-		for it.Seek([]byte(seekKey)); it.ValidForPrefix([]byte(key)); it.Next() {
-			item := it.Item()
-			if f(item) {
+		for it.Seek([]byte(seekKey)); it.ValidForPrefix(prefix); it.Next() {
+			if f(it.Item()) {
 				break
 			}
 		}
@@ -317,13 +333,13 @@ func (d *CdxDbIndex) Search(key string, reverse bool, f PerItemFunction, a After
 	})
 }
 
-func (d *CdxDbIndex) ListFileNames(fn PerItemFunction) error {
+func (d *CdxDbIndex) ListFileNames(fn PerItemFunc) error {
 	opts := badger.DefaultIteratorOptions
 	opts.PrefetchValues = false
 	return walk(d.fileIndex, opts, fn)
 }
 
-func (d *CdxDbIndex) ListIds(fn PerItemFunction) error {
+func (d *CdxDbIndex) ListIds(fn PerItemFunc) error {
 	opts := badger.DefaultIteratorOptions
 	return walk(d.idIndex, opts, fn)
 }

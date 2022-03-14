@@ -65,12 +65,22 @@ func (c CdxDb) Index(fileName string) error {
 	}
 	return indexFile(fileName, c)
 }
+type Cdx struct {
+}
+
+func (c Cdx) Write(wr gowarc.WarcRecord, fileName string, offset int64, length int64) error {
+	rec := cdx.New(wr, fileName, offset, length)
+	cdxj := protojson.Format(rec)
+	fmt.Printf("%s %s %s %s\n", rec.Ssu, rec.Sts, rec.Srt, cdxj)
+
+	return nil
+}
 
 type CdxJ struct {
 }
 
-func (c CdxJ) Write(wr gowarc.WarcRecord, fileName string, offset int64) error {
-	rec := cdx.New(wr, fileName, offset)
+func (c CdxJ) Write(wr gowarc.WarcRecord, fileName string, offset int64, length int64) error {
+	rec := cdx.New(wr, fileName, offset, length)
 	cdxj := protojson.Format(rec)
 	fmt.Printf("%s %s %s %s\n", rec.Ssu, rec.Sts, rec.Srt, cdxj)
 
@@ -84,8 +94,8 @@ func (c CdxJ) Index(fileName string) error {
 type CdxPb struct {
 }
 
-func (c CdxPb) Write(wr gowarc.WarcRecord, fileName string, offset int64) error {
-	rec := cdx.New(wr, fileName, offset)
+func (c CdxPb) Write(wr gowarc.WarcRecord, fileName string, offset int64, length int64) error {
+	rec := cdx.New(wr, fileName, offset, length)
 	cdxpb, err := proto.Marshal(rec)
 	if err != nil {
 		return err
@@ -104,9 +114,9 @@ type Toc struct {
 	*bloom.BloomFilter
 }
 
-func (t *Toc) Write(wr gowarc.WarcRecord, fileName string, offset int64) error {
+func (t *Toc) Write(wr gowarc.WarcRecord, _ string, _ int64, _ int64) error {
 	uri := wr.WarcHeader().Get(gowarc.WarcTargetURI)
-	surthost, err := surt.SsurtHostname(uri)
+	surthost, err := surt.UrlToSsurtHostname(uri)
 	if err != nil {
 		return nil
 	}

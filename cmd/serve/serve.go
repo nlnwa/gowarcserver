@@ -19,6 +19,8 @@ package serve
 import (
 	"errors"
 	"fmt"
+	"github.com/gorilla/handlers"
+	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/internal/server/coreserver"
 	"net/http"
 	"os"
@@ -34,8 +36,6 @@ import (
 	"github.com/nlnwa/gowarcserver/internal/server/warcserver"
 
 	"github.com/dgraph-io/badger/v3/options"
-	"github.com/gorilla/handlers"
-	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -87,14 +87,19 @@ func NewCommand() *cobra.Command {
 }
 
 func serveCmd(cmd *cobra.Command, args []string) error {
-	// collect paths from args and --dirs flag
-	dirs := viper.GetStringSlice("dirs")
-	dirs = append(dirs, args...)
-
+	// collect paths from args or flag
+	var dirs []string
+	if len(args) > 0 {
+		dirs = append(dirs, args...)
+	} else {
+		dirs = viper.GetStringSlice("dirs")
+	}
+	// parse database compression type
 	var c options.CompressionType
 	if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(config.CompressionDecodeHookFunc())); err != nil {
 		return err
 	}
+	// create database instance
 	db, err := database.NewCdxIndexDb(
 		database.WithCompression(c),
 		database.WithDir(viper.GetString("db-dir")),
@@ -106,6 +111,7 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
+	// parse include patterns
 	var includes []*regexp.Regexp
 	for _, r := range viper.GetStringSlice("include") {
 		if re, err := regexp.Compile(r); err != nil {
@@ -114,7 +120,7 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 			includes = append(includes, re)
 		}
 	}
-
+	// parse exclude patterns
 	var excludes []*regexp.Regexp
 	for _, r := range viper.GetStringSlice("exclude") {
 		if re, err := regexp.Compile(r); err != nil {
@@ -123,7 +129,7 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 			excludes = append(excludes, re)
 		}
 	}
-
+	// optionally start autoindexer
 	if viper.GetBool("index") {
 		log.Info().Msg("Starting auto indexer")
 
@@ -144,6 +150,7 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 		defer autoIndexer.Close()
 	}
 
+	// create record loader
 	l := &loader.Loader{
 		Resolver: db,
 		Loader: &loader.FileStorageLoader{FilePathResolver: func(fileName string) (filePath string, err error) {
@@ -153,17 +160,22 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 		NoUnpack: false,
 	}
 
-	r := mux.NewRouter()
+	// middleware chain
+	var mw func(http.Handler) http.Handler
 
+	// optionally add logging middleware
 	if viper.GetBool("log-requests") {
-		loggingMw := func(h http.Handler) http.Handler {
+		mw = func(h http.Handler) http.Handler {
 			return handlers.CombinedLoggingHandler(os.Stdout, h)
 		}
-		r.Use(loggingMw)
 	}
 
-	coreserver.Register(r, l, db)
-	warcserver.Register(r.PathPrefix("/warcserver").Subrouter(), l, db)
+	// create http router
+	r := httprouter.New()
+
+	// register
+	warcserver.Register(r, mw, "/warcserver", l, db)
+	coreserver.Register(r, mw, "", l, db)
 
 	if err := server.Serve(viper.GetInt("port"), r); !errors.Is(err, http.ErrServerClosed) {
 		return err

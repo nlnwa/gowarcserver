@@ -8,7 +8,7 @@ import (
 
 type dateRangeTestData struct {
 	name      string
-	daterange DateRange
+	daterange *DateRange
 	datestr   string
 	expect    bool
 }
@@ -17,7 +17,7 @@ func TestValidDateRangeContains(t *testing.T) {
 	tests := []dateRangeTestData{
 		{
 			"date string in range returns true",
-			DateRange{
+			&DateRange{
 				from: 0,
 				to:   60,
 			},
@@ -26,7 +26,7 @@ func TestValidDateRangeContains(t *testing.T) {
 		},
 		{
 			"date string same as 'from' returns true",
-			DateRange{
+			&DateRange{
 				from: 0,
 				to:   60,
 			},
@@ -35,7 +35,7 @@ func TestValidDateRangeContains(t *testing.T) {
 		},
 		{
 			"date string same as 'to' returns true",
-			DateRange{
+			&DateRange{
 				from: 0,
 				to:   60,
 			},
@@ -44,7 +44,7 @@ func TestValidDateRangeContains(t *testing.T) {
 		},
 		{
 			"date string below range returns false",
-			DateRange{
+			&DateRange{
 				from: 59,
 				to:   60,
 			},
@@ -53,12 +53,18 @@ func TestValidDateRangeContains(t *testing.T) {
 		},
 		{
 			"date string above range returns false",
-			DateRange{
+			&DateRange{
 				from: 0,
 				to:   1,
 			},
 			"19700101000200",
 			false,
+		},
+		{
+			"nil date range returns true",
+			nil,
+			"19700101000200",
+			true,
 		},
 	}
 
@@ -66,10 +72,10 @@ func TestValidDateRangeContains(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			contains, err := tt.daterange.contains(tt.datestr)
 			if err != nil {
-				t.Errorf("Unexpected error: %s", err)
+				t.Errorf("Testing %s; Unexpected error: %s", tt.name, err)
 			}
 			if contains != tt.expect {
-				t.Errorf("Expected %t, got %t", tt.expect, contains)
+				t.Errorf("Testing %s; Expected %t, got %t", tt.name, tt.expect, contains)
 			}
 		})
 	}
@@ -78,7 +84,7 @@ func TestValidDateRangeContains(t *testing.T) {
 func TestInvalidContainData(t *testing.T) {
 	test := dateRangeTestData{
 		"invalid date string value fails",
-		DateRange{
+		&DateRange{
 			from: 0,
 			to:   60,
 		},

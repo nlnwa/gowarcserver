@@ -17,15 +17,14 @@
 package proxy
 
 import (
+	"github.com/julienschmidt/httprouter"
+	"github.com/nlnwa/gowarcserver/internal/server/handlers"
 	"net/http"
 	"os"
 	"time"
 
+	gHandlers "github.com/gorilla/handlers"
 	"github.com/nlnwa/gowarcserver/internal/server"
-	"github.com/nlnwa/gowarcserver/internal/server/warcserver"
-
-	"github.com/gorilla/handlers"
-	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -58,14 +57,17 @@ func proxyCmd(_ *cobra.Command, _ []string) error {
 	childUrls := ParseUrls(viper.GetStringSlice("childUrls"))
 	childQueryTimeout := viper.GetDuration("childQueryTimeout")
 	port := viper.GetInt("port")
-	r := mux.NewRouter()
+	r := httprouter.New()
 
-	loggingMw := func(h http.Handler) http.Handler {
-		return handlers.CombinedLoggingHandler(os.Stdout, h)
+	middleware := func(h http.Handler) http.Handler {
+		return gHandlers.CombinedLoggingHandler(os.Stdout, h)
 	}
-	r.Use(loggingMw)
 
-	warcserver.RegisterProxy(r, childUrls, childQueryTimeout)
+	indexHandler := handlers.AggregatedHandler(childUrls, childQueryTimeout)
+	resourceHandler := handlers.FirstHandler(childUrls, childQueryTimeout)
+
+	r.Handler("GET", "/cdx", middleware(indexHandler))
+	r.Handler("GET", "/web", middleware(resourceHandler))
 
 	return server.Serve(port, r)
 }

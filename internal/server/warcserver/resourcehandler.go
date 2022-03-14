@@ -2,85 +2,163 @@ package warcserver
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/internal/loader"
 	"github.com/nlnwa/gowarcserver/internal/server/handlers"
+	"github.com/nlnwa/gowarcserver/internal/surt"
 	"github.com/nlnwa/gowarcserver/schema"
-	"github.com/rs/zerolog/log"
+	"github.com/nlnwa/whatwg-url/url"
 	"net/http"
+	"strings"
+	"time"
 )
 
 type ResourceHandler struct {
 	DbCdxServer
-	loader loader.RecordLoader
+	Loader loader.RecordLoader
 }
 
 func (rh ResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	api, err := ParseCdxjApi(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	api.Limit = 1
+	params := httprouter.ParamsFromContext(r.Context())
 
-	n, err := rh.search(api, rh.render(w, api))
+	// closest parameter
+	p0 := params[0].Value
+	// remove trailing 'id_'
+	closest := p0[:len(p0)-3]
+
+	// url parameter
+	p1 := params[1].Value
+	// remove leading '/'
+	uri := p1[1:]
+
+	// we must add on any query parameters
+	if q := r.URL.Query().Encode(); len(q) > 0 {
+		uri += "?" + q
+	}
+	// and fragment
+	if len(r.URL.Fragment) > 0 {
+		// and fragment
+		uri += "#" + r.URL.Fragment
+
+	}
+
+	key, err := surt.StringToSsurt(uri)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-	} else if n == 0 {
+		return
+	}
+
+	// fetch cdx to access warc record id
+	cdx, err := rh.one(key, closest)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if cdx == nil {
 		http.NotFound(w, r)
+		return
 	}
-}
 
-func (rh ResourceHandler) render(w http.ResponseWriter, api *CdxjServerApi) RenderFunc {
-	return func(record *schema.Cdx) error {
-		warcId := record.Rid
-		if len(warcId) > 0 && warcId[0] != '<' {
-			warcId = "<" + warcId + ">"
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	// load warc record by id
+	warcRecord, err := rh.Loader.Load(ctx, cdx.Rid)
+	if err != nil {
+		var errWarcProfile loader.ErrResolveRevisit
+		if errors.As(err, &errWarcProfile) {
+			http.Error(w, errWarcProfile.Error(), http.StatusNotImplemented)
+			return
 		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer warcRecord.Close()
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		warcRecord, err := rh.loader.Load(ctx, warcId)
+	block, ok := warcRecord.Block().(gowarc.HttpResponseBlock)
+	if !ok {
+		http.Error(w, fmt.Sprintf("Record not renderable: %s", warcRecord), http.StatusInternalServerError)
+		return
+	}
+
+	s := block.HttpStatusCode()
+
+	// Handle redirects
+	if isRedirect(s) {
+		location := block.HttpHeader().Get("Location")
+		if location == "" {
+			http.NotFound(w, r)
+			return
+		}
+		// TODO check and handle relative location header paths
+		// if !schemeRegExp.MatchString(location) {
+		// }
+
+		locUrl, err := url.Parse(location)
 		if err != nil {
-			return err
+			http.Error(w, fmt.Sprintf("Failed to parse location header as URL: %s: %s: %v", warcRecord, location, err), http.StatusInternalServerError)
+			return
 		}
-		defer func() {
-			err := warcRecord.Close()
-			if err != nil {
-				log.Warn().Msgf("failed to close warc record: %s", err)
-			}
-		}()
 
-		switch api.Output {
-		case OutputContent:
-			switch v := warcRecord.Block().(type) {
-			case gowarc.HttpResponseBlock:
-				// render as HTTP response
-				return handlers.RenderContent(w, v)
-			default:
-				// unknown block type, render record as plain text
-				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-				return handlers.RenderRecord(w, warcRecord)
-			}
-		case OutputJson:
-			cdx, _ := json.Marshal(cdxjToPywbJson(record))
-			return renderWarcContent(w, warcRecord, api, fmt.Sprintf("%s\n", cdx))
-		default:
-			cdx, _ := json.Marshal(cdxjToPywbJson(record))
-			return renderWarcContent(w, warcRecord, api, fmt.Sprintf("%s %s %s\n", record.Ssu, record.Sts, cdx))
+		api := &CdxjServerApi{
+			Urls:      []*url.Url{locUrl},
+			MatchType: MatchTypeExact,
+			Limit:     1,
+			Sort:      SortClosest,
+			Closest:   closest,
+		}
+
+
+
+		// Fields we need to rewrite the location header
+		var sts string
+		var uri string
+
+		// Get timestamp and uri from cdx record
+		perCdxFunc := func(record *schema.Cdx) error {
+			sts = record.Sts
+			uri = record.Uri
+			return nil
+		}
+
+		if n, err := rh.search(api, perCdxFunc); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		} else if n == 0 || sts == "" || uri == "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		prefix := r.URL.Path[:strings.Index(r.URL.Path, "id_")-14]
+		path := prefix + sts + "id_/" + uri
+
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		host := r.Host
+		u, err := url.Parse(scheme + "://" + host)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		u.SetPathname(path)
+
+		handlers.RenderRedirect(w, u.String())
+	} else {
+		err := handlers.RenderContent(w, block)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
 }
 
-func renderWarcContent(w http.ResponseWriter, warcRecord gowarc.WarcRecord, api *CdxjServerApi, cdx string) error {
-	w.Header().Set("Warcserver-Cdx", cdx)
-	w.Header().Set("Link", "<"+warcRecord.WarcHeader().Get(gowarc.WarcTargetURI)+">; rel=\"original\"")
-	w.Header().Set("WARC-Target-URI", warcRecord.WarcHeader().Get(gowarc.WarcTargetURI))
-	w.Header().Set("Warcserver-Source-Coll", api.Collection)
-	w.Header().Set("Content-Type", "application/warc-record")
-	w.Header().Set("Memento-Datetime", warcRecord.WarcHeader().Get(gowarc.WarcDate))
-	w.Header().Set("Warcserver-Type", "warc")
-	return handlers.RenderRecord(w, warcRecord)
+func isRedirect(code int) bool {
+	return code == http.StatusMovedPermanently ||
+		code == http.StatusFound ||
+		code == http.StatusTemporaryRedirect ||
+		code == http.StatusPermanentRedirect
 }
