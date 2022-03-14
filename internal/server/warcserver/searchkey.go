@@ -17,39 +17,28 @@
 package warcserver
 
 import (
-	"github.com/nlnwa/gowarcserver/internal/surt"
 	"strings"
 )
 
-func parseKey(uri string, matchType string) (string, error) {
-	key, err := surt.SsurtString(uri, true)
-	if err != nil {
-		return "", err
-	}
-
+func parseKey(ssurt string, matchType string) string {
 	switch matchType {
 	case MatchTypeExact:
-		key += " "
+		ssurt += " "
 	case MatchTypePrefix:
-		i := strings.IndexAny(key, "?#")
+		i := strings.IndexAny(ssurt, "?#")
 		if i > 0 {
-			key = key[:i]
+			ssurt = ssurt[:i]
 		}
 	case MatchTypeHost:
-		i := strings.Index(key, "//")
+		i := strings.Index(ssurt, "//")
 		if i > 0 {
-			key = key[:i+2]
+			ssurt = ssurt[:i+2]
 		}
 	case MatchTypeDomain:
-		i := strings.Index(key, "//")
+		i := strings.Index(ssurt, "//")
 		if i > 0 {
-			key = key[:i+2]
-		}
-		i = strings.LastIndex(key, ",")
-		if i > 0 {
-			key = key[:i+1]
+			ssurt = ssurt[:i]
 		}
 	}
-
-	return key, nil
+	return ssurt
 }

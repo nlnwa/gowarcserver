@@ -29,31 +29,35 @@ type DateRange struct {
 
 const timeLayout = "20060102150405"
 
-func NewDateRange(fromstr string, tostr string) (DateRange, error) {
-	from, err := From(fromstr)
-	if err != nil {
-		return DateRange{}, err
-	}
-	to, err := To(tostr)
-	if err != nil {
-		return DateRange{}, err
+func NewDateRange(fromstr string, tostr string) (*DateRange, error) {
+	if fromstr == "" && tostr == "" {
+		return nil, nil
 	}
 
-	return DateRange{
-		from,
-		to,
-	}, nil
+	from, err := From(fromstr)
+	if err != nil {
+		return nil, err
+	}
+
+	to, err := To(tostr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DateRange{from, to}, nil
 }
 
 // contains returns true if the timestamp ts contained by the bounds defined by the DateRange d.
 // input 'ts' is 'trusted' and does not have the same parsing complexity as a From or To string
-func (d DateRange) contains(ts string) (bool, error) {
+func (d *DateRange) contains(ts string) (bool, error) {
+	if d == nil {
+		return true, nil
+	}
 	timestamp, err := time.Parse(timeLayout, ts)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse ts: %w", err)
 	}
 	unixTs := timestamp.Unix()
-
 	return unixTs >= d.from && unixTs <= d.to, nil
 }
 

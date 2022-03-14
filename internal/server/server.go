@@ -19,14 +19,13 @@ package server
 import (
 	"context"
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 func Serve(port int, h http.Handler) error {
@@ -44,11 +43,11 @@ func Serve(port int, h http.Handler) error {
 		defer cancel()
 		err := httpServer.Shutdown(ctx)
 		if err != nil {
-			log.Warnf("Failed to shut down server: %v", err)
+			log.Warn().Msgf("Failed to shut down server: %v", err)
 		}
 	}()
 
-	log.Infof("Starting web server at :%v", port)
+	log.Info().Msgf("Starting web server at :%v", port)
 
 	return httpServer.ListenAndServe()
 }

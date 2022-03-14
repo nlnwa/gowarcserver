@@ -1,19 +1,15 @@
 package index
 
 import (
+	"github.com/dgraph-io/badger/v3/options"
 	"github.com/nlnwa/gowarc"
+	"github.com/nlnwa/gowarcserver/internal/database"
 	"os"
 	"path"
 	"testing"
-
-	"github.com/nlnwa/gowarcserver/internal/database"
-
-	"github.com/dgraph-io/badger/v3/options"
-	log "github.com/sirupsen/logrus"
 )
 
 func TestReadFile(t *testing.T) {
-	log.SetLevel(log.WarnLevel)
 	// same as testdata/example.warc except removed gzip content because of illegal go str characters
 	testFileContent := []byte(`WARC/1.0
 WARC-Date: 2017-03-06T04:03:53Z
@@ -72,7 +68,7 @@ Content-Length: 0`)
 			if t, ok := tt.writer.(*CdxDb); ok {
 				defer t.Close()
 			}
-			err = ReadFile(filepath, tt.writer, gowarc.WithNoValidation())
+			_, _, err = ReadFile(filepath, tt.writer, func(gowarc.WarcRecord) bool { return true })
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}

@@ -23,41 +23,40 @@ import (
 	"github.com/nlnwa/whatwg-url/url"
 )
 
-func SsurtHostname(uri string) (string, error) {
+func UrlToSsurtHostname(uri string) (string, error) {
 	u, err := url.Parse(uri)
 	if err != nil {
 		return "", err
 	}
-	result := new(strings.Builder)
-	writeHostName(u, result)
-	return result.String(), nil
+	sb := new(strings.Builder)
+	writeHostName(sb, u)
+	return sb.String(), nil
 }
 
-func SsurtUrl(u *url.Url, includeScheme bool) (string, error) {
+func UrlToSsurt(u *url.Url) string {
+	// TODO normalize search params, e.g. remove session tokens
 	u.SearchParams().Sort()
 
-	result := new(strings.Builder)
-	writeHostName(u, result)
+	sb := new(strings.Builder)
 
-	if includeScheme {
-		writeScheme(u, result)
-	}
-	result.WriteString(u.Pathname())
-	result.WriteString(u.Search())
-	result.WriteString(u.Hash())
+	writeHostName(sb, u)
+	writeScheme(sb, u)
+	sb.WriteString(u.Pathname())
+	sb.WriteString(u.Search())
+	sb.WriteString(u.Hash())
 
-	return result.String(), nil
+	return sb.String()
 }
 
-func SsurtString(u string, includeScheme bool) (string, error) {
-	u2, err := url.Parse(u)
+func StringToSsurt(uri string) (string, error) {
+	u, err := url.Parse(uri)
 	if err != nil {
 		return "", err
 	}
-	return SsurtUrl(u2, includeScheme)
+	return UrlToSsurt(u), nil
 }
 
-func writeHostName(u *url.Url, sb *strings.Builder) {
+func writeHostName(sb *strings.Builder, u *url.Url) {
 	hostname := u.Hostname()
 	if hostname == "" {
 		return
@@ -75,15 +74,15 @@ func writeHostName(u *url.Url, sb *strings.Builder) {
 	}
 
 	sb.WriteString("//")
-
 }
 
-func writeScheme(u *url.Url, sb *strings.Builder) {
+func writeScheme(sb *strings.Builder, u *url.Url) {
 	if u.Port() != "" {
 		sb.WriteString(u.Port())
 		sb.WriteByte(':')
 	}
-	sb.WriteString(strings.TrimSuffix(u.Protocol(), ":"))
+	scheme := u.Scheme()
+	sb.WriteString(scheme)
 	if u.Username() != "" {
 		sb.WriteByte('@')
 		sb.WriteString(u.Username())

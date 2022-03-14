@@ -19,18 +19,18 @@ package database
 import (
 	"errors"
 	"fmt"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/nlnwa/gowarc"
+	"github.com/nlnwa/gowarcserver/internal/cdx"
+	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/rs/zerolog/log"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"os"
 	"path"
 	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/dgraph-io/badger/v3"
-	"github.com/nlnwa/gowarc"
-	"github.com/nlnwa/gowarcserver/schema"
-	log "github.com/sirupsen/logrus"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type record struct {
@@ -41,11 +41,17 @@ type record struct {
 }
 
 type CdxDbIndex struct {
-	idIndex   *badger.DB
+	// idIndex maps record id to storage ref
+	idIndex *badger.DB
+
+	// fileIndex maps filepath to fileinfo
 	fileIndex *badger.DB
-	cdxIndex  *badger.DB
-	batch     chan *record
-	done      chan struct{}
+
+	// cdxIndex maps cdx key to cdx record
+	cdxIndex *badger.DB
+
+	batch chan *record
+	done  chan struct{}
 }
 
 func NewCdxIndexDb(options ...DbOption) (*CdxDbIndex, error) {
@@ -133,11 +139,11 @@ func (d *CdxDbIndex) runValueLogGC(discardRatio float64) {
 	wg.Wait()
 }
 
+// AddFile checks if file is indexed or has not changed since indexing, and adds file to file index.
 func (d *CdxDbIndex) AddFile(fileName string) error {
-	// Check if file is indexed and has not changed since indexing
 	stat, err := os.Stat(fileName)
 	if err != nil {
-		return fmt.Errorf("failed to get file info: %s: %w", fileName, stat)
+		return fmt.Errorf("failed to get file info: %s: %w", fileName, err)
 	}
 
 	fileSize := stat.Size()
@@ -156,6 +162,7 @@ func (d *CdxDbIndex) AddFile(fileName string) error {
 	return d.updateFilePath(fileName)
 }
 
+// Close stops the gc and batch workers and closes the index databases.
 func (d *CdxDbIndex) Close() {
 	close(d.done)
 	_ = d.idIndex.Close()
@@ -163,22 +170,22 @@ func (d *CdxDbIndex) Close() {
 	_ = d.cdxIndex.Close()
 }
 
-func (d *CdxDbIndex) Write(warcRecord gowarc.WarcRecord, filePath string, offset int64) error {
-	if warcRecord.Type() != gowarc.Response && warcRecord.Type() != gowarc.Revisit {
-		return nil
-	}
-
+// Write schedules a record to be added to the index via the batch channel.
+func (d *CdxDbIndex) Write(warcRecord gowarc.WarcRecord, filePath string, offset int64, length int64) error {
 	rec := &record{
 		id:       warcRecord.WarcHeader().Get(gowarc.WarcRecordID),
 		filePath: filePath,
 		offset:   offset,
-		cdx:      schema.NewCdxRecord(warcRecord, filePath, offset),
+		cdx:      cdx.New(warcRecord, filePath, offset, length),
 	}
 
 	select {
 	case <-d.done:
+		// do nothing
 	case d.batch <- rec:
+		// added record to batch
 	default:
+		// batch channel is full so flush batch channel before adding to record to batch
 		d.flushBatch()
 		d.batch <- rec
 	}
@@ -228,7 +235,6 @@ func (d *CdxDbIndex) collectBatch() []*record {
 
 func (d *CdxDbIndex) flushBatch() {
 	records := d.collectBatch()
-
 	if len(records) == 0 {
 		return
 	}
@@ -239,7 +245,7 @@ func (d *CdxDbIndex) flushBatch() {
 			storageRef := fmt.Sprintf("warcfile:%s:%d", fileName, r.offset)
 			err := txn.Set([]byte(r.id), []byte(storageRef))
 			if err != nil {
-				log.Errorf("Failed to save storage ref in id index: %s: %s: %v", r.id, storageRef, err)
+				log.Error().Msgf("Failed to save storage ref in id index: %s: %s: %v", r.id, storageRef, err)
 			}
 		}
 		return nil
@@ -251,12 +257,12 @@ func (d *CdxDbIndex) flushBatch() {
 				key := r.cdx.Ssu + " " + r.cdx.Sts + " " + r.cdx.Srt
 				value, err := proto.Marshal(r.cdx)
 				if err != nil {
-					log.Errorf("Failed to marshal cdx index value: %s, %v", key, err)
+					log.Error().Msgf("Failed to marshal cdx index value: %s, %v", key, err)
 					continue
 				}
 				err = txn.Set([]byte(key), value)
 				if err != nil {
-					log.Errorf("Failed to save cdx entry to database: %s: %v", key, err)
+					log.Error().Msgf("Failed to save cdx entry to database: %s: %v", key, err)
 				}
 			}
 		}
@@ -293,26 +299,33 @@ func (d *CdxDbIndex) GetFileInfo(fileName string) (*schema.Fileinfo, error) {
 	return val, err
 }
 
-type PerItemFunction func(*badger.Item) (stopIteration bool)
-type AfterIterationFunction func(txn *badger.Txn) error
+type PerItemFunc func(*badger.Item) (stopIteration bool)
+type AfterIterFunc func(txn *badger.Txn) error
 
-func (d *CdxDbIndex) Search(key string, reverse bool, f PerItemFunction, a AfterIterationFunction) error {
+func (d *CdxDbIndex) Walk(a AfterIterFunc) error {
+	return d.cdxIndex.View(a)
+}
+
+// Search iterates over keys prefixed with key and applies a PerItemFunc to each item value.
+func (d *CdxDbIndex) Search(key string, reverse bool, f PerItemFunc, a AfterIterFunc) error {
 	return d.cdxIndex.View(func(txn *badger.Txn) error {
+		prefix := []byte(key)
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
-		opts.Prefix = []byte(key)
+		opts.Prefix = prefix
 		opts.Reverse = reverse
+
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
+		// see https://github.com/dgraph-io/badger/issues/436 for details regarding reverse seeking
 		seekKey := key
 		if reverse {
 			seekKey += string(rune(0xff))
 		}
 
-		for it.Seek([]byte(seekKey)); it.ValidForPrefix([]byte(key)); it.Next() {
-			item := it.Item()
-			if f(item) {
+		for it.Seek([]byte(seekKey)); it.ValidForPrefix(prefix); it.Next() {
+			if f(it.Item()) {
 				break
 			}
 		}
@@ -320,13 +333,13 @@ func (d *CdxDbIndex) Search(key string, reverse bool, f PerItemFunction, a After
 	})
 }
 
-func (d *CdxDbIndex) ListFileNames(fn PerItemFunction) error {
+func (d *CdxDbIndex) ListFileNames(fn PerItemFunc) error {
 	opts := badger.DefaultIteratorOptions
 	opts.PrefetchValues = false
 	return walk(d.fileIndex, opts, fn)
 }
 
-func (d *CdxDbIndex) ListIds(fn PerItemFunction) error {
+func (d *CdxDbIndex) ListIds(fn PerItemFunc) error {
 	opts := badger.DefaultIteratorOptions
 	return walk(d.idIndex, opts, fn)
 }

@@ -17,46 +17,27 @@
 package warcserver
 
 import (
-	"fmt"
-	"github.com/gorilla/mux"
+	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/loader"
-	"github.com/nlnwa/gowarcserver/internal/server/handlers"
 	"net/http"
-	"net/url"
-	"time"
 )
 
-func handleRoot(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = fmt.Fprintf(w, `["all"]`)
-}
+func Register(r *httprouter.Router, middleware func(http.Handler) http.Handler, pathPrefix string, loader *loader.Loader, db *database.CdxDbIndex) {
+	var indexHandler http.Handler
+	var resourceHandler http.Handler
 
-func RegisterProxy(r *mux.Router, children []*url.URL, timeout time.Duration) {
-	indexHandler := handlers.AggregatedHandler(children, timeout)
-	resourceHandler := handlers.FirstHandler(children, timeout)
-
-	// JSON list of available endpoints
-	r.HandleFunc("/", handleRoot)
-	// Direct index
-	r.Handle("/{collection}/index", indexHandler)
-	// Direct resource
-	r.Handle("/{collection}/resource", resourceHandler)
-}
-
-func Register(r *mux.Router, loader *loader.Loader, db *database.CdxDbIndex) {
-	indexHandler := &IndexHandler{DbCdxServer{db}}
-	resourceHandler := &ResourceHandler{
+	indexHandler = IndexHandler{DbCdxServer{db}}
+	resourceHandler = ResourceHandler{
 		DbCdxServer: DbCdxServer{db},
-		loader:      loader,
+		Loader:      loader,
+	}
+	if middleware != nil {
+		indexHandler = middleware(indexHandler)
+		resourceHandler = middleware(resourceHandler)
 	}
 
 	// https://pywb.readthedocs.io/en/latest/manual/warcserver.html#warcserver-api
-
-	// JSON list of available endpoints
-	r.HandleFunc("/", handleRoot)
-	// Direct index
-	r.Handle("/{collection}/index", indexHandler)
-	// Direct resource
-	r.Handle("/{collection}/resource", resourceHandler)
+	r.Handler("GET", pathPrefix + "/cdx", indexHandler)
+	r.Handler("GET", pathPrefix + "/web/:closest/*url", resourceHandler)
 }

@@ -102,7 +102,7 @@ func TestLoader_Get(t *testing.T) {
 
 type mockStorageRefResolver struct{}
 
-func (m *mockStorageRefResolver) Resolve(warcId string) (storageRef string, err error) {
+func (m mockStorageRefResolver) Resolve(warcId string) (storageRef string, err error) {
 	switch warcId {
 	case "urn:uuid:e9a0cecc-0221-11e7-adb1-0242ac120008":
 		storageRef = "warcfile:../../testdata/example.warc:0"

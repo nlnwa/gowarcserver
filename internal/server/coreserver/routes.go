@@ -17,15 +17,16 @@
 package coreserver
 
 import (
-	"github.com/gorilla/mux"
+	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/loader"
+	"net/http"
 )
 
-func Register(r *mux.Router, loader loader.RecordLoader, db *database.CdxDbIndex) {
+func Register(r *httprouter.Router, middleware func(http.Handler) http.Handler, pathPrefix string, loader *loader.Loader, db *database.CdxDbIndex) {
 	indexHandler := IndexHandler{db}
-	r.HandleFunc("/ids", indexHandler.ListIds)
-	r.HandleFunc("/files", indexHandler.ListFileNames)
-	r.HandleFunc("/search", indexHandler.Search)
-	r.Handle("/id/{id}", &contentHandler{loader})
+	r.Handler("GET", pathPrefix + "/ids", http.HandlerFunc(indexHandler.ListIds))
+	r.Handler("GET", pathPrefix + "/files", http.HandlerFunc(indexHandler.ListFileNames))
+	r.Handler("GET", pathPrefix + "/search", http.HandlerFunc(indexHandler.Search))
+	r.Handler("GET", pathPrefix + "/id/{id}", contentHandler{loader})
 }

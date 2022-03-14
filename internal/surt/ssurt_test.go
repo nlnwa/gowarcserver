@@ -22,34 +22,33 @@ import (
 
 func TestSsurtS(t *testing.T) {
 	tests := []struct {
-		url           string
-		includeScheme bool
-		want          string
-		wantErr       bool
+		url     string
+		want    string
+		wantErr bool
 	}{
-		{"http://www.example.com", true, "com,example,www,//http:/", false},
-		{"http://www.example.com:80", true, "com,example,www,//http:/", false},
-		{"http://www.example.com/foo/bar", true, "com,example,www,//http:/foo/bar", false},
-		{"http://127.0.0.1/foo/bar", true, "127.0.0.1//http:/foo/bar", false},
-		{"http://[::1]/foo/bar", true, "[::1]//http:/foo/bar", false},
-		{"http://example.com/foo/bar?query#fragment", true, "com,example,//http:/foo/bar?query#fragment", false},
-		{"http://example.com:8080/foo/bar?query#fragment", true, "com,example,//8080:http:/foo/bar?query#fragment", false},
-		{"http://user:pass@foo.example.org:81/path?query#frag", true, "org,example,foo,//81:http@user:pass:/path?query#frag", false},
-		{"http://user@foo.example.org:81/path?query#frag", true, "org,example,foo,//81:http@user:/path?query#frag", false},
-		{"http://foo.example.org:81/path?query#frag", true, "org,example,foo,//81:http:/path?query#frag", false},
-		{"http://foo.example.org/path?query#frag", true, "org,example,foo,//http:/path?query#frag", false},
-		{"http://81.foo.example.org/path?query#frag", true, "org,example,foo,81,//http:/path?query#frag", false},
-		{"scheme://user:pass@foo.example.org:81/path?query#frag", true, "org,example,foo,//81:scheme@user:pass:/path?query#frag", false},
-		{"scheme://user@foo.example.org:81/path?query#frag", true, "org,example,foo,//81:scheme@user:/path?query#frag", false},
-		{"scheme://foo.example.org:81/path?query#frag", true, "org,example,foo,//81:scheme:/path?query#frag", false},
-		{"scheme://foo.example.org/path?query#frag", true, "org,example,foo,//scheme:/path?query#frag", false},
-		{"scheme://81.foo.example.org/path?query#frag", true, "org,example,foo,81,//scheme:/path?query#frag", false},
+		{"http://www.example.com", "com,example,www,//http:/", false},
+		{"http://www.example.com:80", "com,example,www,//http:/", false},
+		{"http://www.example.com/foo/bar", "com,example,www,//http:/foo/bar", false},
+		{"http://127.0.0.1/foo/bar", "127.0.0.1//http:/foo/bar", false},
+		{"http://[::1]/foo/bar", "[::1]//http:/foo/bar", false},
+		{"http://example.com/foo/bar?query#fragment", "com,example,//http:/foo/bar?query#fragment", false},
+		{"http://example.com:8080/foo/bar?query#fragment", "com,example,//8080:http:/foo/bar?query#fragment", false},
+		{"http://user:pass@foo.example.org:81/path?query#frag", "org,example,foo,//81:http@user:pass:/path?query#frag", false},
+		{"http://user@foo.example.org:81/path?query#frag", "org,example,foo,//81:http@user:/path?query#frag", false},
+		{"http://foo.example.org:81/path?query#frag", "org,example,foo,//81:http:/path?query#frag", false},
+		{"http://foo.example.org/path?query#frag", "org,example,foo,//http:/path?query#frag", false},
+		{"http://81.foo.example.org/path?query#frag", "org,example,foo,81,//http:/path?query#frag", false},
+		{"scheme://user:pass@foo.example.org:81/path?query#frag", "org,example,foo,//81:scheme@user:pass:/path?query#frag", false},
+		{"scheme://user@foo.example.org:81/path?query#frag", "org,example,foo,//81:scheme@user:/path?query#frag", false},
+		{"scheme://foo.example.org:81/path?query#frag", "org,example,foo,//81:scheme:/path?query#frag", false},
+		{"scheme://foo.example.org/path?query#frag", "org,example,foo,//scheme:/path?query#frag", false},
+		{"scheme://81.foo.example.org/path?query#frag", "org,example,foo,81,//scheme:/path?query#frag", false},
 		// TODO the url parser does not by default provide access to part after scheme when there is no authority
-		// {"screenshot:http://example.com/", true, "com,example,//screenshot:", false},
+		// {"screenshot:http://example.com/", "com,example,//screenshot:", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.url, func(t *testing.T) {
-			got, err := SsurtString(tt.url, tt.includeScheme)
+			got, err := StringToSsurt(tt.url)
 			if err != nil {
 				if tt.wantErr {
 					return

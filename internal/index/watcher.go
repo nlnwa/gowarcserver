@@ -1,10 +1,9 @@
 package index
 
 import (
-	"os"
-
 	"github.com/fsnotify/fsnotify"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
+	"os"
 )
 
 func newWatcher() (*watcher, error) {
@@ -46,21 +45,21 @@ func (w *watcher) Watch(perFileFn func(string)) {
 				perFileFn(event.Name)
 			} else if event.Op&fsnotify.Create == fsnotify.Create {
 				if info, err := os.Stat(event.Name); err != nil {
-					log.Warnf("Watcher failed to stat new file event: %v: %v", event.Name, err)
+					log.Warn().Msgf("Watcher failed to stat new file event: %v: %v", event.Name, err)
 					continue
 				} else if !info.Mode().IsDir() {
 					continue
 				}
 
 				if err := w.Add(event.Name); err != nil {
-					log.Warnf("Watcher failed to add new directory: %s, %v", event.Name, err)
+					log.Warn().Msgf("Watcher failed to add new directory: %s, %v", event.Name, err)
 				}
 			}
 		case err, ok := <-w.Errors:
 			if !ok {
 				return
 			}
-			log.Warnf("Watcher error: %v", err)
+			log.Warn().Msgf("Watcher error: %v", err)
 		}
 	}
 }

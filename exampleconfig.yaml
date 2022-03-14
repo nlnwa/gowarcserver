@@ -1,24 +1,37 @@
 port: 8880
 log-level: "debug"
+log-formatter: "log-fmt"
+log-method: false
 
-# server
-index: false
+# SERVER
+
+index: true
 watch: false
-
-# index
-db: .
-dirs:
-  - "./testdata"
-suffixes:
-  - ".warc"
-  - ".warc.gz"
-max-depth: 4
-workers: 8
-compression: "snappy"
+# log server requests
 log-requests: true
 
+# INDEX
+dirs:
+  - "./testdata"
+# include only files matching regular expressions
+include:
+  - ".warc.gz$"
+# exclude files matching regular expressions
+exclude: []
+max-depth: 4
+workers: 8
 
-# proxy
+# format: toc
+bloom-capacity: 10000
+bloom-fp: 0.1
+
+# format: cdxdb
+db-dir: .
+compression: "snappy"
+
+
+# PROXY
+
 child-urls:
   - "http://localhost:8888"
   - "http://localhost:8889"

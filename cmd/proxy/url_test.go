@@ -54,7 +54,6 @@ func TestParseUrls(t *testing.T) {
 			}
 
 			urls := ParseUrls(tt.urlStrs)
-			println(urls)
 			for i, url := range urls {
 				expected := tt.expectedUrls[i]
 				if *url != *expected {
