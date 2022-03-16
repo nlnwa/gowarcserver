@@ -118,7 +118,7 @@ func (c DbCdxServer) one(key string, closest string) (cdx *schema.Cdx, err error
 
 func (c DbCdxServer) search(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, error) {
 	if len(api.Urls) > 1 {
-		if api.Sort == ""  {
+		if api.Sort == "" {
 			return c.unsortedParallelSearch(api, perCdxFunc)
 		}
 		return c.sortedParallelSearch(api, perCdxFunc)
@@ -366,7 +366,7 @@ func (c DbCdxServer) closestUniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc)
 				it = forward
 			} else if b {
 				it = backward
-			} else 	{
+			} else {
 				return nil
 			}
 

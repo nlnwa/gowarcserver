@@ -41,7 +41,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	// Global flags
-	_ = cmd.PersistentFlags().StringP("config", "c", "", `path to config file, default paths is "./config.yaml", "$HOME/.gowarcserver/config.yaml" or "/etc/gowarcserver/config.yaml"`)
+	_ = cmd.PersistentFlags().StringP("config", "c", "", `path to config file, default paths are "./config.yaml", "$HOME/.gowarcserver/config.yaml" or "/etc/gowarcserver/config.yaml"`)
 	_ = cmd.PersistentFlags().StringP("log-level", "l", "info", `set log level, available levels are "panic", "fatal", "error", "warn", "info", "debug" and "trace"`)
 	_ = cmd.PersistentFlags().String("log-formatter", "logfmt", "log formatter, available values are logfmt and json")
 	_ = cmd.PersistentFlags().Bool("log-method", false, "log method caller")
@@ -81,7 +81,7 @@ func initConfig() {
 		}
 		log.Fatal().Msgf("Failed to read config file: %v", err)
 	}
-	logger.InitLog(viper.GetString("log-level"),viper.GetString("log-formatter"), viper.GetBool("log-method"))
+	logger.InitLog(viper.GetString("log-level"), viper.GetString("log-formatter"), viper.GetBool("log-method"))
 
 	log.Debug().Msgf("Using config file: %s", viper.ConfigFileUsed())
 }

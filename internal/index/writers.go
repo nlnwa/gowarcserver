@@ -65,6 +65,7 @@ func (c CdxDb) Index(fileName string) error {
 	}
 	return indexFile(fileName, c)
 }
+
 type Cdx struct {
 }
 

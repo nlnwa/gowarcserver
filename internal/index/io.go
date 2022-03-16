@@ -51,7 +51,7 @@ func ReadFile(filename string, writer RecordWriter, filter Filter, opts ...gowar
 	for {
 		wr, offset, validation, err := wf.Next()
 		if prevWr != nil {
-			_ = writer.Write(prevWr, filename, prevOffset, offset - prevOffset)
+			_ = writer.Write(prevWr, filename, prevOffset, offset-prevOffset)
 			prevWr = nil
 		}
 		prevOffset = offset
