@@ -24,12 +24,11 @@ import (
 var Version string
 
 func NewCommand() *cobra.Command {
-	var cmd = &cobra.Command{
+	return &cobra.Command{
 		Use:   "version",
-		Short: "print version number",
+		Short: "Print version number",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println(Version)
 		},
 	}
-	return cmd
 }

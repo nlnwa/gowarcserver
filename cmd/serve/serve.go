@@ -19,71 +19,69 @@ package serve
 import (
 	"errors"
 	"fmt"
+	"github.com/dgraph-io/badger/v3/options"
 	"github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/server/coreserver"
-	"net/http"
-	"os"
-	"regexp"
-	"runtime"
-	"time"
-
 	"github.com/nlnwa/gowarcserver/internal/config"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/index"
 	"github.com/nlnwa/gowarcserver/internal/loader"
 	"github.com/nlnwa/gowarcserver/internal/server"
+	"github.com/nlnwa/gowarcserver/internal/server/coreserver"
 	"github.com/nlnwa/gowarcserver/internal/server/warcserver"
-
-	"github.com/dgraph-io/badger/v3/options"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"net/http"
+	"os"
+	"regexp"
+	"runtime"
+	"time"
 )
 
 func NewCommand() *cobra.Command {
-	var cmd = &cobra.Command{
+	return &cobra.Command{
 		Use:   "serve",
-		Short: "Start a warc server",
-		RunE:  serveCmd,
+		Short: "Start warc server",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			// Increase GOMAXPROCS as recommended by badger
 			// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
 			runtime.GOMAXPROCS(128)
 		},
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			// defaults
+			port := 9999
+			watch := false
+			enableIndexing := true
+			indexDbDir := "."
+			indexDepth := 4
+			indexWorkers := 8
+			indexDbBatchMaxSize := 1000
+			indexDbBatchMaxWait := 5 * time.Second
+			compression := config.SnappyCompression
+			logRequests := false
+
+			cmd.Flags().IntP("port", "p", port, "server port")
+			cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
+			cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
+			cmd.Flags().BoolP("index", "a", enableIndexing, "enable indexing")
+			cmd.Flags().IntP("max-depth", "w", indexDepth, "maximum directory recursion depth")
+			cmd.Flags().Int("workers", indexWorkers, "number of index workers")
+			cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
+			cmd.Flags().Bool("watch", watch, "watch files for changes")
+			cmd.Flags().String("db-dir", indexDbDir, "path to index database")
+			cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
+			cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max transaction batch size in badger")
+			cmd.Flags().String("compression", compression, "database compression type: 'none', 'snappy' or 'zstd'")
+			cmd.Flags().Bool("log-requests", logRequests, "log http requests")
+
+			if err := viper.BindPFlags(cmd.Flags()); err != nil {
+				return fmt.Errorf("failed to bind flags, err: %v", err)
+			}
+			return nil
+		},
+		RunE: serveCmd,
 	}
-
-	// defaults
-	port := 9999
-	watch := false
-	enableIndexing := true
-	indexDbDir := "."
-	indexDepth := 4
-	indexWorkers := 8
-	indexDbBatchMaxSize := 1000
-	indexDbBatchMaxWait := 5 * time.Second
-	compression := config.SnappyCompression
-	logRequests := false
-
-	cmd.Flags().IntP("port", "p", port, "server port")
-	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
-	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
-	cmd.Flags().BoolP("index", "a", enableIndexing, "enable indexing")
-	cmd.Flags().IntP("max-depth", "w", indexDepth, "maximum directory recursion depth")
-	cmd.Flags().Int("workers", indexWorkers, "number of index workers")
-	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
-	cmd.Flags().Bool("watch", watch, "watch files for changes")
-	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
-	cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
-	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max transaction batch size in badger")
-	cmd.Flags().String("compression", compression, "database compression type: 'none', 'snappy' or 'zstd'")
-	cmd.Flags().Bool("log-requests", logRequests, "log http requests")
-
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		log.Fatal().Msgf("Failed to bind serve flags, err: %v", err)
-	}
-
-	return cmd
 }
 
 func serveCmd(cmd *cobra.Command, args []string) error {

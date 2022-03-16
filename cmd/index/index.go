@@ -23,7 +23,6 @@ import (
 	"github.com/nlnwa/gowarcserver/internal/config"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"regexp"
@@ -32,41 +31,41 @@ import (
 )
 
 func NewCommand() *cobra.Command {
-	var cmd = &cobra.Command{
+	return &cobra.Command{
 		Use:   "index [dir] ...",
 		Short: "Index warc file(s)",
-		RunE:  indexCmd,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			// defaults
+			format := "cdxj"
+			indexDbDir := "."
+			compression := config.SnappyCompression
+			indexDepth := 4
+			indexWorkers := 8
+			indexDbBatchMaxSize := 1000
+			indexDbBatchMaxWait := 5 * time.Second
+			bloomCapacity := uint(1000)
+			bloomFp := 0.01
+
+			cmd.Flags().StringP("format", "f", format, `index format: "cdxj", "cdxpb", "cdxdb" or "toc"`)
+			cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
+			cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
+			cmd.Flags().IntP("max-depth", "d", indexDepth, "maximum directory recursion")
+			cmd.Flags().Int("workers", indexWorkers, "number of index workers")
+			cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
+			cmd.Flags().String("db-dir", indexDbDir, "path to index database")
+			cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
+			cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max transaction batch size in badger")
+			cmd.Flags().String("compression", compression, `badger compression type: "none", "snappy" or "zstd"`)
+			cmd.Flags().Uint("bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
+			cmd.Flags().Float64("bloom-fp", bloomFp, "estimated bloom filter false positive rate")
+
+			if err := viper.BindPFlags(cmd.Flags()); err != nil {
+				return fmt.Errorf("failed to bind flags: %v", err)
+			}
+			return nil
+		},
+		RunE: indexCmd,
 	}
-
-	// defaults
-	format := "cdxj"
-	indexDbDir := "."
-	compression := config.SnappyCompression
-	indexDepth := 4
-	indexWorkers := 8
-	indexDbBatchMaxSize := 1000
-	indexDbBatchMaxWait := 5 * time.Second
-	bloomCapacity := uint(1000)
-	bloomFp := 0.01
-
-	cmd.Flags().StringP("format", "f", format, `index format: "cdxj", "cdxpb", "cdxdb" or "toc"`)
-	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
-	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
-	cmd.Flags().IntP("max-depth", "d", indexDepth, "maximum directory recursion")
-	cmd.Flags().Int("workers", indexWorkers, "number of index workers")
-	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
-	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
-	cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
-	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max transaction batch size in badger")
-	cmd.Flags().String("compression", compression, `badger compression type: "none", "snappy" or "zstd"`)
-	cmd.Flags().Uint("bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
-	cmd.Flags().Float64("bloom-fp", bloomFp, "estimated bloom filter false positive rate")
-
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		log.Fatal().Msgf("Failed to bind index flags: %v", err)
-	}
-
-	return cmd
 }
 
 func indexCmd(_ *cobra.Command, args []string) error {
