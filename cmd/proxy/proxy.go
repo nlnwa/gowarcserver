@@ -17,26 +17,30 @@
 package proxy
 
 import (
+	"fmt"
+	gHandlers "github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
+	"github.com/nlnwa/gowarcserver/internal/server"
 	"github.com/nlnwa/gowarcserver/internal/server/handlers"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"net/http"
 	"os"
 	"time"
-
-	gHandlers "github.com/gorilla/handlers"
-	"github.com/nlnwa/gowarcserver/internal/server"
-	"github.com/rs/zerolog/log"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func NewCommand() *cobra.Command {
-	var cmd = &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "proxy",
 		Short: "Start proxy server",
-		RunE:  proxyCmd,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := viper.BindPFlags(cmd.Flags()); err != nil {
+				return fmt.Errorf("failed to bind flags, err: %w", err)
+			}
+			return nil
+		},
+		RunE: proxyCmd,
 	}
-
 	// defaults
 	port := 9998
 	childUrls := []string{}
@@ -45,10 +49,6 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().IntP("port", "p", port, "Server port")
 	cmd.Flags().StringSliceP("child-urls", "u", childUrls, "List of URLs to other gowarcserver instances, queries are propagated to these urls")
 	cmd.Flags().DurationP("child-query-timeout", "t", childQueryTimeout, "Time before query to child node times out")
-
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		log.Fatal().Msgf("Failed to bind flags, err: %v", err)
-	}
 
 	return cmd
 }

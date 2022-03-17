@@ -111,8 +111,6 @@ func (rh ResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Closest:   closest,
 		}
 
-
-
 		// Fields we need to rewrite the location header
 		var sts string
 		var uri string

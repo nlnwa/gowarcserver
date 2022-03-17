@@ -38,6 +38,6 @@ func Register(r *httprouter.Router, middleware func(http.Handler) http.Handler, 
 	}
 
 	// https://pywb.readthedocs.io/en/latest/manual/warcserver.html#warcserver-api
-	r.Handler("GET", pathPrefix + "/cdx", indexHandler)
-	r.Handler("GET", pathPrefix + "/web/:closest/*url", resourceHandler)
+	r.Handler("GET", pathPrefix+"/cdx", indexHandler)
+	r.Handler("GET", pathPrefix+"/web/:closest/*url", resourceHandler)
 }

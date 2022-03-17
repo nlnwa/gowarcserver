@@ -25,8 +25,8 @@ import (
 
 func Register(r *httprouter.Router, middleware func(http.Handler) http.Handler, pathPrefix string, loader *loader.Loader, db *database.CdxDbIndex) {
 	indexHandler := IndexHandler{db}
-	r.Handler("GET", pathPrefix + "/ids", http.HandlerFunc(indexHandler.ListIds))
-	r.Handler("GET", pathPrefix + "/files", http.HandlerFunc(indexHandler.ListFileNames))
-	r.Handler("GET", pathPrefix + "/search", http.HandlerFunc(indexHandler.Search))
-	r.Handler("GET", pathPrefix + "/id/{id}", contentHandler{loader})
+	r.Handler("GET", pathPrefix+"/ids", http.HandlerFunc(indexHandler.ListIds))
+	r.Handler("GET", pathPrefix+"/files", http.HandlerFunc(indexHandler.ListFileNames))
+	r.Handler("GET", pathPrefix+"/search", http.HandlerFunc(indexHandler.Search))
+	r.Handler("GET", pathPrefix+"/id/{id}", contentHandler{loader})
 }

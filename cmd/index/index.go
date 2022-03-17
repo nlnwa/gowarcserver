@@ -23,7 +23,6 @@ import (
 	"github.com/nlnwa/gowarcserver/internal/config"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"regexp"
@@ -32,12 +31,17 @@ import (
 )
 
 func NewCommand() *cobra.Command {
-	var cmd = &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "index [dir] ...",
 		Short: "Index warc file(s)",
-		RunE:  indexCmd,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := viper.BindPFlags(cmd.Flags()); err != nil {
+				return fmt.Errorf("failed to bind flags: %w", err)
+			}
+			return nil
+		},
+		RunE: indexCmd,
 	}
-
 	// defaults
 	format := "cdxj"
 	indexDbDir := "."
@@ -61,10 +65,6 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().String("compression", compression, `badger compression type: "none", "snappy" or "zstd"`)
 	cmd.Flags().Uint("bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
 	cmd.Flags().Float64("bloom-fp", bloomFp, "estimated bloom filter false positive rate")
-
-	if err := viper.BindPFlags(cmd.Flags()); err != nil {
-		log.Fatal().Msgf("Failed to bind index flags: %v", err)
-	}
 
 	return cmd
 }
