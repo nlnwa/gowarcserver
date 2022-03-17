@@ -40,7 +40,7 @@ import (
 )
 
 func NewCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start warc server",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -49,39 +49,40 @@ func NewCommand() *cobra.Command {
 			runtime.GOMAXPROCS(128)
 		},
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			// defaults
-			port := 9999
-			watch := false
-			enableIndexing := true
-			indexDbDir := "."
-			indexDepth := 4
-			indexWorkers := 8
-			indexDbBatchMaxSize := 1000
-			indexDbBatchMaxWait := 5 * time.Second
-			compression := config.SnappyCompression
-			logRequests := false
-
-			cmd.Flags().IntP("port", "p", port, "server port")
-			cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
-			cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
-			cmd.Flags().BoolP("index", "a", enableIndexing, "enable indexing")
-			cmd.Flags().IntP("max-depth", "w", indexDepth, "maximum directory recursion depth")
-			cmd.Flags().Int("workers", indexWorkers, "number of index workers")
-			cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
-			cmd.Flags().Bool("watch", watch, "watch files for changes")
-			cmd.Flags().String("db-dir", indexDbDir, "path to index database")
-			cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
-			cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max transaction batch size in badger")
-			cmd.Flags().String("compression", compression, "database compression type: 'none', 'snappy' or 'zstd'")
-			cmd.Flags().Bool("log-requests", logRequests, "log http requests")
-
 			if err := viper.BindPFlags(cmd.Flags()); err != nil {
-				return fmt.Errorf("failed to bind flags, err: %v", err)
+				return fmt.Errorf("failed to bind flags, err: %w", err)
 			}
 			return nil
 		},
 		RunE: serveCmd,
 	}
+	// defaults
+	port := 9999
+	watch := false
+	enableIndexing := true
+	indexDbDir := "."
+	indexDepth := 4
+	indexWorkers := 8
+	indexDbBatchMaxSize := 1000
+	indexDbBatchMaxWait := 5 * time.Second
+	compression := config.SnappyCompression
+	logRequests := false
+
+	cmd.Flags().IntP("port", "p", port, "server port")
+	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
+	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
+	cmd.Flags().BoolP("index", "a", enableIndexing, "enable indexing")
+	cmd.Flags().IntP("max-depth", "w", indexDepth, "maximum directory recursion depth")
+	cmd.Flags().Int("workers", indexWorkers, "number of index workers")
+	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
+	cmd.Flags().Bool("watch", watch, "watch files for changes")
+	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
+	cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
+	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max transaction batch size in badger")
+	cmd.Flags().String("compression", compression, "database compression type: 'none', 'snappy' or 'zstd'")
+	cmd.Flags().Bool("log-requests", logRequests, "log http requests")
+
+	return cmd
 }
 
 func serveCmd(cmd *cobra.Command, args []string) error {
