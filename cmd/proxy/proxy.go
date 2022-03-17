@@ -30,26 +30,27 @@ import (
 )
 
 func NewCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "proxy",
 		Short: "Start proxy server",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			// defaults
-			port := 9998
-			childUrls := []string{}
-			childQueryTimeout := 300 * time.Millisecond
-
-			cmd.Flags().IntP("port", "p", port, "Server port")
-			cmd.Flags().StringSliceP("child-urls", "u", childUrls, "List of URLs to other gowarcserver instances, queries are propagated to these urls")
-			cmd.Flags().DurationP("child-query-timeout", "t", childQueryTimeout, "Time before query to child node times out")
-
 			if err := viper.BindPFlags(cmd.Flags()); err != nil {
-				return fmt.Errorf("failed to bind flags, err: %v", err)
+				return fmt.Errorf("failed to bind flags, err: %w", err)
 			}
 			return nil
 		},
 		RunE: proxyCmd,
 	}
+	// defaults
+	port := 9998
+	childUrls := []string{}
+	childQueryTimeout := 300 * time.Millisecond
+
+	cmd.Flags().IntP("port", "p", port, "Server port")
+	cmd.Flags().StringSliceP("child-urls", "u", childUrls, "List of URLs to other gowarcserver instances, queries are propagated to these urls")
+	cmd.Flags().DurationP("child-query-timeout", "t", childQueryTimeout, "Time before query to child node times out")
+
+	return cmd
 }
 
 func proxyCmd(_ *cobra.Command, _ []string) error {

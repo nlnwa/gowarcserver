@@ -46,7 +46,7 @@ func NewCommand() *cobra.Command {
 	_ = cmd.PersistentFlags().String("log-formatter", "logfmt", "log formatter, available values are logfmt and json")
 	_ = cmd.PersistentFlags().Bool("log-method", false, "log method caller")
 	if err := viper.BindPFlags(cmd.PersistentFlags()); err != nil {
-		log.Fatal().Msgf("Failed to bind root flags, err: %v", err)
+		log.Fatal().Msgf("Failed to bind root flags: %v", err)
 	}
 
 	// Subcommands
