@@ -17,10 +17,11 @@
 package warcserver
 
 import (
+	"net/http"
+
 	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/loader"
-	"net/http"
 )
 
 func Register(r *httprouter.Router, middleware func(http.Handler) http.Handler, pathPrefix string, loader *loader.Loader, db *database.CdxDbIndex) {

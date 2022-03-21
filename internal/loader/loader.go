@@ -60,6 +60,7 @@ func (e ErrResolveRevisit) String() string {
 }
 
 func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
+	log.Debug().Msg("loader load")
 	storageRef, err := l.Resolver.Resolve(warcId)
 	if err != nil {
 		return nil, err
@@ -95,6 +96,7 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 			reqUrl := *l.ProxyUrl
 			reqUrl.Path = path.Join(reqUrl.Path, "id", warcRefersTo)
 
+			log.Debug().Msgf("attempt to get record from proxy url %s", reqUrl.String())
 			req, err := http.NewRequestWithContext(ctx, "GET", reqUrl.String(), nil)
 			if err != nil {
 				return nil, err
@@ -106,8 +108,15 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 			}
 			defer resp.Body.Close()
 
-			warcUnmarshaler := gowarc.NewUnmarshaler(gowarc.WithNoValidation())
-			bodyIoReader := bufio.NewReader(req.Body)
+			if resp.StatusCode != http.StatusOK {
+				return nil, fmt.Errorf("resolve revisit from proxy expected %d got %d", http.StatusOK, resp.StatusCode)
+			}
+
+			warcUnmarshaler := gowarc.NewUnmarshaler(
+				gowarc.WithSyntaxErrorPolicy(gowarc.ErrIgnore),
+				gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore),
+			)
+			bodyIoReader := bufio.NewReader(resp.Body)
 			revisitOf, _, _, err = warcUnmarshaler.Unmarshal(bodyIoReader)
 			if err != nil {
 				return nil, err
@@ -121,7 +130,6 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 				return nil, err
 			}
 		}
-
 		rtrRecord, err = record.Merge(revisitOf)
 		if err != nil {
 			return nil, err
