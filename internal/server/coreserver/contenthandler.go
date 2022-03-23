@@ -17,13 +17,12 @@
 package coreserver
 
 import (
-	"context"
 	"fmt"
-	"github.com/gorilla/mux"
+	"net/http"
+
+	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/internal/loader"
-	"io"
-	"net/http"
 )
 
 type contentHandler struct {
@@ -31,63 +30,37 @@ type contentHandler struct {
 }
 
 func (h contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	warcId, ok := mux.Vars(r)["id"]
-	if !ok {
-		http.NotFound(w, r)
+	params := httprouter.ParamsFromContext(r.Context())
+	warcId := params.ByName("id")
+	if warcId == "" {
+		http.Error(w, "400 bad request", http.StatusBadRequest)
 		return
 	}
-	if len(warcId) > 0 && warcId[0] != '<' {
-		warcId = "<" + warcId + ">"
+	if warcId[0] != '<' {
+		warcId = "<" + warcId
+	}
+	if warcId[len(warcId)-1] != '>' {
+		warcId = warcId + ">"
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	record, err := h.loader.Load(ctx, warcId)
+	record, err := h.loader.Load(r.Context(), warcId)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to load record: %v", err)
+		msg := fmt.Sprintf("failed to load record: %v", err)
 		http.Error(w, msg, http.StatusInternalServerError)
 		return
 	}
-	defer func() {
-		_ = record.Close()
-	}()
+	defer record.Close()
 
-	switch v := record.Block().(type) {
-	case gowarc.PayloadBlock:
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, err = record.WarcHeader().Write(w)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		byteReader, err := v.PayloadBytes()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_, err = io.Copy(w, byteReader)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	default:
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, err = record.WarcHeader().Write(w)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	w.Header().Add("content-type", "application/octet-stream")
+	marshaler := gowarc.NewMarshaler()
 
-		rb, err := v.RawBytes()
+	// write records until all relevant records are written
+	continuation := record
+	for continuation != nil {
+		continuation, _, err = marshaler.Marshal(w, continuation, 0)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_, err = io.Copy(w, rb)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			msg := fmt.Sprintf("failed to marshal record: %v", err)
+			http.Error(w, msg, http.StatusInternalServerError)
 		}
 	}
 }

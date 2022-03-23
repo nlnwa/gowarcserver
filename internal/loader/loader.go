@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 National Library of Norway.
+ * Copyright 2022 National Library of Norway.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,15 @@
 package loader
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
+	"path"
+
+	"github.com/dgraph-io/badger/v3"
 	"github.com/nlnwa/gowarc"
 	"github.com/rs/zerolog/log"
 )
@@ -36,6 +42,7 @@ type Loader struct {
 	Resolver StorageRefResolver
 	Loader   RecordLoader
 	NoUnpack bool
+	ProxyUrl *url.URL
 }
 
 type ErrResolveRevisit struct {
@@ -53,6 +60,7 @@ func (e ErrResolveRevisit) String() string {
 }
 
 func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
+	log.Debug().Msg("loader load")
 	storageRef, err := l.Resolver.Resolve(warcId)
 	if err != nil {
 		return nil, err
@@ -79,13 +87,48 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 				Date:      record.WarcHeader().Get(gowarc.WarcRefersToDate),
 			}
 		}
+
+		var revisitOf gowarc.WarcRecord
 		storageRef, err = l.Resolver.Resolve(warcRefersTo)
-		if err != nil {
+		// if the record is missing from out DB and a proxy is configured, then we should
+		// ask the proxy to get the revisitOf record for us
+		if errors.Is(err, badger.ErrKeyNotFound) && l.ProxyUrl != nil {
+			reqUrl := *l.ProxyUrl
+			reqUrl.Path = path.Join(reqUrl.Path, "id", warcRefersTo)
+
+			log.Debug().Msgf("attempt to get record from proxy url %s", reqUrl.String())
+			req, err := http.NewRequestWithContext(ctx, "GET", reqUrl.String(), nil)
+			if err != nil {
+				return nil, err
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return nil, fmt.Errorf("resolve revisit from proxy expected %d got %d", http.StatusOK, resp.StatusCode)
+			}
+
+			warcUnmarshaler := gowarc.NewUnmarshaler(
+				gowarc.WithSyntaxErrorPolicy(gowarc.ErrIgnore),
+				gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore),
+			)
+			bodyIoReader := bufio.NewReader(resp.Body)
+			revisitOf, _, _, err = warcUnmarshaler.Unmarshal(bodyIoReader)
+			if err != nil {
+				return nil, err
+			}
+		} else if err != nil {
 			return nil, fmt.Errorf("unable to resolve referred Warc-Record-ID [%s]: %w", warcRefersTo, err)
-		}
-		revisitOf, err := l.Loader.Load(ctx, storageRef)
-		if err != nil {
-			return nil, err
+		} else {
+			// in the event that it managed to load record locally we do that instead
+			revisitOf, err = l.Loader.Load(ctx, storageRef)
+			if err != nil {
+				return nil, err
+			}
 		}
 		rtrRecord, err = record.Merge(revisitOf)
 		if err != nil {

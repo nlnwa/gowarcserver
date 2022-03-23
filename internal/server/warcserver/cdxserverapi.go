@@ -18,14 +18,14 @@ package warcserver
 
 import (
 	"fmt"
-	"github.com/gorilla/mux"
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
-	"github.com/nlnwa/gowarcserver/schema"
-	url "github.com/nlnwa/whatwg-url/url"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/nlnwa/gowarcserver/internal/timestamp"
+	"github.com/nlnwa/gowarcserver/schema"
+	url "github.com/nlnwa/whatwg-url/url"
 )
 
 type PerCdxFunc func(cdx *schema.Cdx) error
@@ -113,12 +113,12 @@ var schemeRegExp = regexp.MustCompile(`^([a-z][a-z0-9+\-.]*):`)
 // ParseCdxjApi parses a *http.Request into a *CdxjServerApi.
 func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
 	var err error
-	vars := mux.Vars(r)
 	query := r.URL.Query()
 
 	cdxjApi := new(CdxjServerApi)
 
-	cdxjApi.Collection = vars["collection"]
+	// currently the "cdx" does not accept collection as a query or param
+	cdxjApi.Collection = "all"
 
 	urls, ok := query["url"]
 	if !ok {
