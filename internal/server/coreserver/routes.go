@@ -17,10 +17,11 @@
 package coreserver
 
 import (
+	"net/http"
+
 	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/loader"
-	"net/http"
 )
 
 func Register(r *httprouter.Router, middleware func(http.Handler) http.Handler, pathPrefix string, loader *loader.Loader, db *database.CdxDbIndex) {
@@ -28,5 +29,5 @@ func Register(r *httprouter.Router, middleware func(http.Handler) http.Handler, 
 	r.Handler("GET", pathPrefix+"/ids", http.HandlerFunc(indexHandler.ListIds))
 	r.Handler("GET", pathPrefix+"/files", http.HandlerFunc(indexHandler.ListFileNames))
 	r.Handler("GET", pathPrefix+"/search", http.HandlerFunc(indexHandler.Search))
-	r.Handler("GET", pathPrefix+"/id/{id}", contentHandler{loader})
+	r.Handler("GET", pathPrefix+"/id/:id", contentHandler{loader})
 }

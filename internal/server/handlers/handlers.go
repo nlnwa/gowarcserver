@@ -2,12 +2,13 @@ package handlers
 
 import (
 	"context"
-	"github.com/rs/zerolog/log"
 	"io"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 var client = &http.Client{
@@ -49,9 +50,14 @@ func FirstHandler(children []*url.URL, timeout time.Duration) http.Handler {
 			resp := response
 			if resp.StatusCode < 400 {
 				if !written {
-					for k, vv := range resp.Header {
-						for _, v := range vv {
-							w.Header().Add(k, v)
+					// Write headers
+					for key, values := range resp.Header {
+						for i, value := range values {
+							if i == 0 {
+								w.Header().Set(key, value)
+							} else {
+								w.Header().Add(key, value)
+							}
 						}
 					}
 					w.WriteHeader(resp.StatusCode)
@@ -93,6 +99,7 @@ func ChildHandler(children []*url.URL, timeout time.Duration, responseHandler Re
 			req := r.Clone(ctx)
 			req.RequestURI = ""
 			req.URL = buildChildURLString(childUrl, req.URL)
+			log.Debug().Msgf("request to child url %s", req.URL.String())
 			go func() {
 				defer wg.Done()
 

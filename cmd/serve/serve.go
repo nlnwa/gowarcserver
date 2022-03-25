@@ -19,6 +19,13 @@ package serve
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"regexp"
+	"runtime"
+	"time"
+
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
@@ -32,11 +39,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"net/http"
-	"os"
-	"regexp"
-	"runtime"
-	"time"
 )
 
 func NewCommand() *cobra.Command {
@@ -69,6 +71,7 @@ func NewCommand() *cobra.Command {
 	logRequests := false
 
 	cmd.Flags().IntP("port", "p", port, "server port")
+	cmd.Flags().String("proxy-url", "", "url to a gowarc server proxy that will be used to resolve records")
 	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
 	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
 	cmd.Flags().BoolP("index", "a", enableIndexing, "enable indexing")
@@ -128,6 +131,15 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 			excludes = append(excludes, re)
 		}
 	}
+	// parse proxy url
+	var proxyUrl *url.URL
+	proxyStr := viper.GetString("proxy-url")
+	if proxyStr != "" {
+		proxyUrl, err = url.Parse(proxyStr)
+		if err != nil {
+			return err
+		}
+	}
 	// optionally start autoindexer
 	if viper.GetBool("index") {
 		log.Info().Msg("Starting auto indexer")
@@ -157,6 +169,7 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 			return fileInfo.Path, err
 		}},
 		NoUnpack: false,
+		ProxyUrl: proxyUrl,
 	}
 
 	// middleware chain

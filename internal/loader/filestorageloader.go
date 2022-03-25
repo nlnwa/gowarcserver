@@ -19,10 +19,11 @@ package loader
 import (
 	"context"
 	"fmt"
-	"github.com/nlnwa/gowarc"
-	"github.com/rs/zerolog/log"
 	"strconv"
 	"strings"
+
+	"github.com/nlnwa/gowarc"
+	"github.com/rs/zerolog/log"
 )
 
 type FileStorageLoader struct {

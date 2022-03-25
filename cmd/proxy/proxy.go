@@ -18,15 +18,16 @@ package proxy
 
 import (
 	"fmt"
+	"net/http"
+	"os"
+	"time"
+
 	gHandlers "github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/internal/server"
 	"github.com/nlnwa/gowarcserver/internal/server/handlers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"net/http"
-	"os"
-	"time"
 )
 
 func NewCommand() *cobra.Command {
@@ -54,8 +55,8 @@ func NewCommand() *cobra.Command {
 }
 
 func proxyCmd(_ *cobra.Command, _ []string) error {
-	childUrls := ParseUrls(viper.GetStringSlice("childUrls"))
-	childQueryTimeout := viper.GetDuration("childQueryTimeout")
+	childUrls := ParseUrls(viper.GetStringSlice("child-urls"))
+	childQueryTimeout := viper.GetDuration("child-query-timeout")
 	port := viper.GetInt("port")
 	r := httprouter.New()
 
@@ -65,9 +66,11 @@ func proxyCmd(_ *cobra.Command, _ []string) error {
 
 	indexHandler := handlers.AggregatedHandler(childUrls, childQueryTimeout)
 	resourceHandler := handlers.FirstHandler(childUrls, childQueryTimeout)
+	contentHandler := handlers.FirstHandler(childUrls, childQueryTimeout)
 
-	r.Handler("GET", "/cdx", middleware(indexHandler))
-	r.Handler("GET", "/web", middleware(resourceHandler))
+	r.Handler("GET", "/warcserver/cdx", middleware(indexHandler))
+	r.Handler("GET", "/warcserver/web", middleware(resourceHandler))
+	r.Handler("GET", "/id/:id", middleware(contentHandler))
 
 	return server.Serve(port, r)
 }
