@@ -132,7 +132,7 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 		}
 	}
 	// parse proxy url
-	var proxyUrl *url.URL = nil
+	var proxyUrl *url.URL
 	proxyStr := viper.GetString("proxy-url")
 	if proxyStr != "" {
 		proxyUrl, err = url.Parse(proxyStr)

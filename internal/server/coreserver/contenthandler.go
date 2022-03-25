@@ -33,7 +33,7 @@ func (h contentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	params := httprouter.ParamsFromContext(r.Context())
 	warcId := params.ByName("id")
 	if warcId == "" {
-		http.Error(w, "400 bad request", http.StatusBadRequest)
+		http.Error(w, `missing required parameter "id"`, http.StatusBadRequest)
 		return
 	}
 	if warcId[0] != '<' {

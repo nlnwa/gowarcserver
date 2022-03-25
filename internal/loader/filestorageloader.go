@@ -31,7 +31,6 @@ type FileStorageLoader struct {
 }
 
 func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record gowarc.WarcRecord, err error) {
-	log.Debug().Msg("file storage load")
 	filePath, offset, err := f.parseStorageRef(storageRef)
 	if err != nil {
 		return nil, err

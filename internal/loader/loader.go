@@ -60,7 +60,6 @@ func (e ErrResolveRevisit) String() string {
 }
 
 func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
-	log.Debug().Msg("loader load")
 	storageRef, err := l.Resolver.Resolve(warcId)
 	if err != nil {
 		return nil, err
