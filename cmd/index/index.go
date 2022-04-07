@@ -23,6 +23,7 @@ import (
 	"github.com/nlnwa/gowarcserver/internal/config"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/index"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"regexp"
@@ -137,7 +138,7 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		}
 	}
 
-	indexer, err := index.NewAutoIndexer(indexWorker, dirs,
+	indexer, err := index.NewAutoIndexer(indexWorker,
 		index.WithMaxDepth(viper.GetInt("max-depth")),
 		index.WithIncludes(includes...),
 		index.WithExcludes(excludes...),
@@ -146,6 +147,13 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		return err
 	}
 	defer indexer.Close()
+
+	for _, dir := range dirs {
+		err := indexer.Index(dir)
+		if err != nil {
+			log.Warn().Msgf(`Error indexing "%s": %v`, dir, err)
+		}
+	}
 
 	return nil
 }

@@ -24,26 +24,49 @@ import (
 )
 
 type autoIndexer struct {
-	watcher *watcher
+	done      chan struct{}
+	perFileFn func(string)
+	perDirFn  func(string) bool
+	watcher   *watcher
+	settings  *Options
 }
 
 type Scheduler interface {
 	Schedule(job string, batchWindow time.Duration)
 }
 
-func NewAutoIndexer(s Scheduler, paths []string, opts ...Option) (*autoIndexer, error) {
+func NewAutoIndexer(s Scheduler, opts ...Option) (*autoIndexer, error) {
+	a := new(autoIndexer)
+
 	settings := defaultOptions()
 	for _, opt := range opts {
 		opt(settings)
 	}
+	a.settings = settings
 
-	a := new(autoIndexer)
+	done := make(chan struct{})
+	a.done = done
+
+	isDone := func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}
 
 	perDirFn := func(name string) bool {
+		if isDone() {
+			return false
+		}
 		return !settings.isExcluded(name)
 	}
 
 	perFileFn := func(name string) {
+		if isDone() {
+			return
+		}
 		if settings.filter(name) {
 			s.Schedule(name, 0)
 		}
@@ -57,6 +80,9 @@ func NewAutoIndexer(s Scheduler, paths []string, opts ...Option) (*autoIndexer, 
 		a.watcher = w
 
 		perDirFn = func(name string) bool {
+			if isDone() {
+				return false
+			}
 			if settings.isExcluded(name) {
 				return false
 			}
@@ -65,41 +91,45 @@ func NewAutoIndexer(s Scheduler, paths []string, opts ...Option) (*autoIndexer, 
 		}
 
 		onFileChanged := func(name string) {
+			if isDone() {
+				return
+			}
 			if settings.filter(name) {
 				s.Schedule(name, 10*time.Second)
 			}
 		}
 		go w.Watch(onFileChanged)
 	}
-
-	for _, path := range paths {
-		_ = index(path, settings.MaxDepth, perFileFn, perDirFn)
-	}
+	a.perFileFn = perFileFn
+	a.perDirFn = perDirFn
 
 	return a, nil
 }
 
-func (a *autoIndexer) Close() {
-	a.watcher.Close()
-}
-
-func index(path string, maxDepth int, perFileFn func(string), perDirFn func(string) bool) error {
+func (a *autoIndexer) Index(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
-		return fmt.Errorf(`: %s: %w`, path, err)
+		return fmt.Errorf("failed to get file info: %w", err)
 	}
 	if info.IsDir() {
-		walk(path, 0, maxDepth, perFileFn, perDirFn)
+		if err := walk(path, 0, a.settings.MaxDepth, a.perFileFn, a.perDirFn); err != nil {
+			return err
+		}
 	} else {
-		perFileFn(path)
+		a.perFileFn(path)
 	}
 	return nil
 }
 
-func walk(dir string, currentDepth int, maxDepth int, perFileFn func(string), perDirFn func(string) bool) {
+func (a *autoIndexer) Close() {
+	close(a.done)
+	a.watcher.Close()
+}
+
+func walk(dir string, currentDepth int, maxDepth int, perFileFn func(string), perDirFn func(string) bool) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return
+		return fmt.Errorf(`failed to read directory "%s": %w`, dir, err)
 	}
 	for _, entry := range entries {
 		name := filepath.Join(dir, entry.Name())
@@ -107,8 +137,12 @@ func walk(dir string, currentDepth int, maxDepth int, perFileFn func(string), pe
 			perFileFn(name)
 		} else if currentDepth < maxDepth {
 			if perDirFn(name) {
-				walk(name, currentDepth+1, maxDepth, perFileFn, perDirFn)
+				err = walk(name, currentDepth+1, maxDepth, perFileFn, perDirFn)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
+	return nil
 }
