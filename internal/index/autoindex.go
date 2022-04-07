@@ -112,7 +112,7 @@ func (a *autoIndexer) Index(path string) error {
 		return fmt.Errorf("failed to get file info: %w", err)
 	}
 	if info.IsDir() {
-		if err := walk(path, 0, a.settings.MaxDepth, a.perFileFn, a.perDirFn); err != nil {
+		if err := a.walk(path, 0); err != nil {
 			return err
 		}
 	} else {
@@ -126,7 +126,7 @@ func (a *autoIndexer) Close() {
 	a.watcher.Close()
 }
 
-func walk(dir string, currentDepth int, maxDepth int, perFileFn func(string), perDirFn func(string) bool) error {
+func (a *autoIndexer) walk(dir string, currentDepth int) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf(`failed to read directory "%s": %w`, dir, err)
@@ -134,10 +134,10 @@ func walk(dir string, currentDepth int, maxDepth int, perFileFn func(string), pe
 	for _, entry := range entries {
 		name := filepath.Join(dir, entry.Name())
 		if !entry.IsDir() {
-			perFileFn(name)
-		} else if currentDepth < maxDepth {
-			if perDirFn(name) {
-				err = walk(name, currentDepth+1, maxDepth, perFileFn, perDirFn)
+			a.perFileFn(name)
+		} else if currentDepth < a.settings.MaxDepth {
+			if a.perDirFn(name) {
+				err = a.walk(name, currentDepth+1)
 				if err != nil {
 					return err
 				}
