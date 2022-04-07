@@ -50,7 +50,7 @@ func indexFile(fileName string, r RecordWriter) error {
 		gowarc.WithSyntaxErrorPolicy(gowarc.ErrIgnore),
 		gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore),
 	)
-	log.Debug().Msgf("Indexed %5d of %5d records in %10v: %s\n", count, total, time.Since(start), fileName)
+	log.Info().Msgf("Indexed %5d of %5d records in %10v: %s\n", count, total, time.Since(start), fileName)
 	return err
 }
 

@@ -149,7 +149,7 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 		indexWorker := index.Worker(cdxDb, viper.GetInt("workers"))
 		defer indexWorker.Close()
 
-		autoIndexer, err := index.NewAutoIndexer(indexWorker, dirs,
+		indexer, err := index.NewAutoIndexer(indexWorker,
 			index.WithWatch(viper.GetBool("watch")),
 			index.WithMaxDepth(viper.GetInt("max-depth")),
 			index.WithIncludes(includes...),
@@ -158,7 +158,16 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		defer autoIndexer.Close()
+		defer indexer.Close()
+
+		for _, dir := range dirs {
+			dir := dir
+			go func() {
+				if err := indexer.Index(dir); err != nil {
+					log.Warn().Msgf(`Error indexing "%s": %v`, dir, err)
+				}
+			}()
+		}
 	}
 
 	// create record loader
