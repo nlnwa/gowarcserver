@@ -70,7 +70,7 @@ func TestValidDateRangeContains(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			contains, err := tt.daterange.contains(tt.datestr)
+			contains, err := tt.daterange.containsStr(tt.datestr)
 			if err != nil {
 				t.Errorf("Testing %s; Unexpected error: %s", tt.name, err)
 			}
@@ -93,7 +93,7 @@ func TestInvalidContainData(t *testing.T) {
 	}
 
 	t.Run(test.name, func(t *testing.T) {
-		contains, err := test.daterange.contains(test.datestr)
+		contains, err := test.daterange.containsStr(test.datestr)
 		if err == nil {
 			t.Errorf("Expected error, got %v", err)
 		}
