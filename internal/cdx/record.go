@@ -56,6 +56,9 @@ func New(wr gowarc.WarcRecord, fileName string, offset int64, length int64) (cdx
 	case gowarc.Response:
 		if block, ok := wr.Block().(gowarc.HttpResponseBlock); ok {
 			header := block.HttpHeader()
+			if header == nil {
+				return
+			}
 			cdx.Mct = header.Get("Content-Type")
 			cdx.Ple = header.Get("Content-Length")
 			cdx.Hsc = strconv.Itoa(block.HttpStatusCode())
