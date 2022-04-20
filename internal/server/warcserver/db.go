@@ -3,6 +3,10 @@ package warcserver
 import (
 	"bytes"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/surt"
@@ -10,8 +14,6 @@ import (
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
-	"strings"
-	"sync"
 )
 
 type Key string
@@ -119,7 +121,7 @@ func (c DbCdxServer) one(key string, closest string) (cdx *schema.Cdx, err error
 func (c DbCdxServer) search(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, error) {
 	if len(api.Urls) > 1 {
 		if api.Sort == "" {
-			return c.unsortedParallelSearch(api, perCdxFunc)
+			return c.unsortedSerialSearch(api, perCdxFunc)
 		}
 		return c.sortedParallelSearch(api, perCdxFunc)
 	} else {
@@ -128,80 +130,6 @@ func (c DbCdxServer) search(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, err
 		}
 		return c.uniSearch(api, perCdxFunc)
 	}
-}
-
-// unsortedParallelSearch searches the index database and processes each result with perCdxFunc.
-func (c DbCdxServer) unsortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, error) {
-	var keys []string
-	for _, u := range api.Urls {
-		key := parseKey(surt.UrlToSsurt(u), api.MatchType)
-		keys = append(keys, key)
-	}
-
-	filter := parseFilter(api.Filter)
-
-	count := 0
-
-	err := c.Walk(func(txn *badger.Txn) error {
-		items := make(chan *schema.Cdx, len(keys))
-
-		done := make(chan struct{})
-
-		go func() {
-			for cdx := range items {
-				_ = perCdxFunc(cdx)
-			}
-			done <- struct{}{}
-		}()
-		var wg sync.WaitGroup
-
-		for _, key := range keys {
-			wg.Add(1)
-			key := key
-
-			go func() {
-				defer wg.Done()
-				opts := badger.DefaultIteratorOptions
-				opts.Prefix = []byte(key)
-
-				it := txn.NewIterator(opts)
-				defer it.Close()
-
-				for it.Seek([]byte(key)); it.ValidForPrefix([]byte(key)); it.Next() {
-					item := it.Item()
-
-					// filter from/to
-					inRange, _ := api.FromTo.contains(Key(item.Key()).ts())
-					if !inRange {
-						continue
-					}
-
-					err := item.Value(func(val []byte) error {
-						result := new(schema.Cdx)
-						err := proto.Unmarshal(val, result)
-						if err != nil {
-							return err
-						}
-
-						if filter.eval(result) {
-							count++
-							items <- result
-						}
-						return nil
-					})
-					if err != nil {
-						log.Warn().Msgf("%s: %v", item.Key(), err)
-					}
-				}
-			}()
-		}
-		wg.Wait()
-		close(items)
-		<-done
-
-		return nil
-	})
-	return count, err
 }
 
 // unsortedParallelSearch searches the index database, sorts the results and processes each result with perCdxFunc.
@@ -276,7 +204,7 @@ func (c DbCdxServer) sortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 					k := it.Item().KeyCopy(nil)
 
 					// filter from/to
-					inDateRange, _ := api.FromTo.contains(Key(k).ts())
+					inDateRange, _ := api.FromTo.containsStr(Key(k).ts())
 					if inDateRange {
 						items <- k
 					}
@@ -295,6 +223,96 @@ func (c DbCdxServer) sortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 			}
 			return false
 		})
+	})
+	return count, err
+}
+
+func (c DbCdxServer) unsortedSerialSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, error) {
+	keys := make([]string, len(api.Urls))
+	for i, url := range api.Urls {
+		key := parseKey(surt.UrlToSsurt(url), api.MatchType)
+		keys[i] = key
+	}
+
+	count := 0
+	err := c.Walk(func(txn *badger.Txn) error {
+		// initalize badger iterators
+		iterators := make([]*badger.Iterator, len(keys))
+		prefixes := make([][]byte, len(keys))
+		for i, key := range keys {
+			prefixes[i] = []byte(key)
+			opts := badger.DefaultIteratorOptions
+			opts.Prefix = prefixes[i]
+
+			iterators[i] = txn.NewIterator(opts)
+			defer iterators[i].Close()
+
+			iterators[i].Seek(prefixes[i])
+		}
+
+	OUTER:
+		for len(iterators) > 0 {
+			// set timestamp to aprox max time.Time value
+			earliestTimestamp := time.Unix(1<<62, 1<<62)
+			earliestIndex := -1
+			// find the earliest timestamp
+			for i, iter := range iterators {
+				// if iter is no longer valid, close it, remove it from slice and restart search
+				if !iter.ValidForPrefix(prefixes[i]) {
+					iteratorsLen := len(iterators)
+					iterators[i].Close()
+					// remove iterator from list
+					iterators[i] = iterators[iteratorsLen-1]
+					iterators = iterators[0 : iteratorsLen-1]
+					continue OUTER
+				}
+
+				item := iter.Item()
+				// in the event of parse error we get a zero timestamp
+				ts, err := time.Parse(timeLayout, Key(item.Key()).ts())
+				if err != nil {
+					// current value seems invalid, iterate to next
+					iter.Next()
+					log.Warn().Msgf("error parsing item key '%s': %s", string(item.Key()), err)
+					// do not return error as there might be more valid values to handle
+					continue
+				}
+
+				inRange, _ := api.FromTo.containsTime(ts)
+				if !inRange {
+					// invalid value, go to next itme
+					iter.Next()
+					continue
+				}
+
+				if ts.Before(earliestTimestamp) {
+					earliestTimestamp = ts
+					earliestIndex = i
+				}
+			}
+			if earliestIndex == -1 {
+				break
+			}
+			iter := iterators[earliestIndex]
+
+			cdx, err := unmarshal(iter.Item())
+			if err != nil {
+				return err
+			}
+
+			iter.Next()
+
+			err = perCdxFunc(cdx)
+			if err != nil {
+				return err
+			}
+			count++
+
+			if api.Limit > 0 && count >= api.Limit {
+				break
+			}
+		}
+		return nil
 	})
 	return count, err
 }
@@ -419,7 +437,7 @@ func (c DbCdxServer) uniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, 
 		}
 
 		for it.Seek([]byte(seekKey)); it.ValidForPrefix(prefix); it.Next() {
-			contains, _ := api.FromTo.contains(Key(it.Item().Key()).ts())
+			contains, _ := api.FromTo.containsStr(Key(it.Item().Key()).ts())
 			if !contains {
 				continue
 			}
