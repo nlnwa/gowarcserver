@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 National Library of Norway.
+ * Copyright 2020 National Library of Norway.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,31 @@
  * limitations under the License.
  */
 
-package proxy
+package api
 
 import (
-	"testing"
+	"strings"
 )
 
-func TestIndexCmd(t *testing.T) {
-	cmd := NewCommand()
-	cmd.SetArgs([]string{"-h"})
-	err := cmd.Execute()
-	if err != nil {
-		t.Errorf("%v", err)
+func parseKey(ssurt string, matchType string) string {
+	switch matchType {
+	case MatchTypeExact:
+		ssurt += " "
+	case MatchTypePrefix:
+		i := strings.IndexAny(ssurt, "?#")
+		if i > 0 {
+			ssurt = ssurt[:i]
+		}
+	case MatchTypeHost:
+		i := strings.Index(ssurt, "//")
+		if i > 0 {
+			ssurt = ssurt[:i+2]
+		}
+	case MatchTypeDomain:
+		i := strings.Index(ssurt, "//")
+		if i > 0 {
+			ssurt = ssurt[:i]
+		}
 	}
+	return ssurt
 }

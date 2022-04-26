@@ -26,8 +26,8 @@ import (
 
 func TestLoader_Get(t *testing.T) {
 	loader := &Loader{
-		Resolver: &mockStorageRefResolver{},
-		Loader:   &FileStorageLoader{},
+		StorageRefResolver: &mockStorageRefResolver{},
+		RecordLoader:       &FileStorageLoader{},
 	}
 
 	type args struct {
@@ -105,17 +105,17 @@ type mockStorageRefResolver struct{}
 func (m mockStorageRefResolver) Resolve(warcId string) (storageRef string, err error) {
 	switch warcId {
 	case "urn:uuid:e9a0cecc-0221-11e7-adb1-0242ac120008":
-		storageRef = "warcfile:../../testdata/example.warc:0"
+		storageRef = "warcfile:../../testdata/example.warc#0"
 	case "urn:uuid:e9a0ee48-0221-11e7-adb1-0242ac120008":
-		storageRef = "warcfile:../../testdata/example.warc:488"
+		storageRef = "warcfile:../../testdata/example.warc#488"
 	case "urn:uuid:a9c51e3e-0221-11e7-bf66-0242ac120005":
-		storageRef = "warcfile:../../testdata/example.warc:1197"
+		storageRef = "warcfile:../../testdata/example.warc#1197"
 	case "urn:uuid:a9c5c23a-0221-11e7-8fe3-0242ac120007":
-		storageRef = "warcfile:../../testdata/example.warc:3078"
+		storageRef = "warcfile:../../testdata/example.warc#3078"
 	case "urn:uuid:e6e395ca-0221-11e7-a18d-0242ac120005":
-		storageRef = "warcfile:../../testdata/example.warc:3370"
+		storageRef = "warcfile:../../testdata/example.warc#3370"
 	case "urn:uuid:e6e41fea-0221-11e7-8fe3-0242ac120007":
-		storageRef = "warcfile:../../testdata/example.warc:4828"
+		storageRef = "warcfile:../../testdata/example.warc#4828"
 	}
 	return
 }

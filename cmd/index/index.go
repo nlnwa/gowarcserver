@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/dgraph-io/badger/v3/options"
-	"github.com/nlnwa/gowarcserver/internal/config"
-	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/index"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -46,7 +44,7 @@ func NewCommand() *cobra.Command {
 	// defaults
 	format := "cdxj"
 	indexDbDir := "."
-	compression := config.SnappyCompression
+	compression := index.SnappyCompression
 	indexDepth := 4
 	indexWorkers := 8
 	indexDbBatchMaxSize := 1000
@@ -62,7 +60,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
 	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
 	cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
-	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max transaction batch size in badger")
+	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max wait time before flushing batched records")
 	cmd.Flags().String("compression", compression, `badger compression type: "none", "snappy" or "zstd"`)
 	cmd.Flags().Uint("bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
 	cmd.Flags().Float64("bloom-fp", bloomFp, "estimated bloom filter false positive rate")
@@ -93,22 +91,20 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		runtime.GOMAXPROCS(128)
 
 		var c options.CompressionType
-		if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(config.CompressionDecodeHookFunc())); err != nil {
+		if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(index.CompressionDecodeHookFunc())); err != nil {
 			return err
 		}
-		db, err := database.NewCdxIndexDb(
-			database.WithCompression(c),
-			database.WithDir(viper.GetString("db-dir")),
-			database.WithBatchMaxSize(viper.GetInt("db-batch-max-size")),
-			database.WithBatchMaxWait(viper.GetDuration("db-batch-max-wait")),
+		db, err := index.NewDB(
+			index.WithCompression(c),
+			index.WithDir(viper.GetString("db-dir")),
+			index.WithBatchMaxSize(viper.GetInt("db-batch-max-size")),
+			index.WithBatchMaxWait(viper.GetDuration("db-batch-max-wait")),
 		)
 		if err != nil {
 			return err
 		}
 		defer db.Close()
-		w = index.CdxDb{
-			CdxDbIndex: db,
-		}
+		w = db
 	case "toc":
 		w = &index.Toc{
 			BloomFilter: bloom.NewWithEstimates(viper.GetUint("bloom-capacity"), viper.GetFloat64("bloom-fp")),

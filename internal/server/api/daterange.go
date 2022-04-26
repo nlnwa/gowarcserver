@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package warcserver
+package api
 
 import (
 	"fmt"
@@ -23,8 +23,8 @@ import (
 )
 
 type DateRange struct {
-	from int64
-	to   int64
+	from int64 // unix time
+	to   int64 // unix time
 }
 
 const timeLayout = "20060102150405"
@@ -47,7 +47,7 @@ func NewDateRange(fromstr string, tostr string) (*DateRange, error) {
 	return &DateRange{from, to}, nil
 }
 
-// contains returns true if the timestamp ts contained by the bounds defined by the DateRange d.
+// containsStr returns true if the timestamp ts contained by the bounds defined by the DateRange d.
 // input 'ts' is 'trusted' and does not have the same parsing complexity as a From or To string
 func (d *DateRange) containsStr(ts string) (bool, error) {
 	if d == nil {
@@ -61,16 +61,16 @@ func (d *DateRange) containsStr(ts string) (bool, error) {
 	return unixTs >= d.from && unixTs <= d.to, nil
 }
 
-// contains returns true if the timestamp ts contained by the bounds defined by the DateRange d.
-func (d *DateRange) containsTime(ts time.Time) (bool, error) {
+// containsTime returns true if time.Time t is contained by the bounds defined by the DateRange d.
+func (d *DateRange) containsTime(t time.Time) (bool, error) {
 	if d == nil {
 		return true, nil
 	}
-	unixTs := ts.Unix()
+	unixTs := t.Unix()
 	return unixTs >= d.from && unixTs <= d.to, nil
 }
 
-// Implemented according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
+// From parses string f to unix time according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
 func From(f string) (int64, error) {
 	fLen := len(f)
 	if fLen%2 != 0 {
@@ -93,7 +93,7 @@ func From(f string) (int64, error) {
 	return from.Unix(), nil
 }
 
-// Implemented according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
+// To parses string t to unix time according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
 func To(t string) (int64, error) {
 	tLen := len(t)
 	if tLen%2 != 0 {

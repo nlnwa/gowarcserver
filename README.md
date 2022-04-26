@@ -35,22 +35,22 @@ gowarcserver can be configured with a config file, environment variables and fla
 environment variables that has precedence over config file entries. An environment variable match the uppercased flag
 name with underscore in place of dash.
 
-| Name                  | Type              | Description                                                                   | Default       | Sub command
-| -------------         | -------------     | -----------                                                                   | -------       | -------
-| config                | string            | Path to configuration file                                                    | ./config.yaml | global
-| log-level             | string            | Log level. Legal values are "trace" , "debug", "info", "warn"  or "error"     | "info"        | global
-| port                  | int               | Server port                                                                   | 9999          | serve
-| index                 | bool              | Enable indexing when running server                                           | true          | serve
-| watch                 | bool              | Update index when files change                                                | false         | serve
-| dirs                  | list of paths     | Comma separated list of directories to index                                  | ["."]         | index, serve
-| db-dir                | path              | Location of index database                                                    | "."           | index, serve
-| max-depth             | int               | Maximum index recursion depth                                                 | 4             | index, serve
-| log-requests          | bool              | Enable request logging                                                        | false         | serve
-| include               | list of suffixes  | Only index files that match one of these suffixes                             | []            | index, serve
-| workers               | int               | Number of index workers                                                       | 8             | index, serve
-| compression           | string            | Database compression type. Legal values are: 'none', 'snappy', 'zstd'         | "snappy"      | index, serve
-| bloom                 | bool              | Enable bloom filter when indexing with "toc" format                           | true          | index
-| bloom-capacity        | uint              | Estimated bloom filter capacity                                               | 1000          | index
-| bloom-fp              | float64           | Estimated bloom filter false positive rate                                    | 0.01          | index
-| child-urls            | []string          | Urls pointing to other gowarcserver processes running a server                | []            | proxy
-| child-query-timeout   | Duration          | Child query timeout a request to a child can take before resulting in timeout | 300ms         | proxy
+| Name                  | Type              | Description                                                                   | Default       | Sub command |
+| -------------         | -------------     | -----------                                                                   | -------       | ------- |
+| config                | string            | Path to configuration file                                                    | ./config.yaml | global |
+| log-level             | string            | Log level. Legal values are "trace" , "debug", "info", "warn"  or "error"     | "info"        | global |
+| port                  | int               | Server port                                                                   | 9999          | serve |
+| index                 | bool              | Enable indexing when running server                                           | true          | serve |
+| watch                 | bool              | Update index when files change                                                | false         | serve |
+| log-requests          | bool              | Enable request logging                                                        | false         | serve |
+| dirs                  | list of paths     | Comma separated list of directories to index                                  | ["."]         | index, serve |
+| db-dir                | path              | Location of index database                                                    | "."           | index, serve |
+| max-depth             | int               | Maximum index recursion depth                                                 | 4             | index, serve |
+| include               | list of suffixes  | Only index files that match one of these suffixes                             | []            | index, serve |
+| workers               | int               | Number of index workers                                                       | 8             | index, serve |
+| compression           | string            | Database compression type. Legal values are: 'none', 'snappy', 'zstd'         | "snappy"      | index, serve |
+| bloom                 | bool              | Enable bloom filter when indexing with "toc" format                           | true          | index |
+| bloom-capacity        | uint              | Estimated bloom filter capacity                                               | 1000          | index |
+| bloom-fp              | float64           | Estimated bloom filter false positive rate                                    | 0.01          | index |
+| child-urls            | []string          | Urls pointing to other gowarcserver processes running a server                | []            | proxy |
+| child-query-timeout   | Duration          | Child query timeout a request to a child can take before resulting in timeout | 300ms         | proxy |

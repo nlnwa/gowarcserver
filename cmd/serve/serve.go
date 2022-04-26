@@ -29,8 +29,6 @@ import (
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/config"
-	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/index"
 	"github.com/nlnwa/gowarcserver/internal/loader"
 	"github.com/nlnwa/gowarcserver/internal/server"
@@ -67,11 +65,14 @@ func NewCommand() *cobra.Command {
 	indexWorkers := 8
 	indexDbBatchMaxSize := 1000
 	indexDbBatchMaxWait := 5 * time.Second
-	compression := config.SnappyCompression
+	compression := index.SnappyCompression
 	logRequests := false
+	readOnly := false
+	pathPrefix := ""
 
 	cmd.Flags().IntP("port", "p", port, "server port")
 	cmd.Flags().String("proxy-url", "", "url to a gowarc server proxy that will be used to resolve records")
+	cmd.Flags().String("path-prefix", pathPrefix, "prefix for all server endpoints")
 	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
 	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
 	cmd.Flags().BoolP("index", "a", enableIndexing, "enable indexing")
@@ -81,7 +82,8 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().Bool("watch", watch, "watch files for changes")
 	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
 	cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
-	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max transaction batch size in badger")
+	cmd.Flags().Bool("db-read-only", readOnly, "set database to read only")
+	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max wait time before flushing batched records")
 	cmd.Flags().String("compression", compression, "database compression type: 'none', 'snappy' or 'zstd'")
 	cmd.Flags().Bool("log-requests", logRequests, "log http requests")
 
@@ -98,21 +100,9 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 	}
 	// parse database compression type
 	var c options.CompressionType
-	if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(config.CompressionDecodeHookFunc())); err != nil {
+	if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(index.CompressionDecodeHookFunc())); err != nil {
 		return err
 	}
-	// create database instance
-	db, err := database.NewCdxIndexDb(
-		database.WithCompression(c),
-		database.WithDir(viper.GetString("db-dir")),
-		database.WithBatchMaxSize(viper.GetInt("db-batch-max-size")),
-		database.WithBatchMaxWait(viper.GetDuration("db-batch-max-wait")),
-	)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
 	// parse include patterns
 	var includes []*regexp.Regexp
 	for _, r := range viper.GetStringSlice("include") {
@@ -135,18 +125,29 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 	var proxyUrl *url.URL
 	proxyStr := viper.GetString("proxy-url")
 	if proxyStr != "" {
+		var err error
 		proxyUrl, err = url.Parse(proxyStr)
 		if err != nil {
 			return err
 		}
 	}
+	// create index database
+	db, err := index.NewDB(
+		index.WithCompression(c),
+		index.WithDir(viper.GetString("db-dir")),
+		index.WithBatchMaxSize(viper.GetInt("db-batch-max-size")),
+		index.WithBatchMaxWait(viper.GetDuration("db-batch-max-wait")),
+		index.WithReadOnly(viper.GetBool("db-read-only")),
+	)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 	// optionally start autoindexer
 	if viper.GetBool("index") {
 		log.Info().Msg("Starting auto indexer")
 
-		cdxDb := index.CdxDb{CdxDbIndex: db}
-
-		indexWorker := index.Worker(cdxDb, viper.GetInt("workers"))
+		indexWorker := index.Worker(db, viper.GetInt("workers"))
 		defer indexWorker.Close()
 
 		indexer, err := index.NewAutoIndexer(indexWorker,
@@ -169,35 +170,30 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 			}()
 		}
 	}
-
 	// create record loader
 	l := &loader.Loader{
-		Resolver: db,
-		Loader: &loader.FileStorageLoader{FilePathResolver: func(fileName string) (filePath string, err error) {
-			fileInfo, err := db.GetFileInfo(fileName)
-			return fileInfo.Path, err
-		}},
-		NoUnpack: false,
-		ProxyUrl: proxyUrl,
+		StorageRefResolver: db,
+		RecordLoader:       &loader.FileStorageLoader{FilePathResolver: db},
+		NoUnpack:           false,
+		ProxyUrl:           proxyUrl,
 	}
-
 	// middleware chain
-	var mw func(http.Handler) http.Handler
-
+	mw := func(h http.Handler) http.Handler {
+		return h
+	}
 	// optionally add logging middleware
 	if viper.GetBool("log-requests") {
 		mw = func(h http.Handler) http.Handler {
 			return handlers.CombinedLoggingHandler(os.Stdout, h)
 		}
 	}
-
 	// create http router
 	r := httprouter.New()
-
-	// register
-	warcserver.Register(r, mw, "/warcserver", l, db)
-	coreserver.Register(r, mw, "", l, db)
-
+	// register routes
+	pathPrefix := viper.GetString("path-prefix")
+	warcserver.Register(r, mw, pathPrefix+"/warcserver", l, db)
+	coreserver.Register(r, mw, pathPrefix, l, db)
+	// start server
 	if err := server.Serve(viper.GetInt("port"), r); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

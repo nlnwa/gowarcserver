@@ -44,12 +44,14 @@ func NewCommand() *cobra.Command {
 	}
 	// defaults
 	port := 9998
-	childUrls := []string{}
+	var childUrls []string
 	childQueryTimeout := 300 * time.Millisecond
+	pathPrefix := ""
 
 	cmd.Flags().IntP("port", "p", port, "Server port")
 	cmd.Flags().StringSliceP("child-urls", "u", childUrls, "List of URLs to other gowarcserver instances, queries are propagated to these urls")
 	cmd.Flags().DurationP("child-query-timeout", "t", childQueryTimeout, "Time before query to child node times out")
+	cmd.Flags().String("path-prefix", pathPrefix, "prefix for all server endpoints")
 
 	return cmd
 }
@@ -68,9 +70,10 @@ func proxyCmd(_ *cobra.Command, _ []string) error {
 	resourceHandler := handlers.FirstHandler(childUrls, childQueryTimeout)
 	contentHandler := handlers.FirstHandler(childUrls, childQueryTimeout)
 
-	r.Handler("GET", "/warcserver/cdx", middleware(indexHandler))
-	r.Handler("GET", "/warcserver/web", middleware(resourceHandler))
-	r.Handler("GET", "/id/:id", middleware(contentHandler))
+	pathPrefix := viper.GetString("path-prefix")
+	r.Handler("GET", pathPrefix+"/warcserver/cdx", middleware(indexHandler))
+	r.Handler("GET", pathPrefix+"/warcserver/web/*params", middleware(resourceHandler))
+	r.Handler("GET", pathPrefix+"/record/*urn", middleware(contentHandler))
 
 	return server.Serve(port, r)
 }

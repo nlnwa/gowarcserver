@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package warcserver
+package api
 
 import (
 	"github.com/dgraph-io/badger/v3"
-	"github.com/nlnwa/gowarcserver/internal/database"
+	"github.com/nlnwa/gowarcserver/internal/index"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"sort"
 )
@@ -35,7 +35,7 @@ type sorter struct {
 }
 
 func (s *sorter) add(k []byte) {
-	t, _ := timestamp.Parse(Key(k).ts())
+	t, _ := timestamp.Parse(cdxKey(k).ts())
 	ts := t.Unix()
 
 	s.values = append(s.values, value{ts, k})
@@ -64,7 +64,7 @@ func (s *sorter) sort() {
 	})
 }
 
-func (s *sorter) walk(txn *badger.Txn, perItemFn database.PerItemFunc) error {
+func (s *sorter) walk(txn *badger.Txn, perItemFn index.PerItemFunc) error {
 	for _, value := range s.values {
 		item, err := txn.Get(value.k)
 		if err != nil {

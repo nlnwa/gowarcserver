@@ -2,48 +2,64 @@ package warcserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/internal/loader"
+	"github.com/nlnwa/gowarcserver/internal/server/api"
 	"github.com/nlnwa/gowarcserver/internal/server/handlers"
 	"github.com/nlnwa/gowarcserver/internal/surt"
+	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/whatwg-url/url"
+	"github.com/rs/zerolog/log"
 	"net/http"
 	"strings"
 	"time"
 )
 
-type ResourceHandler struct {
-	DbCdxServer
-	Loader loader.RecordLoader
+type Handler struct {
+	db api.DbAdapter
+	loader loader.RecordLoader
 }
 
-func (rh ResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	params := httprouter.ParamsFromContext(r.Context())
-
-	// closest parameter
-	p0 := params[0].Value
-	// remove trailing 'id_'
-	closest := p0[:len(p0)-3]
-
-	// url parameter
-	p1 := params[1].Value
-	// remove leading '/'
-	uri := p1[1:]
-
-	// we must add on any query parameters
-	if q := r.URL.Query().Encode(); len(q) > 0 {
-		uri += "?" + q
+func (h Handler) index(w http.ResponseWriter, r *http.Request) {
+	coreAPI, err := api.Parse(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-	// and fragment
-	if len(r.URL.Fragment) > 0 {
-		// and fragment
-		uri += "#" + r.URL.Fragment
 
+	start := time.Now()
+	n, err := h.db.Search(coreAPI, renderCdx(w, coreAPI))
+	if err != nil {
+		api.HandleError(w, n, err)
 	}
+	if n > 0 {
+		log.Debug().Msgf("Found %d items in %s", n, time.Since(start))
+	}
+}
+
+func renderCdx(w http.ResponseWriter, coreAPI *api.CoreAPI) api.PerCdxFunc {
+	return func(record *schema.Cdx) error {
+		cdxj, err := json.Marshal(cdxToPywbJson(record))
+		if err != nil {
+			return err
+		}
+		switch coreAPI.Output {
+		case api.OutputJson:
+			_, err = fmt.Fprintln(w, cdxj)
+		default:
+			sts := timestamp.TimeTo14(record.Sts.AsTime())
+			_, err = fmt.Fprintf(w, "%s %s %s\n", record.Ssu, sts, cdxj)
+		}
+		return err
+	}
+}
+
+func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
+	uri, ts := parseWeb(r)
 
 	key, err := surt.StringToSsurt(uri)
 	if err != nil {
@@ -52,7 +68,7 @@ func (rh ResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// fetch cdx to access warc record id
-	cdx, err := rh.one(key, closest)
+	cdx, err := h.db.Closest(key, ts)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -66,7 +82,7 @@ func (rh ResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// load warc record by id
-	warcRecord, err := rh.Loader.Load(ctx, cdx.Rid)
+	warcRecord, err := h.loader.Load(ctx, cdx.Rid)
 	if err != nil {
 		var errWarcProfile loader.ErrResolveRevisit
 		if errors.As(err, &errWarcProfile) {
@@ -103,26 +119,26 @@ func (rh ResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		api := &CdxjServerApi{
+		coreAPI := &api.CoreAPI{
 			Urls:      []*url.Url{locUrl},
-			MatchType: MatchTypeExact,
+			MatchType: api.MatchTypeExact,
 			Limit:     1,
-			Sort:      SortClosest,
-			Closest:   closest,
+			Sort:      api.SortClosest,
+			Closest:   ts,
 		}
 
-		// Fields we need to rewrite the location header
+		// the fields we need to rewrite the location header
 		var sts string
 		var uri string
 
 		// Get timestamp and uri from cdx record
 		perCdxFunc := func(record *schema.Cdx) error {
-			sts = record.Sts
+			sts = timestamp.TimeTo14(record.Sts.AsTime())
 			uri = record.Uri
 			return nil
 		}
 
-		if n, err := rh.search(api, perCdxFunc); err != nil {
+		if n, err := h.db.Search(coreAPI, perCdxFunc); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		} else if n == 0 || sts == "" || uri == "" {
