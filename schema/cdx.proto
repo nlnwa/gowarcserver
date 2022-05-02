@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package gowarcserver.schema;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/nlnwa/gowarcserver/schema";
 
 message Cdx {
@@ -15,7 +17,7 @@ message Cdx {
     // indicating the algorithm.
     string dig = 3;
     // hsc - HTTP Status Code. Applicable for response records for HTTP(S) URIs.
-    string hsc = 4;
+    int32 hsc = 4;
     // mct - Media Content Type (MIME type). For HTTP(S) response records this is typically the “Content-Type” from
     // the HTTP header. This field, however, does not specify the origin of the information. It may be used to include
     // content type that was derived from content analysis or other sources.
@@ -29,13 +31,13 @@ message Cdx {
     string rid = 7;
     // cle - Content Length. The length of the content (uncompressed), ignoring WARC headers, but including any
     // HTTP headers or similar.
-    string cle = 8;
+    int64 cle = 8;
     // ple - Payload Length. The length of the payload (uncompressed). The exact meaning will vary by content type,
     // but the common case is the length of the document, excluding any HTTP headers in a HTTP response record.
-    string ple = 9;
+    int64 ple = 9;
     // rle - Record Length. The length of the record that this line refers to. This is the entire record
     // (including e.g. WARC headers) as written on disk (compressed if stored compressed).
-    string rle = 10;
+    int64 rle = 10;
     // rct - Record Concurrant To. The record ID of another record that the current record is considered to be
     // ‘concurrant’ to. See further WARC chapter 5.7 (WARC-Concurrent-To).
     string rct = 11;
@@ -44,14 +46,14 @@ message Cdx {
     string rou = 12;
     // rod (recommended) - Revisit Original Date. Only valid for records of type revisit. Contains the
     // timestamp (equivalent to sortable field #2) of the record that this record is considered a revisit of.
-    string rod = 13;
+    google.protobuf.Timestamp rod = 13;
     // roi - Revisit Original record ID. Only valid for records of type revisit. Contains the record ID of
     // the record that this record is considered a revisit of.
     string roi = 14;
     // Searchable URI - ssu (sortable searchable URI)
     string ssu = 15;
     // Timestamp - sts (sortable timestamp)
-    string sts = 16;
+    google.protobuf.Timestamp sts = 16;
     // Record Type - srt (sortable record type)
     string srt = 17;
 }

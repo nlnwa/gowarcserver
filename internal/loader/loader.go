@@ -35,12 +35,12 @@ type StorageRefResolver interface {
 }
 
 type RecordLoader interface {
-	Load(context.Context, string) (gowarc.WarcRecord, error)
+	Load(ctx context.Context, storageRef string) (wr gowarc.WarcRecord, err error)
 }
 
 type Loader struct {
-	Resolver StorageRefResolver
-	Loader   RecordLoader
+	StorageRefResolver
+	RecordLoader
 	NoUnpack bool
 	ProxyUrl *url.URL
 }
@@ -60,11 +60,12 @@ func (e ErrResolveRevisit) String() string {
 }
 
 func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
-	storageRef, err := l.Resolver.Resolve(warcId)
+	storageRef, err := l.Resolve(warcId)
 	if err != nil {
 		return nil, err
 	}
-	record, err := l.Loader.Load(ctx, storageRef)
+	fmt.Println(storageRef)
+	record, err := l.RecordLoader.Load(ctx, storageRef)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +78,8 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 	//nolint:exhaustive
 	switch record.Type() {
 	case gowarc.Revisit:
-		log.Debug().Msgf("Resolving revisit  %v -> %v", record.WarcHeader().Get(gowarc.WarcRecordID), record.WarcHeader().Get(gowarc.WarcRefersTo))
-		warcRefersTo := record.WarcHeader().Get(gowarc.WarcRefersTo)
+		log.Debug().Msgf("Resolving revisit  %v -> %v", record.RecordId(), record.WarcHeader().Get(gowarc.WarcRefersTo))
+		warcRefersTo := record.WarcHeader().GetId(gowarc.WarcRefersTo)
 		if warcRefersTo == "" {
 			return nil, ErrResolveRevisit{
 				Profile:   record.WarcHeader().Get(gowarc.WarcProfile),
@@ -88,12 +89,12 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 		}
 
 		var revisitOf gowarc.WarcRecord
-		storageRef, err = l.Resolver.Resolve(warcRefersTo)
+		storageRef, err = l.Resolve(warcRefersTo)
 		// if the record is missing from out DB and a proxy is configured, then we should
 		// ask the proxy to get the revisitOf record for us
 		if errors.Is(err, badger.ErrKeyNotFound) && l.ProxyUrl != nil {
 			reqUrl := *l.ProxyUrl
-			reqUrl.Path = path.Join(reqUrl.Path, "id", warcRefersTo)
+			reqUrl.Path = path.Join(reqUrl.Path, "record", warcRefersTo)
 
 			log.Debug().Msgf("attempt to get record from proxy url %s", reqUrl.String())
 			req, err := http.NewRequestWithContext(ctx, "GET", reqUrl.String(), nil)
@@ -124,7 +125,7 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 			return nil, fmt.Errorf("unable to resolve referred Warc-Record-ID [%s]: %w", warcRefersTo, err)
 		} else {
 			// in the event that it managed to load record locally we do that instead
-			revisitOf, err = l.Loader.Load(ctx, storageRef)
+			revisitOf, err = l.RecordLoader.Load(ctx, storageRef)
 			if err != nil {
 				return nil, err
 			}

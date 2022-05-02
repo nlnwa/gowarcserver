@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-package warcserver
+package api
 
 import (
 	"regexp"
 	"strings"
 
-	cdx "github.com/nlnwa/gowarcserver/schema"
+	"github.com/nlnwa/gowarcserver/schema"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
@@ -34,7 +34,7 @@ const (
 
 type Filter []filter
 
-func (f Filter) eval(c *cdx.Cdx) bool {
+func (f Filter) eval(c *schema.Cdx) bool {
 	for _, ff := range f {
 		if !ff.eval(c) {
 			return false
@@ -98,7 +98,7 @@ type filter struct {
 	matcher     func(filterValue, fieldValue string) bool
 }
 
-func (f filter) eval(c *cdx.Cdx) bool {
+func (f filter) eval(c *schema.Cdx) bool {
 	result := false
 	if fieldValue, found := f.findFieldValue(c); found {
 		result = f.matcher(f.filterValue, fieldValue)
@@ -110,7 +110,7 @@ func (f filter) eval(c *cdx.Cdx) bool {
 	}
 }
 
-func (f filter) findFieldValue(c *cdx.Cdx) (fieldValue string, found bool) {
+func (f filter) findFieldValue(c *schema.Cdx) (fieldValue string, found bool) {
 	c.ProtoReflect().Range(func(descriptor protoreflect.FieldDescriptor, value protoreflect.Value) bool {
 		if string(descriptor.Name()) == f.field {
 			found = true

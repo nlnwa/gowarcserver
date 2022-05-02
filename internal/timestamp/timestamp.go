@@ -20,17 +20,23 @@ import (
 	"time"
 )
 
+const CDX = "20060102150405"
+
+func TimeTo14(t time.Time) string {
+	return t.Format(CDX)
+}
+
 func To14(s string) (string, error) {
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
 		return "", err
 	}
 
-	return t.Format("20060102150405"), nil
+	return t.Format(CDX), nil
 }
 
 func Parse(s string) (time.Time, error) {
-	return time.Parse("20060102150405", s)
+	return time.Parse(CDX, s)
 }
 
 // AbsInt64 returns the absolute value of an int64

@@ -1,33 +1,51 @@
-package warcserver
+/*
+ * Copyright 2021 National Library of Norway.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package api
 
 import (
 	"bytes"
 	"fmt"
+	"github.com/nlnwa/gowarcserver/internal/index"
+	"github.com/rs/zerolog/log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
-	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/surt"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/schema"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
 )
 
-type Key string
+type PerCdxFunc func(cdx *schema.Cdx) error
 
-func (k Key) ts() string {
+type cdxKey string
+
+func (k cdxKey) ts() string {
 	return strings.Split(string(k), " ")[1]
 }
 
-// DbCdxServer implements searching the index database via a CDXJ API
-type DbCdxServer struct {
-	*database.CdxDbIndex
+// DbAdapter implements searching the index database via the CoreAPI
+type DbAdapter struct {
+	*index.DB
 }
 
-func unmarshal(item *badger.Item) (cdx *schema.Cdx, err error) {
+func cdxFromItem(item *badger.Item) (cdx *schema.Cdx, err error) {
 	err = item.Value(func(val []byte) error {
 		result := new(schema.Cdx)
 		if err := proto.Unmarshal(val, result); err != nil {
@@ -39,13 +57,16 @@ func unmarshal(item *badger.Item) (cdx *schema.Cdx, err error) {
 	return
 }
 
-func (c DbCdxServer) one(key string, closest string) (cdx *schema.Cdx, err error) {
-	// forward seek key
-	fk := []byte(key + " " + closest)
-	// prefix
-	prefix := []byte(key)
+// Closest returns the first closest cdx value
+func (c DbAdapter) Closest(key string, closest string) (cdx *schema.Cdx, err error) {
+	err = c.CdxIndex.View(func(txn *badger.Txn) error {
+		// prefix
+		prefix := []byte(key)
+		// forward seek key
+		fk := []byte(key + " " + closest)
+		// backward seek key
+		bk := []byte(key + " " + closest + string(rune(0xff)))
 
-	err = c.Walk(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchSize = 1
 		opts.Prefix = prefix
@@ -54,17 +75,17 @@ func (c DbCdxServer) one(key string, closest string) (cdx *schema.Cdx, err error
 		defer forward.Close()
 		forward.Seek(fk)
 
-		// first check if we got literal match on forward seek key (fast path)
+		// check if we got a literal match on forward seek key (fast path)
 		if forward.ValidForPrefix(fk) {
 			var err error
-			cdx, err = unmarshal(forward.Item())
+			cdx, err = cdxFromItem(forward.Item())
 			if err != nil {
 				return err
 			}
 			return nil
 		}
 
-		// no literal match; iterate forward and backward to get next closest (slow path)
+		// no literal match; iterate forward and backward to find next closest (slow path)
 
 		// iterate forward
 		forward.Next()
@@ -72,7 +93,6 @@ func (c DbCdxServer) one(key string, closest string) (cdx *schema.Cdx, err error
 		opts.Reverse = true
 		backward := txn.NewIterator(opts)
 		defer backward.Close()
-		bk := []byte(key + " " + closest + string(rune(0xff)))
 		backward.Seek(bk)
 
 		var ft int64
@@ -82,13 +102,13 @@ func (c DbCdxServer) one(key string, closest string) (cdx *schema.Cdx, err error
 
 		// get forward ts
 		if forward.ValidForPrefix(prefix) {
-			t, _ = timestamp.Parse(Key(forward.Item().Key()).ts())
+			t, _ = timestamp.Parse(cdxKey(forward.Item().Key()).ts())
 			ft = t.Unix()
 		}
 		// get backward ts
 		backward.Seek(bk)
 		if backward.ValidForPrefix(prefix) {
-			t, _ = timestamp.Parse(Key(backward.Item().Key()).ts())
+			t, _ = timestamp.Parse(cdxKey(backward.Item().Key()).ts())
 			bt = t.Unix()
 		}
 
@@ -110,15 +130,14 @@ func (c DbCdxServer) one(key string, closest string) (cdx *schema.Cdx, err error
 			// found nothing
 			return nil
 		}
-
 		var err error
-		cdx, err = unmarshal(item)
+		cdx, err = cdxFromItem(item)
 		return err
 	})
 	return
 }
 
-func (c DbCdxServer) search(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, error) {
+func (c DbAdapter) Search(api *CoreAPI, perCdxFunc PerCdxFunc) (int, error) {
 	if len(api.Urls) > 1 {
 		if api.Sort == "" {
 			return c.unsortedSerialSearch(api, perCdxFunc)
@@ -133,7 +152,7 @@ func (c DbCdxServer) search(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, err
 }
 
 // unsortedParallelSearch searches the index database, sorts the results and processes each result with perCdxFunc.
-func (c DbCdxServer) sortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, error) {
+func (c DbAdapter) sortedParallelSearch(api *CoreAPI, perCdxFunc PerCdxFunc) (int, error) {
 	var searchKeys []string
 	for _, u := range api.Urls {
 		key := parseKey(surt.UrlToSsurt(u), api.MatchType)
@@ -144,7 +163,7 @@ func (c DbCdxServer) sortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 
 	t, _ := timestamp.Parse(api.Closest)
 	closest := t.Unix()
-	s := &sorter{
+	s := sorter{
 		reverse: api.Sort == SortReverse,
 		closest: closest,
 	}
@@ -172,7 +191,7 @@ func (c DbCdxServer) sortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 		return nil
 	}
 
-	err := c.Walk(func(txn *badger.Txn) error {
+	err := c.CdxIndex.View(func(txn *badger.Txn) error {
 		items := make(chan []byte, len(searchKeys))
 
 		done := make(chan struct{})
@@ -181,6 +200,7 @@ func (c DbCdxServer) sortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 			for key := range items {
 				s.add(key)
 			}
+			s.sort()
 			done <- struct{}{}
 		}()
 
@@ -204,7 +224,7 @@ func (c DbCdxServer) sortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 					k := it.Item().KeyCopy(nil)
 
 					// filter from/to
-					inDateRange, _ := api.FromTo.containsStr(Key(k).ts())
+					inDateRange, _ := api.FromTo.containsStr(cdxKey(k).ts())
 					if inDateRange {
 						items <- k
 					}
@@ -213,9 +233,7 @@ func (c DbCdxServer) sortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 		}
 		wg.Wait()
 		close(items)
-
 		<-done
-		s.sort()
 
 		return s.walk(txn, func(item *badger.Item) (stopIteration bool) {
 			if err := perItemFn(item); err != nil {
@@ -227,16 +245,17 @@ func (c DbCdxServer) sortedParallelSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 	return count, err
 }
 
-func (c DbCdxServer) unsortedSerialSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, error) {
+func (c DbAdapter) unsortedSerialSearch(api *CoreAPI, perCdxFunc PerCdxFunc) (int, error) {
 	keys := make([]string, len(api.Urls))
 	for i, url := range api.Urls {
 		key := parseKey(surt.UrlToSsurt(url), api.MatchType)
 		keys[i] = key
 	}
+	filter := parseFilter(api.Filter)
 
 	count := 0
-	err := c.Walk(func(txn *badger.Txn) error {
-		// initalize badger iterators
+	err := c.CdxIndex.View(func(txn *badger.Txn) error {
+		// initialize badger iterators
 		iterators := make([]*badger.Iterator, len(keys))
 		prefixes := make([][]byte, len(keys))
 		for i, key := range keys {
@@ -252,7 +271,7 @@ func (c DbCdxServer) unsortedSerialSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 
 	OUTER:
 		for len(iterators) > 0 {
-			// set timestamp to aprox max time.Time value
+			// set timestamp to approx max time.Time value
 			earliestTimestamp := time.Unix(1<<62, 1<<62)
 			earliestIndex := -1
 			// find the earliest timestamp
@@ -269,20 +288,20 @@ func (c DbCdxServer) unsortedSerialSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 
 				item := iter.Item()
 				// in the event of parse error we get a zero timestamp
-				ts, err := time.Parse(timeLayout, Key(item.Key()).ts())
+				ts, err := time.Parse(timeLayout, cdxKey(item.Key()).ts())
 				if err != nil {
-					// current value seems invalid, iterate to next
+					log.Warn().Err(err).Msgf("Failed to parse timestamp for key: '%s'", string(item.Key()))
+
+					// timestamp is invalid, iterate to next and restart search
 					iter.Next()
-					log.Warn().Msgf("error parsing item key '%s': %s", string(item.Key()), err)
-					// do not return error as there might be more valid values to handle
-					continue
+					continue OUTER
 				}
 
 				inRange, _ := api.FromTo.containsTime(ts)
 				if !inRange {
-					// invalid value, go to next itme
+					// timestamp out of range, iterate to next item and restart search
 					iter.Next()
-					continue
+					continue OUTER
 				}
 
 				if ts.Before(earliestTimestamp) {
@@ -295,18 +314,20 @@ func (c DbCdxServer) unsortedSerialSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 			}
 			iter := iterators[earliestIndex]
 
-			cdx, err := unmarshal(iter.Item())
+			cdx, err := cdxFromItem(iter.Item())
 			if err != nil {
 				return err
 			}
 
 			iter.Next()
 
-			err = perCdxFunc(cdx)
-			if err != nil {
-				return err
+			if filter.eval(cdx) {
+				err = perCdxFunc(cdx)
+				if err != nil {
+					return err
+				}
+				count++
 			}
-			count++
 
 			if api.Limit > 0 && count >= api.Limit {
 				break
@@ -317,7 +338,7 @@ func (c DbCdxServer) unsortedSerialSearch(api *CdxjServerApi, perCdxFunc PerCdxF
 	return count, err
 }
 
-func (c DbCdxServer) closestUniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, error) {
+func (c DbAdapter) closestUniSearch(api *CoreAPI, perCdxFunc PerCdxFunc) (int, error) {
 	u := api.Urls[0]
 	s := surt.UrlToSsurt(u)
 	key := parseKey(s, api.MatchType)
@@ -333,7 +354,7 @@ func (c DbCdxServer) closestUniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc)
 
 	count := 0
 
-	err := c.Walk(func(txn *badger.Txn) error {
+	err := c.CdxIndex.View(func(txn *badger.Txn) error {
 		prefix := []byte(key)
 
 		opts := badger.DefaultIteratorOptions
@@ -364,7 +385,7 @@ func (c DbCdxServer) closestUniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc)
 
 		for {
 			if f && forward.ValidForPrefix(prefix) {
-				t, _ := timestamp.Parse(Key(forward.Item().Key()).ts())
+				t, _ := timestamp.Parse(cdxKey(forward.Item().Key()).ts())
 				ft = t.Unix()
 			} else if f {
 				f = false
@@ -372,7 +393,7 @@ func (c DbCdxServer) closestUniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc)
 			}
 
 			if b && backward.ValidForPrefix(prefix) {
-				t, _ := timestamp.Parse(Key(backward.Item().Key()).ts())
+				t, _ := timestamp.Parse(cdxKey(backward.Item().Key()).ts())
 				bt = t.Unix()
 			} else if b {
 				b = false
@@ -388,7 +409,7 @@ func (c DbCdxServer) closestUniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc)
 				return nil
 			}
 
-			cdx, err := unmarshal(it.Item())
+			cdx, err := cdxFromItem(it.Item())
 			if err != nil {
 				return err
 			}
@@ -411,7 +432,7 @@ func (c DbCdxServer) closestUniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc)
 }
 
 // uniSearch the index database and render each item with the provided renderFunc.
-func (c DbCdxServer) uniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, error) {
+func (c DbAdapter) uniSearch(api *CoreAPI, perCdxFunc PerCdxFunc) (int, error) {
 	u := api.Urls[0]
 	s := surt.UrlToSsurt(u)
 
@@ -420,7 +441,7 @@ func (c DbCdxServer) uniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, 
 	reverse := api.Sort == SortReverse
 	count := 0
 
-	err := c.Walk(func(txn *badger.Txn) error {
+	err := c.CdxIndex.View(func(txn *badger.Txn) error {
 		prefix := []byte(key)
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
@@ -437,7 +458,7 @@ func (c DbCdxServer) uniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, 
 		}
 
 		for it.Seek([]byte(seekKey)); it.ValidForPrefix(prefix); it.Next() {
-			contains, _ := api.FromTo.containsStr(Key(it.Item().Key()).ts())
+			contains, _ := api.FromTo.containsStr(cdxKey(it.Item().Key()).ts())
 			if !contains {
 				continue
 			}
@@ -467,4 +488,23 @@ func (c DbCdxServer) uniSearch(api *CdxjServerApi, perCdxFunc PerCdxFunc) (int, 
 		return nil
 	})
 	return count, err
+}
+
+func (c DbAdapter) ListRecords(fn func(warcId string, cdx *schema.Cdx) (stopIteration bool)) error {
+	opts := badger.DefaultIteratorOptions
+	return index.Walk(c.CdxIndex, opts, func(item *badger.Item) (stopIteration bool) {
+		err := item.Value(func(val []byte) error {
+			cdx := new(schema.Cdx)
+			err := proto.Unmarshal(val, cdx)
+			if err != nil {
+				return err
+			}
+			stopIteration = fn(string(item.Key()), cdx)
+			return nil
+		})
+		if err != nil {
+			log.Error().Err(err).Msgf("failed get value for key: %s", string(item.Key()))
+		}
+		return stopIteration || err != nil
+	})
 }

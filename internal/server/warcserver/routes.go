@@ -17,28 +17,21 @@
 package warcserver
 
 import (
+	"github.com/nlnwa/gowarcserver/internal/index"
+	"github.com/nlnwa/gowarcserver/internal/server/api"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/database"
 	"github.com/nlnwa/gowarcserver/internal/loader"
 )
 
-func Register(r *httprouter.Router, middleware func(http.Handler) http.Handler, pathPrefix string, loader *loader.Loader, db *database.CdxDbIndex) {
-	var indexHandler http.Handler
-	var resourceHandler http.Handler
-
-	indexHandler = IndexHandler{DbCdxServer{db}}
-	resourceHandler = ResourceHandler{
-		DbCdxServer: DbCdxServer{db},
-		Loader:      loader,
-	}
-	if middleware != nil {
-		indexHandler = middleware(indexHandler)
-		resourceHandler = middleware(resourceHandler)
+func Register(r *httprouter.Router, mw func(http.Handler) http.Handler, pathPrefix string, loader *loader.Loader, db *index.DB) {
+	handler := Handler{
+		db:     api.DbAdapter{DB: db},
+		loader: loader,
 	}
 
 	// https://pywb.readthedocs.io/en/latest/manual/warcserver.html#warcserver-api
-	r.Handler("GET", pathPrefix+"/cdx", indexHandler)
-	r.Handler("GET", pathPrefix+"/web/:closest/*url", resourceHandler)
+	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(handler.index)))
+	r.Handler("GET", pathPrefix+"/web/:timestamp/*url", mw(http.HandlerFunc(handler.resource)))
 }

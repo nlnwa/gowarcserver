@@ -19,15 +19,18 @@ package loader
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
-
 	"github.com/nlnwa/gowarc"
 	"github.com/rs/zerolog/log"
+	"strconv"
+	"strings"
 )
 
 type FileStorageLoader struct {
-	FilePathResolver func(fileName string) (filePath string, err error)
+	FilePathResolver
+}
+
+type FilePathResolver interface {
+	ResolvePath(filename string) (path string, err error)
 }
 
 func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record gowarc.WarcRecord, err error) {
@@ -46,7 +49,6 @@ func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record
 
 	go func() {
 		<-ctx.Done()
-		log.Trace().Msgf("file: %v closed\n", filePath)
 		_ = wf.Close()
 	}()
 
@@ -62,17 +64,31 @@ func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record
 	return
 }
 
-func (f *FileStorageLoader) parseStorageRef(storageRef string) (fileName string, offset int64, err error) {
-	p := strings.SplitN(storageRef, ":", 3)
-	if len(p) != 3 || p[0] != "warcfile" {
-		err = fmt.Errorf("storage ref '%s' can't be handled by FileStorageLoader", storageRef)
+// parseStorageRef parses a storageRef (eg. warcfile:filename#offset) into parts.
+func (f *FileStorageLoader) parseStorageRef(storageRef string) (filename string, offset int64, err error) {
+	n := strings.IndexRune(storageRef, ':')
+	if n == -1 {
+		err = fmt.Errorf("invalid storage ref, missing scheme delimiter ':'")
 		return
 	}
-	fileName = p[1]
-	offset, err = strconv.ParseInt(p[2], 0, 64)
-
+	scheme := storageRef[:n]
+	if scheme != "warcfile" {
+		err = fmt.Errorf("invalid storage ref, scheme must be \"warcfile\", was: %s", scheme)
+		return
+	}
+	storageRef = storageRef[n+1:]
+	n = strings.IndexRune(storageRef, '#')
+	if n == -1 {
+		err = fmt.Errorf("invalid storage ref, missing offset delimiter '#'")
+		return
+	}
+	filename = storageRef[:n]
+	offset, err = strconv.ParseInt(storageRef[n+1:], 0, 64)
+	if err != nil {
+		err = fmt.Errorf("invalid storage ref, invalid offset: %w", err)
+	}
 	if f.FilePathResolver != nil {
-		fileName, err = f.FilePathResolver(fileName)
+		filename, err = f.FilePathResolver.ResolvePath(filename)
 	}
 	return
 }

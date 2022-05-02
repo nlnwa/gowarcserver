@@ -38,7 +38,8 @@ func Serve(port int, h http.Handler) error {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-sigs
+		sig := <-sigs
+		log.Debug().Msgf("Received %s signal, shutting down server...", sig)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		err := httpServer.Shutdown(ctx)

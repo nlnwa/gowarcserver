@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package warcserver
+package api
 
 import (
 	"fmt"
@@ -24,37 +24,8 @@ import (
 	"strings"
 
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
-	"github.com/nlnwa/gowarcserver/schema"
 	url "github.com/nlnwa/whatwg-url/url"
 )
-
-type PerCdxFunc func(cdx *schema.Cdx) error
-
-type pywbJson struct {
-	Urlkey    string `json:"urlkey,omitempty"`
-	Timestamp string `json:"timestamp"`
-	Url       string `json:"url"`
-	Mime      string `json:"mime,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Digest    string `json:"digest"`
-	Length    string `json:"length,omitempty"`
-	Offset    string `json:"offset,omitempty"`
-	Filename  string `json:"filename,omitempty"`
-}
-
-func cdxjToPywbJson(record *schema.Cdx) *pywbJson {
-	return &pywbJson{
-		Urlkey:    record.Ssu,
-		Timestamp: record.Sts,
-		Url:       record.Uri,
-		Mime:      record.Mct,
-		Status:    record.Hsc,
-		Digest:    record.Sha,
-		Length:    record.Rle,
-		// Offset must be empty string or else pywb will try to use it's internal index.
-		// Filename must be an empty string or else pywb will try to use it's internal index.
-	}
-}
 
 const (
 	SortClosest = "closest"
@@ -84,8 +55,8 @@ const (
 
 var outputs = []string{OutputCdxj, OutputJson}
 
-// CdxjServerApi encapsulates a subset of https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html.
-type CdxjServerApi struct {
+// CoreAPI implements a subset of https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html.
+type CoreAPI struct {
 	Collection string
 	Urls       []*url.Url
 	FromTo     *DateRange
@@ -98,8 +69,8 @@ type CdxjServerApi struct {
 	Fields     []string
 }
 
-// Contains returns true if string e is contained in string slice s.
-func Contains(s []string, e string) bool {
+// contains returns true if string e is contained in string slice s.
+func contains(s []string, e string) bool {
 	for _, a := range s {
 		if a == e {
 			return true
@@ -110,12 +81,12 @@ func Contains(s []string, e string) bool {
 
 var schemeRegExp = regexp.MustCompile(`^([a-z][a-z0-9+\-.]*):`)
 
-// ParseCdxjApi parses a *http.Request into a *CdxjServerApi.
-func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
+// Parse parses the request r into a *CoreAPI.
+func Parse(r *http.Request) (*CoreAPI, error) {
 	var err error
 	query := r.URL.Query()
 
-	cdxjApi := new(CdxjServerApi)
+	cdxjApi := new(CoreAPI)
 
 	// currently the "cdx" does not accept collection as a query or param
 	cdxjApi.Collection = "all"
@@ -145,7 +116,7 @@ func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
 
 	matchType := query.Get("matchType")
 	if matchType != "" {
-		if !Contains(matchTypes, matchType) {
+		if !contains(matchTypes, matchType) {
 			return nil, fmt.Errorf("matchType must be one of %v, was: %s", matchTypes, matchType)
 		}
 		cdxjApi.MatchType = matchType
@@ -174,7 +145,7 @@ func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
 
 	sort := query.Get("sort")
 	if sort != "" {
-		if !Contains(sorts, sort) {
+		if !contains(sorts, sort) {
 			return nil, fmt.Errorf("sort must be one of %v, was: %s", sorts, sort)
 		}
 		if closest == "" && sort == SortClosest {
@@ -185,7 +156,7 @@ func ParseCdxjApi(r *http.Request) (*CdxjServerApi, error) {
 
 	output := query.Get("output")
 	if output != "" {
-		if !Contains(outputs, output) {
+		if !contains(outputs, output) {
 			return nil, fmt.Errorf("output must be one of %v, was: %s", outputs, output)
 		}
 		cdxjApi.Output = output

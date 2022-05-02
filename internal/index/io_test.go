@@ -1,9 +1,24 @@
+/*
+ * Copyright 2021 National Library of Norway.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package index
 
 import (
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/nlnwa/gowarc"
-	"github.com/nlnwa/gowarcserver/internal/database"
 	"os"
 	"path"
 	"testing"
@@ -36,7 +51,7 @@ Content-Length: 0`)
 
 	tests := []struct {
 		format string
-		writer RecordWriter
+		writer recordWriter
 	}{
 		{
 			"cdxj",
@@ -49,12 +64,12 @@ Content-Length: 0`)
 		},
 		{
 			"cdxdb",
-			func() RecordWriter {
-				db, err := database.NewCdxIndexDb(database.WithDir(t.TempDir()), database.WithCompression(options.None))
+			func() recordWriter {
+				db, err := NewDB(WithDir(t.TempDir()), WithCompression(options.None))
 				if err != nil {
 					t.Fatal(err)
 				}
-				return &CdxDb{CdxDbIndex: db}
+				return db
 			}(),
 		},
 		{
@@ -65,10 +80,10 @@ Content-Length: 0`)
 
 	for _, tt := range tests {
 		t.Run(tt.format, func(t *testing.T) {
-			if t, ok := tt.writer.(*CdxDb); ok {
+			if t, ok := tt.writer.(*DB); ok {
 				defer t.Close()
 			}
-			_, _, err = ReadFile(filepath, tt.writer, func(gowarc.WarcRecord) bool { return true })
+			_, _, err = readFile(filepath, tt.writer, func(gowarc.WarcRecord) bool { return true })
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}

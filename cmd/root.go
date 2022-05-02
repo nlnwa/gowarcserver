@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package cmd
 
 import (
@@ -28,9 +29,6 @@ import (
 	"strings"
 )
 
-func init() {
-}
-
 // NewCommand returns a new cobra.Command implementing the root command for warc
 func NewCommand() *cobra.Command {
 	cobra.OnInitialize(func() { initConfig() })
@@ -45,6 +43,7 @@ func NewCommand() *cobra.Command {
 	_ = cmd.PersistentFlags().StringP("log-level", "l", "info", `set log level, available levels are "panic", "fatal", "error", "warn", "info", "debug" and "trace"`)
 	_ = cmd.PersistentFlags().String("log-formatter", "logfmt", "log formatter, available values are logfmt and json")
 	_ = cmd.PersistentFlags().Bool("log-method", false, "log method caller")
+
 	if err := viper.BindPFlags(cmd.PersistentFlags()); err != nil {
 		log.Fatal().Msgf("Failed to bind root flags: %v", err)
 	}
