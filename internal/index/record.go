@@ -54,7 +54,9 @@ func newRecord(wr gowarc.WarcRecord, filename string, offset int64, length int64
 		Rle: length,
 		Rct: wr.WarcHeader().GetId(gowarc.WarcConcurrentTo),
 	}
-	if ssu, err := surt.StringToSsurt(wr.WarcHeader().Get(gowarc.WarcTargetURI)); err == nil {
+	if ssu, err := surt.StringToSsurt(rec.Uri); err != nil {
+		return rec, fmt.Errorf("failed to convert url '%s' to ssurt: %w", rec.Uri, err)
+	} else {
 		rec.Ssu = ssu
 	}
 	t, err := wr.WarcHeader().GetTime(gowarc.WarcDate)
