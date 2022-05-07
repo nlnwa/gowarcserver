@@ -17,24 +17,17 @@
 package coreserver
 
 import (
-	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/nlnwa/gowarcserver/internal/loader"
-	"github.com/nlnwa/gowarcserver/internal/server/api"
 	"net/http"
+
+	"github.com/julienschmidt/httprouter"
 )
 
-func Register(r *httprouter.Router, mw func(http.Handler) http.Handler, pathPrefix string, l loader.RecordLoader, db *index.DB) {
-	coreHandler := Handler{api.DbAdapter{DB: db}, l}
-
-	r.Handler("GET", pathPrefix+"/id", mw(http.HandlerFunc(coreHandler.listId)))
-	r.Handler("GET", pathPrefix+"/ids", mw(http.HandlerFunc(coreHandler.listIds)))
-	r.Handler("GET", pathPrefix+"/id/:urn", mw(http.HandlerFunc(coreHandler.getStorageRefByURN)))
-	r.Handler("GET", pathPrefix+"/file", mw(http.HandlerFunc(coreHandler.listFile)))
-	r.Handler("GET", pathPrefix+"/files", mw(http.HandlerFunc(coreHandler.listFiles)))
-	r.Handler("GET", pathPrefix+"/file/:filename", mw(http.HandlerFunc(coreHandler.getFileInfoByFilename)))
-	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(coreHandler.listCdx)))
-	r.Handler("GET", pathPrefix+"/cdxs", mw(http.HandlerFunc(coreHandler.listCdxs)))
-	r.Handler("GET", pathPrefix+"/search", mw(http.HandlerFunc(coreHandler.search)))
-	r.Handler("GET", pathPrefix+"/record/:urn", mw(http.HandlerFunc(coreHandler.loadRecordByUrn)))
+func Register(h Handler, r *httprouter.Router, mw func(http.Handler) http.Handler, pathPrefix string) {
+	r.Handler("GET", pathPrefix+"/id", mw(http.HandlerFunc(h.listIds)))
+	r.Handler("GET", pathPrefix+"/id/:urn", mw(http.HandlerFunc(h.getStorageRefByURN)))
+	r.Handler("GET", pathPrefix+"/file", mw(http.HandlerFunc(h.listFiles)))
+	r.Handler("GET", pathPrefix+"/file/:filename", mw(http.HandlerFunc(h.getFileInfoByFilename)))
+	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(h.listCdxs)))
+	r.Handler("GET", pathPrefix+"/search", mw(http.HandlerFunc(h.search)))
+	r.Handler("GET", pathPrefix+"/record/:urn", mw(http.HandlerFunc(h.loadRecordByUrn)))
 }

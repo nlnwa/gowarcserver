@@ -5,24 +5,27 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
 	"github.com/nlnwa/gowarc"
+	"github.com/nlnwa/gowarcserver/internal/index"
 	"github.com/nlnwa/gowarcserver/internal/loader"
 	"github.com/nlnwa/gowarcserver/internal/server/api"
 	"github.com/nlnwa/gowarcserver/internal/server/handlers"
 	"github.com/nlnwa/gowarcserver/internal/surt"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
-	"github.com/nlnwa/gowarcserver/schema"
 	urlErrors "github.com/nlnwa/whatwg-url/errors"
 	"github.com/nlnwa/whatwg-url/url"
 	"github.com/rs/zerolog/log"
-	"net/http"
-	"strings"
-	"time"
 )
 
 type Handler struct {
-	db     api.DbAdapter
-	loader loader.RecordLoader
+	index.CdxAPI
+	index.FileAPI
+	index.IdAPI
+	loader.WarcLoader
 }
 
 func (h Handler) index(w http.ResponseWriter, r *http.Request) {
@@ -33,67 +36,103 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	n, err := h.db.Search(coreAPI, renderCdx(w, coreAPI))
-	if err != nil {
-		api.HandleError(w, n, err)
-	}
-	if n > 0 {
-		log.Debug().Msgf("Found %d items in %s", n, time.Since(start))
-	}
-}
+	count := 0
+	defer func() {
+		if count > 0 {
+			log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
+		}
+	}()
 
-func renderCdx(w http.ResponseWriter, coreAPI *api.CoreAPI) api.PerCdxFunc {
-	return func(record *schema.Cdx) error {
-		cdxj, err := json.Marshal(cdxToPywbJson(record))
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	response := make(chan index.CdxResponse)
+	searchApi := api.SearchAPI{CoreAPI: coreAPI}
+
+	if err = h.CdxAPI.Search(ctx, searchApi, response); err != nil {
+		log.Error().Err(err).Msg("search failed")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	for res := range response {
+		if res.Error != nil {
+			log.Warn().Err(res.Error).Msg("failed result")
+			continue
+		}
+		cdxj, err := json.Marshal(cdxToPywbJson(res.Cdx))
 		if err != nil {
-			return err
+			log.Warn().Err(err).Msg("failed to marshal result")
+			continue
 		}
 		switch coreAPI.Output {
 		case api.OutputJson:
 			_, err = fmt.Fprintln(w, cdxj)
 		default:
-			sts := timestamp.TimeTo14(record.Sts.AsTime())
-			_, err = fmt.Fprintf(w, "%s %s %s\n", record.Ssu, sts, cdxj)
+			ssu := res.GetSsu()
+			sts := timestamp.TimeTo14(res.GetSts().AsTime())
+			_, err = fmt.Fprintf(w, "%s %s %s\n", ssu, sts, cdxj)
 		}
-		return err
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to write result")
+		} else {
+			count++
+		}
 	}
 }
 
 func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
-	uri, ts := parseWeb(r)
-
-	key, err := surt.StringToSsurt(uri)
+	// parse API
+	closestReq, err := parseResourceRequest(r)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancelQuery := context.WithCancel(r.Context())
+	defer cancelQuery()
+
+	// query API
+	response := make(chan index.CdxResponse)
+	err = h.CdxAPI.Closest(ctx, closestReq, response)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to query closest cdx")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// fetch cdx to access warc record id
-	cdx, err := h.db.Closest(key, ts)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	var res index.CdxResponse
+	for res = range response {
+		if res.Error != nil {
+			log.Warn().Err(err).Msg("failed cdx response")
+			continue
+		}
+		cancelQuery()
+		break
 	}
-	if cdx == nil {
+	if res.Cdx == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	// load warc record by id
-	warcRecord, err := h.loader.Load(ctx, cdx.Rid)
+	// load warc record by storage ref
+	warcRecord, err := h.LoadByStorageRef(ctx, res.GetRef())
+	defer func() {
+		if warcRecord != nil {
+			_ = warcRecord.Close()
+		}
+	}()
 	if err != nil {
-		var errWarcProfile loader.ErrResolveRevisit
-		if errors.As(err, &errWarcProfile) {
-			http.Error(w, errWarcProfile.Error(), http.StatusNotImplemented)
+		var errResolveRevisit loader.ErrResolveRevisit
+		if errors.As(err, &errResolveRevisit) {
+			http.Error(w, errResolveRevisit.Error(), http.StatusNotImplemented)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer warcRecord.Close()
 
 	block, ok := warcRecord.Block().(gowarc.HttpResponseBlock)
 	if !ok {
@@ -103,74 +142,81 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	s := block.HttpStatusCode()
 
-	// Handle redirects
-	if isRedirect(s) {
-		location := block.HttpHeader().Get("Location")
-		if location == "" {
-			http.NotFound(w, r)
-			return
-		}
-		locUrl, err := url.Parse(location)
-		if urlErrors.Code(err) == urlErrors.FailRelativeUrlWithNoBase {
-			locUrl, err = url.ParseRef(uri, location)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Failed to parse relative location header as URL: %s: %s: %v", warcRecord, location, err), http.StatusInternalServerError)
-				return
-			}
-		}
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to parse location header as URL: %s: %s: %v", warcRecord, location, err), http.StatusInternalServerError)
-			return
-		}
-
-		coreAPI := &api.CoreAPI{
-			Urls:      []*url.Url{locUrl},
-			MatchType: api.MatchTypeExact,
-			Limit:     1,
-			Sort:      api.SortClosest,
-			Closest:   ts,
-		}
-
-		// the fields we need to rewrite the location header
-		var sts string
-		var uri string
-
-		// Get timestamp and uri from cdx record
-		perCdxFunc := func(record *schema.Cdx) error {
-			sts = timestamp.TimeTo14(record.Sts.AsTime())
-			uri = record.Uri
-			return nil
-		}
-
-		if n, err := h.db.Search(coreAPI, perCdxFunc); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		} else if n == 0 || sts == "" || uri == "" {
-			http.NotFound(w, r)
-			return
-		}
-
-		prefix := r.URL.Path[:strings.Index(r.URL.Path, "id_")-14]
-		path := prefix + sts + "id_/" + uri
-
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		host := r.Host
-		u, err := url.Parse(scheme + "://" + host + path)
+	if !isRedirect(s) {
+		p, err := block.PayloadBytes()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		handlers.RenderRedirect(w, u.String())
-	} else {
-		err := handlers.RenderContent(w, block)
+		err = handlers.Render(w, *block.HttpHeader(), block.HttpStatusCode(), p)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Warn().Err(err).Msg("Failed to render response")
+		}
+		return
+	}
+
+	// handle redirect
+	location := block.HttpHeader().Get("Location")
+	if location == "" {
+		http.Error(w, "Redirected to empty location", http.StatusInternalServerError)
+		return
+	}
+
+	locUrl, err := url.Parse(location)
+	if urlErrors.Code(err) == urlErrors.FailRelativeUrlWithNoBase {
+		locUrl, err = url.ParseRef(closestReq.rawUrl, location)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to parse relative location header as URL: %s: %s: %v", warcRecord, location, err), http.StatusInternalServerError)
+			return
 		}
 	}
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse location header as URL: %s: %s: %v", warcRecord, location, err), http.StatusInternalServerError)
+		return
+	}
+
+	closestReq = closestRequest{
+		key:     surt.UrlToSsurt(locUrl),
+		closest: closestReq.closest,
+		limit:   1,
+	}
+	response = make(chan index.CdxResponse)
+	err = h.Closest(ctx, closestReq, response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// fields needed to rewrite the location header
+	var sts string
+	var uri string
+
+	for res := range response {
+		if res.Error != nil {
+			log.Warn().Err(err).Msg("")
+			continue
+		}
+		sts = timestamp.TimeTo14(res.GetSts().AsTime())
+		uri = res.GetUri()
+	}
+	if uri == "" {
+		http.NotFound(w, r)
+		return
+	}
+	path := r.URL.Path[:strings.Index(r.URL.Path, "id_")-14] + sts + "id_/" + uri
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	host := r.Host
+	u, err := url.Parse(scheme + "://" + host)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	u.SetPathname(path)
+
+	handlers.RenderRedirect(w, u.String())
 }
 
 func isRedirect(code int) bool {

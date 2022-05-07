@@ -23,8 +23,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nlnwa/gowarcserver/internal/index"
+	"github.com/nlnwa/gowarcserver/internal/surt"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
-	url "github.com/nlnwa/whatwg-url/url"
+	"github.com/nlnwa/whatwg-url/url"
 )
 
 const (
@@ -69,6 +71,51 @@ type CoreAPI struct {
 	Fields     []string
 }
 
+type SearchAPI struct {
+	*CoreAPI
+}
+
+func (c SearchAPI) Closest() string {
+	return c.CoreAPI.Closest
+}
+
+func (c SearchAPI) Key() string {
+	return surt.UrlToSsurt(c.CoreAPI.Urls[0])
+}
+
+func (c SearchAPI) Keys() []string {
+	keys := make([]string, len(c.Urls))
+	for i, u := range c.CoreAPI.Urls {
+		keys[i] = surt.UrlToSsurt(u)
+	}
+	return keys
+}
+
+func (c SearchAPI) Sort() index.Sort {
+	switch c.CoreAPI.Sort {
+	case "reverse":
+		return index.SortDesc
+	default:
+		return index.SortAsc
+	}
+}
+
+func (c SearchAPI) DateRange() index.DateRange {
+	return c.CoreAPI.FromTo
+}
+
+func (c SearchAPI) Filter() index.Filter {
+	return ParseFilter(c.CoreAPI.Filter)
+}
+
+func (c SearchAPI) Limit() int {
+	return c.CoreAPI.Limit
+}
+
+func (c SearchAPI) MatchType() string {
+	return c.CoreAPI.MatchType
+}
+
 // contains returns true if string e is contained in string slice s.
 func contains(s []string, e string) bool {
 	for _, a := range s {
@@ -86,15 +133,15 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 	var err error
 	query := r.URL.Query()
 
-	cdxjApi := new(CoreAPI)
+	coreApi := new(CoreAPI)
 
 	// currently the "cdx" does not accept collection as a query or param
-	cdxjApi.Collection = "all"
+	coreApi.Collection = "all"
 
 	urls, ok := query["url"]
-	if !ok {
-		return nil, fmt.Errorf("missing required query parameter \"url\"")
-	}
+	//if !ok {
+	//	return nil, fmt.Errorf("missing required query parameter \"url\"")
+	//}
 	if len(urls) == 1 && !schemeRegExp.MatchString(urls[0]) {
 		u := urls[0]
 		urls = []string{
@@ -107,10 +154,10 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 		if err != nil {
 			return nil, err
 		}
-		cdxjApi.Urls = append(cdxjApi.Urls, u)
+		coreApi.Urls = append(coreApi.Urls, u)
 	}
 
-	if cdxjApi.FromTo, err = NewDateRange(query.Get("from"), query.Get("to")); err != nil {
+	if coreApi.FromTo, err = NewDateRange(query.Get("from"), query.Get("to")); err != nil {
 		return nil, err
 	}
 
@@ -119,10 +166,10 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 		if !contains(matchTypes, matchType) {
 			return nil, fmt.Errorf("matchType must be one of %v, was: %s", matchTypes, matchType)
 		}
-		cdxjApi.MatchType = matchType
+		coreApi.MatchType = matchType
 	} else {
 		// Default to exact
-		cdxjApi.MatchType = MatchTypeExact
+		coreApi.MatchType = MatchTypeExact
 	}
 
 	limit := query.Get("limit")
@@ -131,27 +178,28 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 		if err != nil {
 			return nil, fmt.Errorf("limit must be a positive integer, was %s", limit)
 		}
-		cdxjApi.Limit = l
+		coreApi.Limit = l
 	}
 
-	closest := query.Get("closest")
+	closest := query.Get("Closest")
 	if closest != "" {
 		_, err := timestamp.Parse(closest)
 		if err != nil {
 			return nil, fmt.Errorf("closest failed to parse: %w", err)
 		}
-		cdxjApi.Closest = closest
+		coreApi.Closest = closest
 	}
 
 	sort := query.Get("sort")
 	if sort != "" {
 		if !contains(sorts, sort) {
 			return nil, fmt.Errorf("sort must be one of %v, was: %s", sorts, sort)
+		} else if sort == SortClosest && closest == "" {
+			return nil, fmt.Errorf("missing closest parameter")
+		} else if sort == SortClosest && len(coreApi.Urls) == 0 {
+			return nil, fmt.Errorf("sort=closest is not valid without urls")
 		}
-		if closest == "" && sort == SortClosest {
-			sort = ""
-		}
-		cdxjApi.Sort = sort
+		coreApi.Sort = sort
 	}
 
 	output := query.Get("output")
@@ -159,18 +207,18 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 		if !contains(outputs, output) {
 			return nil, fmt.Errorf("output must be one of %v, was: %s", outputs, output)
 		}
-		cdxjApi.Output = output
+		coreApi.Output = output
 	}
 
 	filter, ok := query["filter"]
 	if ok {
-		cdxjApi.Filter = filter
+		coreApi.Filter = filter
 	}
 
 	fields := query.Get("fields")
 	if fields != "" {
-		cdxjApi.Fields = strings.Split(fields, ",")
+		coreApi.Fields = strings.Split(fields, ",")
 	}
 
-	return cdxjApi, nil
+	return coreApi, nil
 }

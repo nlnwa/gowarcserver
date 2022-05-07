@@ -17,39 +17,54 @@
 package api
 
 import (
-	"github.com/dgraph-io/badger/v3"
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"sort"
+	"strings"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/nlnwa/gowarcserver/internal/timestamp"
 )
+
+type cdxKey string
+
+func (k cdxKey) ts() string {
+	return strings.Split(string(k), " ")[1]
+}
 
 type value struct {
 	ts int64
 	k  []byte
 }
 
-type sorter struct {
-	closest int64
-	reverse bool
-	values  []value
+type Sorter struct {
+	Closest int64
+	Reverse bool
+	Values  []value
 }
 
-func (s *sorter) add(k []byte) {
+func NewSorter(closest int64, reverse bool) Sorter {
+	return Sorter{
+		Closest: closest,
+		Reverse: reverse,
+		Values:  []value{},
+	}
+}
+
+func (s *Sorter) Add(k []byte) {
 	t, _ := timestamp.Parse(cdxKey(k).ts())
 	ts := t.Unix()
 
-	s.values = append(s.values, value{ts, k})
+	s.Values = append(s.Values, value{ts, k})
 }
 
-func (s *sorter) sort() {
+func (s *Sorter) Sort() {
 	var cmp func(int64, int64) bool
 
-	// sort closest, reverse or forward
-	if s.closest > 0 {
+	// sort Closest, Reverse or forward
+	if s.Closest > 0 {
 		cmp = func(ts1 int64, ts2 int64) bool {
-			return timestamp.AbsInt64(s.closest-ts1) < timestamp.AbsInt64(s.closest-ts2)
+			return timestamp.AbsInt64(s.Closest-ts1) < timestamp.AbsInt64(s.Closest-ts2)
 		}
-	} else if s.reverse {
+	} else if s.Reverse {
 		cmp = func(ts1 int64, ts2 int64) bool {
 			return ts2 < ts1
 		}
@@ -59,13 +74,15 @@ func (s *sorter) sort() {
 		}
 	}
 
-	sort.Slice(s.values, func(i, j int) bool {
-		return cmp(s.values[i].ts, s.values[j].ts)
+	sort.Slice(s.Values, func(i, j int) bool {
+		return cmp(s.Values[i].ts, s.Values[j].ts)
 	})
 }
 
-func (s *sorter) walk(txn *badger.Txn, perItemFn index.PerItemFunc) error {
-	for _, value := range s.values {
+type PerItemFunc func(*badger.Item) (stopIteration bool)
+
+func (s *Sorter) Walk(txn *badger.Txn, perItemFn PerItemFunc) error {
+	for _, value := range s.Values {
 		item, err := txn.Get(value.k)
 		if err != nil {
 			return err

@@ -34,7 +34,7 @@ type Indexer interface {
 	Index(string) error
 }
 
-func Worker(a Indexer, nrOfWorkers int) *indexWorker {
+func NewWorker(a Indexer, nrOfWorkers int) *indexWorker {
 	iw := &indexWorker{
 		jobs:   make(chan string, nrOfWorkers),
 		done:   make(chan struct{}),

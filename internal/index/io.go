@@ -84,7 +84,7 @@ func readFile(path string, writer recordWriter, filter recordFilter, opts ...gow
 }
 
 type recordWriter interface {
-	Write(record) error
+	Write(Record) error
 }
 
 func warcRecordFilter(wr gowarc.WarcRecord) bool {
@@ -98,7 +98,7 @@ func warcRecordFilter(wr gowarc.WarcRecord) bool {
 	return false
 }
 
-func indexFile(fileName string, r recordWriter) error {
+func ReadFile(fileName string, r recordWriter) error {
 	start := time.Now()
 
 	count, total, err := readFile(fileName, r, warcRecordFilter)

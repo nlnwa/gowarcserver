@@ -47,9 +47,13 @@ func NewDateRange(fromstr string, tostr string) (*DateRange, error) {
 	return &DateRange{from, to}, nil
 }
 
-// containsStr returns true if the timestamp ts contained by the bounds defined by the DateRange d.
+func (d *DateRange) Contains(ts int64) bool {
+	return ts >= d.from && ts <= d.to
+}
+
+// ContainsStr returns true if the timestamp ts contained by the bounds defined by the DateRange d.
 // input 'ts' is 'trusted' and does not have the same parsing complexity as a From or To string
-func (d *DateRange) containsStr(ts string) (bool, error) {
+func (d *DateRange) ContainsStr(ts string) (bool, error) {
 	if d == nil {
 		return true, nil
 	}
@@ -61,8 +65,8 @@ func (d *DateRange) containsStr(ts string) (bool, error) {
 	return unixTs >= d.from && unixTs <= d.to, nil
 }
 
-// containsTime returns true if time.Time t is contained by the bounds defined by the DateRange d.
-func (d *DateRange) containsTime(t time.Time) (bool, error) {
+// ContainsTime returns true if time.Time t is contained by the bounds defined by the DateRange d.
+func (d *DateRange) ContainsTime(t time.Time) (bool, error) {
 	if d == nil {
 		return true, nil
 	}

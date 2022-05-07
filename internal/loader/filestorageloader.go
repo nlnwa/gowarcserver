@@ -19,10 +19,11 @@ package loader
 import (
 	"context"
 	"fmt"
-	"github.com/nlnwa/gowarc"
-	"github.com/rs/zerolog/log"
 	"strconv"
 	"strings"
+
+	"github.com/nlnwa/gowarc"
+	"github.com/rs/zerolog/log"
 )
 
 type FileStorageLoader struct {
@@ -33,7 +34,7 @@ type FilePathResolver interface {
 	ResolvePath(filename string) (path string, err error)
 }
 
-func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record gowarc.WarcRecord, err error) {
+func (f FileStorageLoader) Load(ctx context.Context, storageRef string) (record gowarc.WarcRecord, err error) {
 	filePath, offset, err := f.parseStorageRef(storageRef)
 	if err != nil {
 		return nil, err
@@ -65,7 +66,7 @@ func (f *FileStorageLoader) Load(ctx context.Context, storageRef string) (record
 }
 
 // parseStorageRef parses a storageRef (eg. warcfile:filename#offset) into parts.
-func (f *FileStorageLoader) parseStorageRef(storageRef string) (filename string, offset int64, err error) {
+func (f FileStorageLoader) parseStorageRef(storageRef string) (filename string, offset int64, err error) {
 	n := strings.IndexRune(storageRef, ':')
 	if n == -1 {
 		err = fmt.Errorf("invalid storage ref, missing scheme delimiter ':'")

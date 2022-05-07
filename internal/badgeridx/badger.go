@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package index
+package badgeridx
 
 import (
+	"os"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/rs/zerolog/log"
-	"os"
 )
 
 // logger is a log adapter that implements badger.Logger
@@ -64,8 +65,8 @@ func newBadgerDB(dir string, compression options.CompressionType, readOnly bool)
 type PerItemFunc func(*badger.Item) (stopIteration bool)
 type AfterIterFunc func(txn *badger.Txn) error
 
-// Walk iterates db using iterator opts and processes items with fn.
-func Walk(db *badger.DB, opts badger.IteratorOptions, fn PerItemFunc) error {
+// walk iterates db using iterator opts and processes items with fn.
+func walk(db *badger.DB, opts badger.IteratorOptions, fn PerItemFunc) error {
 	return db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(opts)
 		defer it.Close()

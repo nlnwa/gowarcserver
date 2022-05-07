@@ -17,23 +17,26 @@
 package serve
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
+	"os/signal"
 	"regexp"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
+	"github.com/nlnwa/gowarcserver/internal/badgeridx"
 	"github.com/nlnwa/gowarcserver/internal/index"
 	"github.com/nlnwa/gowarcserver/internal/loader"
-	"github.com/nlnwa/gowarcserver/internal/server"
 	"github.com/nlnwa/gowarcserver/internal/server/coreserver"
 	"github.com/nlnwa/gowarcserver/internal/server/warcserver"
+	"github.com/nlnwa/gowarcserver/internal/tikvidx"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -43,11 +46,6 @@ func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start warc server",
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// Increase GOMAXPROCS as recommended by badger
-			// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
-			runtime.GOMAXPROCS(128)
-		},
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := viper.BindPFlags(cmd.Flags()); err != nil {
 				return fmt.Errorf("failed to bind flags, err: %w", err)
@@ -59,15 +57,17 @@ func NewCommand() *cobra.Command {
 	// defaults
 	port := 9999
 	watch := false
-	enableIndexing := true
-	indexDbDir := "."
+	storageEngine := "badger"
 	indexDepth := 4
 	indexWorkers := 8
-	indexDbBatchMaxSize := 1000
-	indexDbBatchMaxWait := 5 * time.Second
-	compression := index.SnappyCompression
+	badgerDir := "."
+	badgerBatchMaxSize := 1000
+	badgerBatchMaxWait := 5 * time.Second
+	badgerReadOnly := false
 	logRequests := false
-	readOnly := false
+	tikvPdAddr := []string{}
+	tikvBatchMaxSize := 1000
+	tikvBatchMaxWait := 5 * time.Second
 	pathPrefix := ""
 
 	cmd.Flags().IntP("port", "p", port, "server port")
@@ -75,17 +75,19 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().String("path-prefix", pathPrefix, "prefix for all server endpoints")
 	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
 	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
-	cmd.Flags().BoolP("index", "a", enableIndexing, "enable indexing")
 	cmd.Flags().IntP("max-depth", "w", indexDepth, "maximum directory recursion depth")
 	cmd.Flags().Int("workers", indexWorkers, "number of index workers")
 	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
 	cmd.Flags().Bool("watch", watch, "watch files for changes")
-	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
-	cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
-	cmd.Flags().Bool("db-read-only", readOnly, "set database to read only")
-	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max wait time before flushing batched records")
-	cmd.Flags().String("compression", compression, "database compression type: 'none', 'snappy' or 'zstd'")
 	cmd.Flags().Bool("log-requests", logRequests, "log http requests")
+	cmd.Flags().StringP("storage-engine", "b", storageEngine, `storage engine: "badger" or "tikv"`)
+	cmd.Flags().String("badger-dir", badgerDir, "path to index database")
+	cmd.Flags().Int("badger-batch-max-size", badgerBatchMaxSize, "max transaction batch size in badger")
+	cmd.Flags().Duration("badger-batch-max-wait", badgerBatchMaxWait, "max wait time before flushing batched records")
+	cmd.Flags().Bool("badger-read-only", badgerReadOnly, "run badger read-only")
+	cmd.Flags().StringSlice("tikv-pd-addr", tikvPdAddr, "path to index database")
+	cmd.Flags().Int("tikv-batch-max-size", tikvBatchMaxSize, "max transaction batch size in badger")
+	cmd.Flags().Duration("tikv-batch-max-wait", tikvBatchMaxWait, "max wait time before flushing batched records")
 
 	return cmd
 }
@@ -98,9 +100,9 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 	} else {
 		dirs = viper.GetStringSlice("dirs")
 	}
-	// parse database compression type
+	// parse badger compression type
 	var c options.CompressionType
-	if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(index.CompressionDecodeHookFunc())); err != nil {
+	if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
 		return err
 	}
 	// parse include patterns
@@ -121,33 +123,62 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 			excludes = append(excludes, re)
 		}
 	}
-	// parse proxy url
-	var proxyUrl *url.URL
-	proxyStr := viper.GetString("proxy-url")
-	if proxyStr != "" {
-		var err error
-		proxyUrl, err = url.Parse(proxyStr)
+
+	var indexer index.Indexer
+	var fileApi index.FileAPI
+	var cdxApi index.CdxAPI
+	var idApi index.IdAPI
+	var storageRefResolver loader.StorageRefResolver
+	var filePathResolver loader.FilePathResolver
+
+	switch viper.GetString("storage-engine") {
+	case "badger":
+		// Increase GOMAXPROCS as recommended by badger
+		// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
+		runtime.GOMAXPROCS(128)
+
+		db, err := badgeridx.NewDB(
+			badgeridx.WithCompression(c),
+			badgeridx.WithDir(viper.GetString("badger-dir")),
+			badgeridx.WithBatchMaxSize(viper.GetInt("badger-batch-max-size")),
+			badgeridx.WithBatchMaxWait(viper.GetDuration("badger-batch-max-wait")),
+			badgeridx.WithReadOnly(viper.GetBool("badger-read-only")),
+		)
 		if err != nil {
 			return err
 		}
+		defer db.Close()
+		indexer = db
+		storageRefResolver = db
+		filePathResolver = db
+		cdxApi = db
+		fileApi = db
+		idApi = db
+	case "tikv":
+		db, err := tikvidx.NewDB(
+			tikvidx.WithPDAddress(viper.GetStringSlice("tikv-pd-addr")),
+			tikvidx.WithBatchMaxSize(viper.GetInt("tikv-batch-max-size")),
+			tikvidx.WithBatchMaxWait(viper.GetDuration("tikv-batch-max-wait")),
+		)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		indexer = db
+		storageRefResolver = db
+		filePathResolver = db
+		cdxApi = db
+		fileApi = db
+		idApi = db
+	default:
+		return fmt.Errorf("invalid storage engine")
 	}
-	// create index database
-	db, err := index.NewDB(
-		index.WithCompression(c),
-		index.WithDir(viper.GetString("db-dir")),
-		index.WithBatchMaxSize(viper.GetInt("db-batch-max-size")),
-		index.WithBatchMaxWait(viper.GetDuration("db-batch-max-wait")),
-		index.WithReadOnly(viper.GetBool("db-read-only")),
-	)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
+
 	// optionally start autoindexer
 	if viper.GetBool("index") {
 		log.Info().Msg("Starting auto indexer")
 
-		indexWorker := index.Worker(db, viper.GetInt("workers"))
+		indexWorker := index.NewWorker(indexer, viper.GetInt("workers"))
 		defer indexWorker.Close()
 
 		indexer, err := index.NewAutoIndexer(indexWorker,
@@ -170,12 +201,11 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 			}()
 		}
 	}
+
 	// create record loader
 	l := &loader.Loader{
-		StorageRefResolver: db,
-		RecordLoader:       &loader.FileStorageLoader{FilePathResolver: db},
-		NoUnpack:           false,
-		ProxyUrl:           proxyUrl,
+		StorageRefResolver: storageRefResolver,
+		FileStorageLoader:  loader.FileStorageLoader{FilePathResolver: filePathResolver},
 	}
 	// middleware chain
 	mw := func(h http.Handler) http.Handler {
@@ -188,13 +218,50 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 		}
 	}
 	// create http router
-	r := httprouter.New()
+	handler := httprouter.New()
 	// register routes
 	pathPrefix := viper.GetString("path-prefix")
-	warcserver.Register(r, mw, pathPrefix+"/warcserver", l, db)
-	coreserver.Register(r, mw, pathPrefix, l, db)
-	// start server
-	if err := server.Serve(viper.GetInt("port"), r); !errors.Is(err, http.ErrServerClosed) {
+
+	// register warcserver API
+	warcserver.Register(warcserver.Handler{
+		CdxAPI:     cdxApi,
+		FileAPI:    fileApi,
+		IdAPI:      idApi,
+		WarcLoader: l,
+	}, handler, mw, pathPrefix+"/warcserver")
+
+	// register core API
+	coreserver.Register(coreserver.Handler{
+		CdxAPI:             cdxApi,
+		FileAPI:            fileApi,
+		IdAPI:              idApi,
+		StorageRefResolver: storageRefResolver,
+		WarcLoader:         l,
+	}, handler, mw, pathPrefix)
+
+	port := viper.GetInt("port")
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: handler,
+	}
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-sigs
+		log.Debug().Msgf("Received %s signal, shutting down server...", sig)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := httpServer.Shutdown(ctx)
+		if err != nil {
+			log.Error().Msgf("Failed to shut down server: %v", err)
+		}
+	}()
+
+	log.Info().Msgf("Starting web server at :%v", port)
+
+	err := httpServer.ListenAndServe()
+	if !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

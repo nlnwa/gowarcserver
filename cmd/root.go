@@ -18,15 +18,16 @@ package cmd
 
 import (
 	"errors"
+	"os"
+	"strings"
+
 	"github.com/nlnwa/gowarcserver/cmd/index"
-	"github.com/nlnwa/gowarcserver/cmd/proxy"
 	"github.com/nlnwa/gowarcserver/cmd/serve"
 	"github.com/nlnwa/gowarcserver/cmd/version"
 	"github.com/nlnwa/gowarcserver/internal/logger"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"strings"
 )
 
 // NewCommand returns a new cobra.Command implementing the root command for warc
@@ -45,13 +46,13 @@ func NewCommand() *cobra.Command {
 	_ = cmd.PersistentFlags().Bool("log-method", false, "log method caller")
 
 	if err := viper.BindPFlags(cmd.PersistentFlags()); err != nil {
-		log.Fatal().Msgf("Failed to bind root flags: %v", err)
+		log.Error().Msgf("Failed to bind root flags: %v", err)
+		os.Exit(1)
 	}
 
 	// Subcommands
 	cmd.AddCommand(serve.NewCommand())
 	cmd.AddCommand(index.NewCommand())
-	cmd.AddCommand(proxy.NewCommand())
 	cmd.AddCommand(version.NewCommand())
 
 	return cmd
@@ -78,7 +79,8 @@ func initConfig() {
 		if errors.As(err, new(viper.ConfigFileNotFoundError)) {
 			return
 		}
-		log.Fatal().Msgf("Failed to read config file: %v", err)
+		log.Error().Msgf("Failed to read config file: %v", err)
+		os.Exit(1)
 	}
 	logger.InitLog(viper.GetString("log-level"), viper.GetString("log-formatter"), viper.GetBool("log-method"))
 

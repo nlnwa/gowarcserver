@@ -29,7 +29,7 @@ import (
 type Cdx struct {
 }
 
-func (c Cdx) Write(rec record) error {
+func (c Cdx) Write(rec Record) error {
 	cdxj := protojson.Format(rec)
 	fmt.Printf("%s %s %s %s\n", rec.Ssu, rec.Sts, rec.Srt, cdxj)
 
@@ -39,7 +39,7 @@ func (c Cdx) Write(rec record) error {
 type CdxJ struct {
 }
 
-func (c CdxJ) Write(rec record) error {
+func (c CdxJ) Write(rec Record) error {
 	cdxj := protojson.Format(rec)
 	fmt.Printf("%s %s %s %s\n", rec.Ssu, rec.Sts, rec.Srt, cdxj)
 
@@ -47,13 +47,13 @@ func (c CdxJ) Write(rec record) error {
 }
 
 func (c CdxJ) Index(fileName string) error {
-	return indexFile(fileName, c)
+	return ReadFile(fileName, c)
 }
 
 type CdxPb struct {
 }
 
-func (c CdxPb) Write(rec record) error {
+func (c CdxPb) Write(rec Record) error {
 	cdxpb, err := proto.Marshal(rec)
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func (c CdxPb) Write(rec record) error {
 }
 
 func (c CdxPb) Index(fileName string) error {
-	return indexFile(fileName, c)
+	return ReadFile(fileName, c)
 }
 
 type Toc struct {
@@ -72,7 +72,7 @@ type Toc struct {
 	*bloom.BloomFilter
 }
 
-func (t *Toc) Write(rec record) error {
+func (t *Toc) Write(rec Record) error {
 	uri := rec.Uri
 	surthost, err := surt.UrlToSsurtHostname(uri)
 	if err != nil {
@@ -94,5 +94,5 @@ func (t *Toc) Write(rec record) error {
 }
 
 func (t *Toc) Index(fileName string) error {
-	return indexFile(fileName, t)
+	return ReadFile(fileName, t)
 }

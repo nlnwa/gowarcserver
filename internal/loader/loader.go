@@ -17,15 +17,10 @@
 package loader
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
-	"path"
 
-	"github.com/dgraph-io/badger/v3"
 	"github.com/nlnwa/gowarc"
 	"github.com/rs/zerolog/log"
 )
@@ -38,11 +33,15 @@ type RecordLoader interface {
 	Load(ctx context.Context, storageRef string) (wr gowarc.WarcRecord, err error)
 }
 
+type WarcLoader interface {
+	LoadById(context.Context, string) (gowarc.WarcRecord, error)
+	LoadByStorageRef(context.Context, string) (gowarc.WarcRecord, error)
+}
+
 type Loader struct {
 	StorageRefResolver
-	RecordLoader
+	FileStorageLoader
 	NoUnpack bool
-	ProxyUrl *url.URL
 }
 
 type ErrResolveRevisit struct {
@@ -59,13 +58,16 @@ func (e ErrResolveRevisit) String() string {
 	return fmt.Sprintf("Warc-Refers-To-Date: %s, Warc-Refers-To-Target-URI: %s, Warc-Profile: %s", e.Date, e.TargetURI, e.Profile)
 }
 
-func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
-	storageRef, err := l.Resolve(warcId)
+func (l *Loader) LoadById(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
+	storageRef, err := l.StorageRefResolver.Resolve(warcId)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(storageRef)
-	record, err := l.RecordLoader.Load(ctx, storageRef)
+	return l.LoadByStorageRef(ctx, storageRef)
+}
+
+func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowarc.WarcRecord, error) {
+	record, err := l.FileStorageLoader.Load(ctx, storageRef)
 	if err != nil {
 		return nil, err
 	}
@@ -90,46 +92,14 @@ func (l *Loader) Load(ctx context.Context, warcId string) (gowarc.WarcRecord, er
 
 		var revisitOf gowarc.WarcRecord
 		storageRef, err = l.Resolve(warcRefersTo)
-		// if the record is missing from out DB and a proxy is configured, then we should
-		// ask the proxy to get the revisitOf record for us
-		if errors.Is(err, badger.ErrKeyNotFound) && l.ProxyUrl != nil {
-			reqUrl := *l.ProxyUrl
-			reqUrl.Path = path.Join(reqUrl.Path, "record", warcRefersTo)
-
-			log.Debug().Msgf("attempt to get record from proxy url %s", reqUrl.String())
-			req, err := http.NewRequestWithContext(ctx, "GET", reqUrl.String(), nil)
-			if err != nil {
-				return nil, err
-			}
-
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				return nil, err
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				return nil, fmt.Errorf("resolve revisit from proxy expected %d got %d", http.StatusOK, resp.StatusCode)
-			}
-
-			warcUnmarshaler := gowarc.NewUnmarshaler(
-				gowarc.WithSyntaxErrorPolicy(gowarc.ErrIgnore),
-				gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore),
-			)
-			bodyIoReader := bufio.NewReader(resp.Body)
-			revisitOf, _, _, err = warcUnmarshaler.Unmarshal(bodyIoReader)
-			if err != nil {
-				return nil, err
-			}
-		} else if err != nil {
+		if err != nil {
 			return nil, fmt.Errorf("unable to resolve referred Warc-Record-ID [%s]: %w", warcRefersTo, err)
-		} else {
-			// in the event that it managed to load record locally we do that instead
-			revisitOf, err = l.RecordLoader.Load(ctx, storageRef)
-			if err != nil {
-				return nil, err
-			}
 		}
+		revisitOf, err = l.FileStorageLoader.Load(ctx, storageRef)
+		if err != nil {
+			return nil, err
+		}
+
 		rtrRecord, err = record.Merge(revisitOf)
 		if err != nil {
 			return nil, err

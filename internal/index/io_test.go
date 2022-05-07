@@ -17,11 +17,11 @@
 package index
 
 import (
-	"github.com/dgraph-io/badger/v3/options"
-	"github.com/nlnwa/gowarc"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/nlnwa/gowarc"
 )
 
 func TestReadFile(t *testing.T) {
@@ -63,16 +63,6 @@ Content-Length: 0`)
 			new(CdxPb),
 		},
 		{
-			"cdxdb",
-			func() recordWriter {
-				db, err := NewDB(WithDir(t.TempDir()), WithCompression(options.None))
-				if err != nil {
-					t.Fatal(err)
-				}
-				return db
-			}(),
-		},
-		{
 			"toc",
 			new(Toc),
 		},
@@ -80,9 +70,6 @@ Content-Length: 0`)
 
 	for _, tt := range tests {
 		t.Run(tt.format, func(t *testing.T) {
-			if t, ok := tt.writer.(*DB); ok {
-				defer t.Close()
-			}
 			_, _, err = readFile(filepath, tt.writer, func(gowarc.WarcRecord) bool { return true })
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)

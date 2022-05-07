@@ -18,9 +18,10 @@ package handlers
 
 import (
 	"fmt"
-	"github.com/nlnwa/gowarc"
 	"io"
 	"net/http"
+
+	"github.com/nlnwa/gowarc"
 )
 
 // RenderRecord renders gowarc.WarcRecord rec as a binary stream.
@@ -51,7 +52,7 @@ func RenderContent(w http.ResponseWriter, r gowarc.HttpResponseBlock) error {
 		return fmt.Errorf("failed to retrieve payload bytes: %w", err)
 	}
 
-	return render(w, *r.HttpHeader(), r.HttpStatusCode(), p)
+	return Render(w, *r.HttpHeader(), r.HttpStatusCode(), p)
 }
 
 func RenderRedirect(w http.ResponseWriter, location string) {
@@ -63,7 +64,7 @@ func RenderRedirect(w http.ResponseWriter, location string) {
 	w.WriteHeader(http.StatusFound)
 }
 
-func render(w http.ResponseWriter, h http.Header, code int, r io.Reader) error {
+func Render(w http.ResponseWriter, h http.Header, code int, r io.Reader) error {
 	// Write headers
 	for key, values := range h {
 		for i, value := range values {

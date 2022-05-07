@@ -20,7 +20,7 @@ import (
 	"strings"
 )
 
-func parseKey(ssurt string, matchType string) string {
+func ParseKey(ssurt string, matchType string) string {
 	switch matchType {
 	case MatchTypeExact:
 		ssurt += " "

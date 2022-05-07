@@ -18,15 +18,18 @@ package index
 
 import (
 	"fmt"
-	"github.com/bits-and-blooms/bloom/v3"
-	"github.com/dgraph-io/badger/v3/options"
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/rs/zerolog/log"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"regexp"
 	"runtime"
 	"time"
+
+	"github.com/bits-and-blooms/bloom/v3"
+	"github.com/dgraph-io/badger/v3/options"
+	"github.com/nlnwa/gowarcserver/internal/badgeridx"
+	"github.com/nlnwa/gowarcserver/internal/index"
+	"github.com/nlnwa/gowarcserver/internal/tikvidx"
+	"github.com/rs/zerolog/log"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func NewCommand() *cobra.Command {
@@ -43,27 +46,31 @@ func NewCommand() *cobra.Command {
 	}
 	// defaults
 	format := "cdxj"
-	indexDbDir := "."
-	compression := index.SnappyCompression
 	indexDepth := 4
 	indexWorkers := 8
-	indexDbBatchMaxSize := 1000
-	indexDbBatchMaxWait := 5 * time.Second
+	badgerDir := "."
+	badgerBatchMaxSize := 1000
+	badgerBatchMaxWait := 5 * time.Second
+	var tikvPdAddr []string
+	tikvBatchMaxSize := 1000
+	tikvBatchMaxWait := 5 * time.Second
 	bloomCapacity := uint(1000)
 	bloomFp := 0.01
 
-	cmd.Flags().StringP("format", "f", format, `index format: "cdxj", "cdxpb", "cdxdb" or "toc"`)
+	cmd.Flags().StringP("format", "f", format, `index format: "cdxj", "cdxpb", "badger", "tikv" or "toc"`)
 	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
 	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
 	cmd.Flags().IntP("max-depth", "d", indexDepth, "maximum directory recursion")
 	cmd.Flags().Int("workers", indexWorkers, "number of index workers")
 	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
-	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
-	cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
-	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max wait time before flushing batched records")
-	cmd.Flags().String("compression", compression, `badger compression type: "none", "snappy" or "zstd"`)
-	cmd.Flags().Uint("bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
-	cmd.Flags().Float64("bloom-fp", bloomFp, "estimated bloom filter false positive rate")
+	cmd.Flags().Uint("toc-bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
+	cmd.Flags().Float64("toc-bloom-fp", bloomFp, "estimated bloom filter false positive rate")
+	cmd.Flags().String("badger-dir", badgerDir, "path to index database")
+	cmd.Flags().Int("badger-batch-max-size", badgerBatchMaxSize, "max transaction batch size in badger")
+	cmd.Flags().Duration("badger-batch-max-wait", badgerBatchMaxWait, "max wait time before flushing batched records")
+	cmd.Flags().StringSlice("tikv-pd-addr", tikvPdAddr, "path to index database")
+	cmd.Flags().Int("tikv-batch-max-size", tikvBatchMaxSize, "max transaction batch size in badger")
+	cmd.Flags().Duration("tikv-batch-max-wait", tikvBatchMaxWait, "max wait time before flushing batched records")
 
 	return cmd
 }
@@ -85,20 +92,30 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		w = index.CdxJ{}
 	case "cdxpb":
 		w = index.CdxPb{}
-	case "cdxdb":
+	case "tikv":
+		db, err := tikvidx.NewDB(
+			tikvidx.WithPDAddress(viper.GetStringSlice("tikv-pd-addr")),
+			tikvidx.WithBatchMaxSize(viper.GetInt("tikv-batch-max-size")),
+			tikvidx.WithBatchMaxWait(viper.GetDuration("tikv-batch-max-wait")))
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		w = db
+	case "badger":
 		// Increase GOMAXPROCS as recommended by badger
 		// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
 		runtime.GOMAXPROCS(128)
 
 		var c options.CompressionType
-		if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(index.CompressionDecodeHookFunc())); err != nil {
+		if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
 			return err
 		}
-		db, err := index.NewDB(
-			index.WithCompression(c),
-			index.WithDir(viper.GetString("db-dir")),
-			index.WithBatchMaxSize(viper.GetInt("db-batch-max-size")),
-			index.WithBatchMaxWait(viper.GetDuration("db-batch-max-wait")),
+		db, err := badgeridx.NewDB(
+			badgeridx.WithCompression(c),
+			badgeridx.WithDir(viper.GetString("badger-dir")),
+			badgeridx.WithBatchMaxSize(viper.GetInt("badger-batch-max-size")),
+			badgeridx.WithBatchMaxWait(viper.GetDuration("badger-batch-max-wait")),
 		)
 		if err != nil {
 			return err
@@ -107,13 +124,13 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		w = db
 	case "toc":
 		w = &index.Toc{
-			BloomFilter: bloom.NewWithEstimates(viper.GetUint("bloom-capacity"), viper.GetFloat64("bloom-fp")),
+			BloomFilter: bloom.NewWithEstimates(viper.GetUint("toc-bloom-capacity"), viper.GetFloat64("toc-bloom-fp")),
 		}
 	default:
 		return fmt.Errorf("unsupported format %s", format)
 	}
 
-	indexWorker := index.Worker(w, viper.GetInt("workers"))
+	indexWorker := index.NewWorker(w, viper.GetInt("workers"))
 	defer indexWorker.Close()
 
 	var includes []*regexp.Regexp

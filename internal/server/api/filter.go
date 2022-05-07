@@ -34,7 +34,7 @@ const (
 
 type Filter []filter
 
-func (f Filter) eval(c *schema.Cdx) bool {
+func (f Filter) Eval(c *schema.Cdx) bool {
 	for _, ff := range f {
 		if !ff.eval(c) {
 			return false
@@ -43,7 +43,7 @@ func (f Filter) eval(c *schema.Cdx) bool {
 	return true
 }
 
-func parseFilter(filterStrings []string) Filter {
+func ParseFilter(filterStrings []string) Filter {
 	var filters Filter
 
 	for _, f := range filterStrings {

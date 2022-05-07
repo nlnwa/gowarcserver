@@ -17,21 +17,13 @@
 package warcserver
 
 import (
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/nlnwa/gowarcserver/internal/server/api"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/loader"
 )
 
-func Register(r *httprouter.Router, mw func(http.Handler) http.Handler, pathPrefix string, loader *loader.Loader, db *index.DB) {
-	handler := Handler{
-		db:     api.DbAdapter{DB: db},
-		loader: loader,
-	}
-
+func Register(h Handler, r *httprouter.Router, mw func(http.Handler) http.Handler, pathPrefix string) {
 	// https://pywb.readthedocs.io/en/latest/manual/warcserver.html#warcserver-api
-	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(handler.index)))
-	r.Handler("GET", pathPrefix+"/web/:timestamp/*url", mw(http.HandlerFunc(handler.resource)))
+	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(h.index)))
+	r.Handler("GET", pathPrefix+"/web/:timestamp/*url", mw(http.HandlerFunc(h.resource)))
 }

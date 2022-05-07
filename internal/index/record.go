@@ -21,25 +21,30 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/internal/surt"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"io"
-	"net/http"
-	"strconv"
-	"strings"
-	"unicode/utf8"
 )
 
-type record struct {
+type Record struct {
 	*schema.Cdx
 }
 
+func (r Record) String() string {
+	return fmt.Sprintf("%s %s", r.Ref, r.Uri)
+}
+
 // newRecord constructs a Record from wr, filename, offset and length.
-func newRecord(wr gowarc.WarcRecord, filename string, offset int64, length int64) (rec record, err error) {
+func newRecord(wr gowarc.WarcRecord, filename string, offset int64, length int64) (rec Record, err error) {
 	cle, err := wr.WarcHeader().GetInt64(gowarc.ContentLength)
 	if err != nil {
 		return rec, fmt.Errorf("failed to parse WARC header field '%s': %w", gowarc.ContentLength, err)
@@ -143,7 +148,7 @@ func newRecord(wr gowarc.WarcRecord, filename string, offset int64, length int64
 	return
 }
 
-func (r record) marshal() ([]byte, error) {
+func (r Record) Marshal() ([]byte, error) {
 	value, err := proto.Marshal(r)
 	if err != nil && strings.HasSuffix(err.Error(), "contains invalid UTF-8") {
 		// sanitize MIME type

@@ -17,67 +17,31 @@
 package coreserver
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/nlnwa/gowarcserver/internal/loader"
-	"github.com/nlnwa/gowarcserver/internal/server/api"
-	"github.com/nlnwa/gowarcserver/internal/server/handlers"
-	"github.com/nlnwa/gowarcserver/schema"
-	"github.com/rs/zerolog/log"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/julienschmidt/httprouter"
+	"github.com/nlnwa/gowarcserver/internal/index"
+	"github.com/nlnwa/gowarcserver/internal/loader"
+	"github.com/nlnwa/gowarcserver/internal/server/api"
+	"github.com/nlnwa/gowarcserver/internal/server/handlers"
+	"github.com/rs/zerolog/log"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type Handler struct {
-	db     api.DbAdapter
-	loader loader.RecordLoader
-}
-
-// keyHandler returns a http.HandlerFunc that outputs the keys given in db.
-func keyHandler(db *badger.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		limit := parseLimit(r)
-
-		start := time.Now()
-		count := 0
-
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		err := index.Walk(db, opts, func(item *badger.Item) (stopIteration bool) {
-			_, err := fmt.Fprintln(w, string(item.Key()))
-			count++
-			if count >= limit {
-				return true
-			}
-			return err != nil
-		})
-		if err != nil {
-			api.HandleError(w, count, err)
-		}
-		if count > 0 {
-			log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
-		}
-	}
-}
-
-func (h Handler) listId(w http.ResponseWriter, r *http.Request) {
-	keyHandler(h.db.IdIndex)(w, r)
-}
-
-func (h Handler) listFile(w http.ResponseWriter, r *http.Request) {
-	keyHandler(h.db.FileIndex)(w, r)
-}
-
-func (h Handler) listCdx(w http.ResponseWriter, r *http.Request) {
-	keyHandler(h.db.CdxIndex)(w, r)
+	index.CdxAPI
+	index.FileAPI
+	index.IdAPI
+	loader.StorageRefResolver
+	loader.WarcLoader
 }
 
 func (h Handler) search(w http.ResponseWriter, r *http.Request) {
@@ -86,22 +50,43 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	response := make(chan index.CdxResponse)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	log.Debug().Msgf("%v", coreAPI)
+	if err = h.CdxAPI.Search(ctx, api.SearchAPI{CoreAPI: coreAPI}, response); err != nil {
+		log.Error().Err(err).Msg("failed to search")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	start := time.Now()
-
-	count, err := h.db.Search(coreAPI, func(cdx *schema.Cdx) error {
-		b, err := protojson.Marshal(cdx)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(w, string(b))
-		return err
-	})
-	if err != nil {
-		api.HandleError(w, count, err)
-	}
-	if count > 0 {
+	count := 0
+	defer func() {
 		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
+	}()
+
+	for res := range response {
+		if res.Error != nil {
+			log.Warn().Err(res.Error).Msg("failed result")
+			continue
+		}
+		v, err := protojson.Marshal(res)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to marshal result")
+			continue
+		}
+		if count > 0 {
+			_, _ = w.Write([]byte("\r\n"))
+		}
+		_, err = io.Copy(w, bytes.NewReader(v))
+		if err != nil {
+			log.Warn().Err(err).Int("status", http.StatusInternalServerError).Msg("failed to write result")
+			return
+		} else {
+			count++
+		}
 	}
 }
 
@@ -113,43 +98,48 @@ type storageRef struct {
 
 func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
+	response := make(chan index.IdResponse)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
 
+	if err := h.IdAPI.ListStorageRef(ctx, limit, response); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	start := time.Now()
 	count := 0
+	defer func() {
+		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
+	}()
 
-	opts := badger.DefaultIteratorOptions
-	opts.PrefetchSize = limit
-	err := index.Walk(h.db.IdIndex, opts, func(item *badger.Item) (stopIteration bool) {
-		err := item.Value(func(val []byte) error {
-			filename, offset, err := parseStorageRef(string(val))
-			if err != nil {
-				return err
-			}
-			storageRef := &storageRef{
-				Id:       string(item.Key()),
-				Filename: filename,
-				Offset:   offset,
-			}
-			b, err := json.Marshal(storageRef)
-			if err != nil {
-				return err
-			}
-			_, err = fmt.Fprintln(w, string(b))
-			return err
-		})
+	for res := range response {
+		if res.Error != nil {
+			log.Warn().Err(res.Error).Msg("failed result")
+			continue
+		}
+		filename, offset, err := parseStorageRef(res.Value)
+		storageRef := &storageRef{
+			Id:       res.Key,
+			Filename: filename,
+			Offset:   offset,
+		}
+		v, err := json.Marshal(storageRef)
 		if err != nil {
-			log.Warn().Err(err).Msgf("Failed to output id '%s'", string(item.Key()))
+			log.Warn().Err(err).Msg("failed to marshal storage ref")
+		}
+		if count > 0 {
+			_, _ = w.Write([]byte("\r\n"))
+		}
+		_, err = io.Copy(w, bytes.NewReader(v))
+		if err != nil {
+			log.Error().Err(err).Int("status", http.StatusInternalServerError).Msg("failed to write storage ref")
+			if count == 0 {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			return
 		}
 		count++
-		if count >= limit {
-			return true
-		}
-		return err != nil
-	})
-	if err != nil {
-		api.HandleError(w, count, err)
-	} else if count > 0 {
-		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
 	}
 }
 
@@ -157,7 +147,7 @@ func (h Handler) getStorageRefByURN(w http.ResponseWriter, r *http.Request) {
 	params := httprouter.ParamsFromContext(r.Context())
 	urn := params.ByName("urn")
 
-	storageRef, err := h.db.Resolve(urn)
+	storageRef, err := h.StorageRefResolver.Resolve(urn)
 	if err != nil {
 		msg := fmt.Sprintf("failed to resolve storage reference of urn: %v", err)
 		http.Error(w, msg, http.StatusInternalServerError)
@@ -170,40 +160,41 @@ func (h Handler) getStorageRefByURN(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
 	limit := parseLimit(r)
+	responses := make(chan index.FileResponse)
+
+	if err := h.FileAPI.ListFileInfo(ctx, limit, responses); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	start := time.Now()
 	count := 0
+	defer func() {
+		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
+	}()
 
-	opts := badger.DefaultIteratorOptions
-	opts.PrefetchSize = limit
-
-	err := index.Walk(h.db.FileIndex, opts, func(item *badger.Item) (stopIteration bool) {
-		fileInfo := new(schema.Fileinfo)
-		err := item.Value(func(val []byte) error {
-			return proto.Unmarshal(val, fileInfo)
-		})
-		if err != nil {
-			log.Warn().Err(err).Msgf("Failed to unmarshal FileInfo: %s", string(item.Key()))
+	for res := range responses {
+		if res.Error != nil {
+			log.Warn().Err(res.Error).Msg("failed result")
+			continue
 		}
-		b, err := protojson.Marshal(fileInfo)
+		v, err := protojson.Marshal(res.Fileinfo)
 		if err != nil {
-			log.Warn().Err(err).Msgf("Failed to marshal fileInfo to JSON: %s", string(item.Key()))
+			log.Warn().Err(err).Msg("failed to marshal storage ref")
 		}
-		_, err = fmt.Fprintln(w, string(b))
+		if count > 0 {
+			_, _ = w.Write([]byte("\r\n"))
+		}
+		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
-			log.Warn().Err(err).Msgf("Failed to write fileInfo: %s", string(item.Key()))
+			log.Error().Err(err).Int("status", http.StatusInternalServerError).Msg("failed to write storage ref")
+			return
 		}
 		count++
-		if count >= limit {
-			return true
-		}
-		return err != nil
-	})
-	if err != nil {
-		api.HandleError(w, count, err)
-	} else if count > 0 {
-		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
 	}
 }
 
@@ -211,7 +202,10 @@ func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
 	params := httprouter.ParamsFromContext(r.Context())
 	filename := params.ByName("filename")
 
-	fileInfo, err := h.db.GetFileInfo(filename)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	fileInfo, err := h.FileAPI.GetFileInfo(ctx, filename)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -224,39 +218,44 @@ func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
 
 func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
+	responses := make(chan index.CdxResponse)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if err := h.CdxAPI.List(ctx, limit, responses); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	start := time.Now()
 	count := 0
+	defer func() {
+		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
+	}()
 
-	opts := badger.DefaultIteratorOptions
-	opts.PrefetchSize = limit
-
-	err := index.Walk(h.db.CdxIndex, opts, func(item *badger.Item) (stopIteration bool) {
-		cdx := new(schema.Cdx)
-		err := item.Value(func(val []byte) error {
-			return proto.Unmarshal(val, cdx)
-		})
-		if err != nil {
-			log.Warn().Err(err).Msgf("Failed to unmarshal Cdx: %s", string(item.Key()))
+	for res := range responses {
+		if res.Error != nil {
+			log.Warn().Err(res.Error).Msg("failed result")
+			continue
 		}
-		b, err := protojson.Marshal(cdx)
+		v, err := protojson.Marshal(res.Cdx)
 		if err != nil {
-			log.Warn().Err(err).Msgf("Failed to marshal JSON: %s", string(item.Key()))
+			log.Warn().Err(err).Msg("failed to marshal cdx to json")
+			continue
 		}
-		_, err = fmt.Fprintln(w, string(b))
+		if count > 0 {
+			_, _ = w.Write([]byte("\r\n"))
+		}
+		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
-			log.Warn().Err(err).Msgf("Failed to write: %s", string(item.Key()))
+			log.Error().Err(err).Int("status", http.StatusInternalServerError).Msg("failed to write result")
+			if count == 0 {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			return
 		}
 		count++
-		if count >= limit {
-			return true
-		}
-		return err != nil
-	})
-	if err != nil {
-		api.HandleError(w, count, err)
-	} else if count > 0 {
-		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
 	}
 }
 
@@ -264,13 +263,20 @@ func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
 	params := httprouter.ParamsFromContext(r.Context())
 	warcId := params.ByName("urn")
 
-	record, err := h.loader.Load(r.Context(), warcId)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	record, err := h.WarcLoader.LoadById(ctx, warcId)
 	if err != nil {
 		msg := fmt.Sprintf("failed to load record '%s': %v", warcId, err)
 		http.Error(w, msg, http.StatusInternalServerError)
 		return
 	}
-	defer record.Close()
+	defer func() {
+		if err := record.Close(); err != nil {
+			log.Warn().Err(err).Msgf("Closing record: %v", record)
+		}
+	}()
 
 	n, err := handlers.RenderRecord(w, record)
 	if n == 0 {

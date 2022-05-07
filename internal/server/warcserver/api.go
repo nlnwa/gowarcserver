@@ -17,11 +17,15 @@
 package warcserver
 
 import (
-	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
-	"github.com/nlnwa/gowarcserver/schema"
+	"fmt"
 	"net/http"
 	"strconv"
+
+	"github.com/julienschmidt/httprouter"
+	"github.com/nlnwa/gowarcserver/internal/surt"
+	"github.com/nlnwa/gowarcserver/internal/timestamp"
+	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/nlnwa/whatwg-url/url"
 )
 
 type pywbJson struct {
@@ -36,28 +40,28 @@ type pywbJson struct {
 
 func cdxToPywbJson(cdx *schema.Cdx) *pywbJson {
 	return &pywbJson{
-		Urlkey:    cdx.Ssu,
-		Timestamp: timestamp.TimeTo14(cdx.Sts.AsTime()),
-		Url:       cdx.Uri,
-		Mime:      cdx.Mct,
-		Status:    strconv.Itoa(int(cdx.Hsc)),
-		Digest:    cdx.Dig,
-		Length:    strconv.Itoa(int(cdx.Rle)),
+		Urlkey:    cdx.GetSsu(),
+		Timestamp: timestamp.TimeTo14(cdx.GetSts().AsTime()),
+		Url:       cdx.GetUri(),
+		Mime:      cdx.GetMct(),
+		Status:    strconv.Itoa(int(cdx.GetHsc())),
+		Digest:    cdx.GetDig(),
+		Length:    strconv.Itoa(int(cdx.GetRle())),
 	}
 }
 
-func parseWeb(r *http.Request)  (uri string, ts string) {
+func parseResourceRequest(r *http.Request) (closestRequest, error) {
 	params := httprouter.ParamsFromContext(r.Context())
 
 	// closest parameter
 	p0 := params.ByName("timestamp")
 	// remove trailing 'id_'
-	ts = p0[:len(p0)-3]
+	closest := p0[:len(p0)-3]
 
 	// url parameter
 	p1 := params.ByName("url")
 	// remove leading '/'
-	uri = p1[1:]
+	uri := p1[1:]
 
 	// we must add on any query parameters
 	if q := r.URL.Query().Encode(); len(q) > 0 {
@@ -68,5 +72,36 @@ func parseWeb(r *http.Request)  (uri string, ts string) {
 		// and fragment
 		uri += "#" + r.URL.Fragment
 	}
-	return
+
+	u, err := url.Parse(uri)
+	if err != nil {
+		return closestRequest{}, fmt.Errorf("failed to parse uri: %w", err)
+	}
+	key := surt.UrlToSsurt(u)
+
+	return closestRequest{
+		rawUrl:  uri,
+		key:     key,
+		closest: closest,
+		limit:   1,
+	}, nil
+}
+
+type closestRequest struct {
+	rawUrl  string
+	key     string
+	closest string
+	limit   int
+}
+
+func (c closestRequest) Key() string {
+	return c.key
+}
+
+func (c closestRequest) Closest() string {
+	return c.closest
+}
+
+func (c closestRequest) Limit() int {
+	return c.limit
 }
