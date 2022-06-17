@@ -12,6 +12,7 @@ import (
 	"github.com/nlnwa/gowarcserver/internal/surt"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/schema"
+	urlErrors "github.com/nlnwa/whatwg-url/errors"
 	"github.com/nlnwa/whatwg-url/url"
 	"github.com/rs/zerolog/log"
 	"net/http"
@@ -20,7 +21,7 @@ import (
 )
 
 type Handler struct {
-	db api.DbAdapter
+	db     api.DbAdapter
 	loader loader.RecordLoader
 }
 
@@ -109,11 +110,14 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		// TODO check and handle relative location header paths
-		// if !schemeRegExp.MatchString(location) {
-		// }
-
 		locUrl, err := url.Parse(location)
+		if urlErrors.Code(err) == urlErrors.FailRelativeUrlWithNoBase {
+			locUrl, err = url.ParseRef(uri, location)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to parse relative location header as URL: %s: %s: %v", warcRecord, location, err), http.StatusInternalServerError)
+				return
+			}
+		}
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to parse location header as URL: %s: %s: %v", warcRecord, location, err), http.StatusInternalServerError)
 			return

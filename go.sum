@@ -337,8 +337,8 @@ github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223/go.mod h1:qRW
 github.com/nlnwa/gowarc v1.0.0-beta.3 h1:kCuAUTg/+T66Nx4V6k++NzkCWvteCmfX1Su5bQh46cg=
 github.com/nlnwa/gowarc v1.0.0-beta.3/go.mod h1:37HyH1JP9GpGS5WZsBDTbZ8rwvCCDdsSDOr+3gYGEE4=
 github.com/nlnwa/whatwg-url v0.0.0-20200306110950-d1a95e2e8fc3/go.mod h1:v3hJLcAdjhIn7PA89dVhJ9GSWooX0z2/qPgwlhz0HD8=
-github.com/nlnwa/whatwg-url v0.1.1 h1:ggC0QwxF7RBpBLIKgO3rpziqGYnzfwtH+f8UCA9JHuQ=
-github.com/nlnwa/whatwg-url v0.1.1/go.mod h1:b0r+dEyM/KztLMDSVY6ApcO9Fmzgq+e9+Ugq20UBYck=
+github.com/nlnwa/whatwg-url v0.1.2 h1:BqqsIVG6xv71wOoMAoFDmV6OK6/2sXn7BJdOsTkBl88=
+github.com/nlnwa/whatwg-url v0.1.2/go.mod h1:b0r+dEyM/KztLMDSVY6ApcO9Fmzgq+e9+Ugq20UBYck=
 github.com/oklog/ulid v1.3.1/go.mod h1:CirwcVhetQ6Lv90oh/F+FBtV6XMibvdAFo93nm5qn4U=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pascaldekloe/goe v0.1.0/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
