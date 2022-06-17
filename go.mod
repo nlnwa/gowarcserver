@@ -18,7 +18,7 @@ require (
 	github.com/magiconair/properties v1.8.6 // indirect
 	github.com/mitchellh/mapstructure v1.4.3
 	github.com/nlnwa/gowarc v1.0.0-beta.3
-	github.com/nlnwa/whatwg-url v0.1.1
+	github.com/nlnwa/whatwg-url v0.1.2
 	github.com/prometheus/tsdb v0.10.0 // indirect
 	github.com/rs/zerolog v1.26.1
 	github.com/spf13/afero v1.8.2 // indirect
