@@ -158,12 +158,11 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 			scheme = "https"
 		}
 		host := r.Host
-		u, err := url.Parse(scheme + "://" + host)
+		u, err := url.Parse(scheme + "://" + host + path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		u.SetPathname(path)
 
 		handlers.RenderRedirect(w, u.String())
 	} else {
