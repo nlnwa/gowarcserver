@@ -1,16 +1,30 @@
-port: 8880
+# GLOBAL
+
 log-level: "debug"
 log-formatter: "log-fmt"
 log-method: false
 
 # SERVER
 
+# server port
+port: 8880
+# prefix for server endpoint paths
+path-prefix: ""
+# start autoindexer
 index: true
+# watch for file changes (NFS does not support this)
 watch: false
 # log server requests
 log-requests: true
+# index storage engine: "badger" or "tikv"
+storage-engine: badger
 
 # INDEX
+
+# index format: "cdxj", "cdxpb", "badger", "tikv" or "toc"
+format: cdxj
+
+# directories to search for warc files in
 dirs:
   - "./testdata"
 # include only files matching regular expressions
@@ -18,21 +32,29 @@ include:
   - ".warc.gz$"
 # exclude files matching regular expressions
 exclude: []
+# max number of directory recursions
 max-depth: 4
+# number of index workers
 workers: 8
 
-# format: toc
-bloom-capacity: 10000
-bloom-fp: 0.1
+# path to badger database
+badger-dir: ./badger
+# run badger read-only
+badger-read-only: false
+# max transaction batch size
+badger-batch-max-size: 1000
+# max wait time before flushing batched records regardless of max batch size
+badger-batch-max-wait: 5s
+# badger compression algorithm
+badger-compression: "snappy"
 
-# format: cdxdb
-db-dir: .
-compression: "snappy"
+# address of tikv placement driver
+tikv-pd-addr: "127.0.0.1: 2379"
+# max transaction batch size
+tikv-batch-max-size: 1000
+# max wait time before flushing batched records regardless of max batch size
+tikv-batch-max-wait: 5s
 
-
-# PROXY
-
-child-urls:
-  - "http://localhost:8888"
-  - "http://localhost:8889"
-child-query-timeout: "300ms"
+# estimated bloom filter capacity
+toc-bloom-capacity: 10000
+toc-bloom-fp: 0.1
