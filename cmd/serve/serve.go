@@ -58,9 +58,11 @@ func NewCommand() *cobra.Command {
 	port := 9999
 	watch := false
 	storageEngine := "badger"
+	autoIndex := true
 	indexDepth := 4
 	indexWorkers := 8
 	badgerDir := "."
+	badgerCompression := "snappy"
 	badgerBatchMaxSize := 1000
 	badgerBatchMaxWait := 5 * time.Second
 	badgerReadOnly := false
@@ -71,17 +73,18 @@ func NewCommand() *cobra.Command {
 	pathPrefix := ""
 
 	cmd.Flags().IntP("port", "p", port, "server port")
-	cmd.Flags().String("proxy-url", "", "url to a gowarc server proxy that will be used to resolve records")
 	cmd.Flags().String("path-prefix", pathPrefix, "prefix for all server endpoints")
 	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
 	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
 	cmd.Flags().IntP("max-depth", "w", indexDepth, "maximum directory recursion depth")
 	cmd.Flags().Int("workers", indexWorkers, "number of index workers")
 	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
+	cmd.Flags().Bool("index", autoIndex, "run indexing")
 	cmd.Flags().Bool("watch", watch, "watch files for changes")
 	cmd.Flags().Bool("log-requests", logRequests, "log http requests")
 	cmd.Flags().StringP("storage-engine", "b", storageEngine, `storage engine: "badger" or "tikv"`)
 	cmd.Flags().String("badger-dir", badgerDir, "path to index database")
+	cmd.Flags().String("badger-compression", badgerCompression, "compression algorithm")
 	cmd.Flags().Int("badger-batch-max-size", badgerBatchMaxSize, "max transaction batch size in badger")
 	cmd.Flags().Duration("badger-batch-max-wait", badgerBatchMaxWait, "max wait time before flushing batched records")
 	cmd.Flags().Bool("badger-read-only", badgerReadOnly, "run badger read-only")
@@ -102,7 +105,7 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 	}
 	// parse badger compression type
 	var c options.CompressionType
-	if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
+	if err := viper.UnmarshalKey("badger-compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
 		return err
 	}
 	// parse include patterns

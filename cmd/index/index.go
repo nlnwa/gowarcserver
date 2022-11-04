@@ -51,6 +51,7 @@ func NewCommand() *cobra.Command {
 	badgerDir := "."
 	badgerBatchMaxSize := 1000
 	badgerBatchMaxWait := 5 * time.Second
+	badgerCompression := "snappy"
 	var tikvPdAddr []string
 	tikvBatchMaxSize := 1000
 	tikvBatchMaxWait := 5 * time.Second
@@ -68,6 +69,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().String("badger-dir", badgerDir, "path to index database")
 	cmd.Flags().Int("badger-batch-max-size", badgerBatchMaxSize, "max transaction batch size in badger")
 	cmd.Flags().Duration("badger-batch-max-wait", badgerBatchMaxWait, "max wait time before flushing batched records")
+	cmd.Flags().String("badger-compression", badgerCompression, "compression algorithm")
 	cmd.Flags().StringSlice("tikv-pd-addr", tikvPdAddr, "host:port of TiKV placement driver")
 	cmd.Flags().Int("tikv-batch-max-size", tikvBatchMaxSize, "max transaction batch size")
 	cmd.Flags().Duration("tikv-batch-max-wait", tikvBatchMaxWait, "max wait time before flushing batched records regardless of max batch size")
@@ -107,7 +109,7 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		runtime.GOMAXPROCS(128)
 
 		var c options.CompressionType
-		if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
+		if err := viper.UnmarshalKey("badger-compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
 			return err
 		}
 		db, err := badgeridx.NewDB(
