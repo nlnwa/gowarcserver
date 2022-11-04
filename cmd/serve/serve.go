@@ -31,12 +31,12 @@ import (
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
+	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/badgeridx"
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/nlnwa/gowarcserver/internal/loader"
-	"github.com/nlnwa/gowarcserver/internal/server/coreserver"
-	"github.com/nlnwa/gowarcserver/internal/server/warcserver"
 	"github.com/nlnwa/gowarcserver/internal/tikvidx"
+	"github.com/nlnwa/gowarcserver/loader"
+	"github.com/nlnwa/gowarcserver/server/coreserver"
+	"github.com/nlnwa/gowarcserver/server/warcserver"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -85,9 +85,9 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().Int("badger-batch-max-size", badgerBatchMaxSize, "max transaction batch size in badger")
 	cmd.Flags().Duration("badger-batch-max-wait", badgerBatchMaxWait, "max wait time before flushing batched records")
 	cmd.Flags().Bool("badger-read-only", badgerReadOnly, "run badger read-only")
-	cmd.Flags().StringSlice("tikv-pd-addr", tikvPdAddr, "path to index database")
-	cmd.Flags().Int("tikv-batch-max-size", tikvBatchMaxSize, "max transaction batch size in badger")
-	cmd.Flags().Duration("tikv-batch-max-wait", tikvBatchMaxWait, "max wait time before flushing batched records")
+	cmd.Flags().StringSlice("tikv-pd-addr", tikvPdAddr, "host:port of TiKV placement driver")
+	cmd.Flags().Int("tikv-batch-max-size", tikvBatchMaxSize, "max transaction batch size")
+	cmd.Flags().Duration("tikv-batch-max-wait", tikvBatchMaxWait, "max wait time before flushing batched records regardless of max batch size")
 
 	return cmd
 }
