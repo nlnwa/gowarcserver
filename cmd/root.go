@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -46,7 +47,7 @@ func NewCommand() *cobra.Command {
 	_ = cmd.PersistentFlags().Bool("log-method", false, "log method caller")
 
 	if err := viper.BindPFlags(cmd.PersistentFlags()); err != nil {
-		log.Error().Msgf("Failed to bind root flags: %v", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to bind global flags: %v", err)
 		os.Exit(1)
 	}
 
@@ -79,7 +80,7 @@ func initConfig() {
 		if errors.As(err, new(viper.ConfigFileNotFoundError)) {
 			return
 		}
-		log.Error().Msgf("Failed to read config file: %v", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to read config file: %v", err)
 		os.Exit(1)
 	}
 	logger.InitLog(viper.GetString("log-level"), viper.GetString("log-formatter"), viper.GetBool("log-method"))
