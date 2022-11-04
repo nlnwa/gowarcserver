@@ -25,8 +25,7 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/nlnwa/gowarcserver/internal/server/api"
+	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/rs/zerolog/log"
@@ -90,7 +89,7 @@ func (db *DB) List(ctx context.Context, limit int, results chan<- index.CdxRespo
 }
 
 // Closest returns the first closest cdx value
-func (db *DB) Closest(ctx context.Context, search index.ClosestRequest, results chan<- index.CdxResponse) error {
+func (db *DB) Closest(_ context.Context, search index.ClosestRequest, results chan<- index.CdxResponse) error {
 	go func() {
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
 			key := search.Key()
@@ -232,7 +231,7 @@ func (db *DB) sortedParallelSearch(ctx context.Context, search index.SearchReque
 	}
 	go func() {
 		defer close(results)
-		sorter := api.NewSorter(closest, search.Sort() == index.SortAsc)
+		sorter := NewSorter(closest, search.Sort() == index.SortAsc)
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
 			items := make(chan []byte, len(search.Keys()))
 
@@ -514,6 +513,11 @@ func (db *DB) uniSearch(ctx context.Context, search index.SearchRequest, results
 			}
 
 			for it.Seek([]byte(seekKey)); it.ValidForPrefix(prefix); it.Next() {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
 				contains, _ := search.DateRange().ContainsStr(cdxKey(it.Item().Key()).ts())
 				if !contains {
 					continue
@@ -621,7 +625,7 @@ func (db *DB) ListStorageRef(ctx context.Context, limit int, results chan<- inde
 	return nil
 }
 
-func (db *DB) GetFileInfo(ctx context.Context, filename string) (*schema.Fileinfo, error) {
+func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo, error) {
 	return db.getFileInfo(filename)
 }
 
