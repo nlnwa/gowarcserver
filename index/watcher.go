@@ -17,9 +17,10 @@
 package index
 
 import (
+	"os"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/rs/zerolog/log"
-	"os"
 )
 
 func newWatcher() (*watcher, error) {

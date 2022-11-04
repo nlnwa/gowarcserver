@@ -80,13 +80,13 @@ func (c SearchAPI) Closest() string {
 }
 
 func (c SearchAPI) Key() string {
-	return surt.UrlToSsurt(c.CoreAPI.Urls[0])
+	return MatchType(surt.UrlToSsurt(c.CoreAPI.Urls[0]), c.CoreAPI.MatchType)
 }
 
 func (c SearchAPI) Keys() []string {
 	keys := make([]string, len(c.Urls))
 	for i, u := range c.CoreAPI.Urls {
-		keys[i] = surt.UrlToSsurt(u)
+		keys[i] = MatchType(surt.UrlToSsurt(u), c.CoreAPI.MatchType)
 	}
 	return keys
 }

@@ -18,12 +18,13 @@ package index
 
 import (
 	"fmt"
+	"strconv"
+	"sync"
+
 	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/nlnwa/gowarcserver/internal/surt"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"strconv"
-	"sync"
 )
 
 type Cdx struct {

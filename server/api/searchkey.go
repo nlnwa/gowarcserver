@@ -20,24 +20,24 @@ import (
 	"strings"
 )
 
-func ParseKey(ssurt string, matchType string) string {
+func MatchType(ssurt string, matchType string) string {
 	switch matchType {
 	case MatchTypeExact:
-		ssurt += " "
+		return ssurt + " "
 	case MatchTypePrefix:
 		i := strings.IndexAny(ssurt, "?#")
 		if i > 0 {
-			ssurt = ssurt[:i]
+			return ssurt[:i]
 		}
 	case MatchTypeHost:
 		i := strings.Index(ssurt, "//")
 		if i > 0 {
-			ssurt = ssurt[:i+2]
+			return ssurt[:i+2]
 		}
 	case MatchTypeDomain:
 		i := strings.Index(ssurt, "//")
 		if i > 0 {
-			ssurt = ssurt[:i]
+			return ssurt[:i]
 		}
 	}
 	return ssurt

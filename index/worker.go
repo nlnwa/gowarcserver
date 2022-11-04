@@ -19,6 +19,8 @@ package index
 import (
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 type indexWorker struct {
@@ -46,7 +48,9 @@ func NewWorker(a Indexer, nrOfWorkers int) *indexWorker {
 			for {
 				select {
 				case job := <-iw.jobs:
-					_ = a.Index(job)
+					if err := a.Index(job); err != nil {
+						log.Error().Err(err).Msgf("Index job: %s", job)
+					}
 					iw.wg.Done()
 					iw.mx.Lock()
 					delete(iw.jobMap, job)
