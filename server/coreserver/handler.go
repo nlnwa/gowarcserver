@@ -118,12 +118,16 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		filename, offset, err := parseStorageRef(res.Value)
-		storageRef := &storageRef{
+		if err != nil {
+			log.Warn().Err(err).Msgf("failed to parse storage ref: %s", res.Value)
+			continue
+		}
+		ref := &storageRef{
 			Id:       res.Key,
 			Filename: filename,
 			Offset:   offset,
 		}
-		v, err := json.Marshal(storageRef)
+		v, err := json.Marshal(ref)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to marshal storage ref")
 		}

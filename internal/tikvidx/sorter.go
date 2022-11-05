@@ -82,7 +82,6 @@ func mergeIter(done <-chan struct{}, cmp func(KV, KV) bool, in ...chan *maybeKV)
 				return
 			case out <- *cords[curr]:
 				cords[curr] = nil
-				curr = -1
 			}
 			// if zombie, then kill
 			if len(zombie) > 0 {

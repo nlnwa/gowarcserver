@@ -3,6 +3,7 @@ package tikvidx
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/nlnwa/gowarcserver/index"
@@ -119,11 +120,9 @@ type maybeKV struct {
 
 type iterSort struct {
 	iterators []iterator
-	keys      [][]byte
 	key       []byte
 	value     []byte
 	valid     bool
-	cmp       func([]byte, []byte) bool
 	next      <-chan maybeKV
 }
 
@@ -142,6 +141,8 @@ func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 		case index.SortClosest:
 			it, err = NewIterClosest(ctx, tx, key, req.Closest())
 		case index.SortAsc:
+			fallthrough
+		case index.SortNone:
 			fallthrough
 		default:
 			it, err = tx.Iter(k, []byte(cdxEOF))
@@ -170,10 +171,15 @@ func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 	case index.SortClosest:
 		var t time.Time
 		t, err = time.Parse(timestamp.CDX, req.Closest())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse closest timestamp: %w", err)
+		}
 		cmp = func(a KV, b KV) bool {
 			return CompareClosest(t.Unix())(a.ts(), b.ts())
 		}
 	case index.SortAsc:
+		fallthrough
+	case index.SortNone:
 		fallthrough
 	default:
 		cmp = func(a KV, b KV) bool {

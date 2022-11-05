@@ -138,10 +138,7 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 	// currently the "cdx" does not accept collection as a query or param
 	coreApi.Collection = "all"
 
-	urls, ok := query["url"]
-	//if !ok {
-	//	return nil, fmt.Errorf("missing required query parameter \"url\"")
-	//}
+	urls := query["url"]
 	if len(urls) == 1 && !schemeRegExp.MatchString(urls[0]) {
 		u := urls[0]
 		urls = []string{

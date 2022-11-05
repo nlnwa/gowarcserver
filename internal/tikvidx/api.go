@@ -123,7 +123,9 @@ func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- in
 
 func (db *DB) List(ctx context.Context, limit int, res chan<- index.CdxResponse) error {
 	tx, err := db.client.Begin()
-
+	if err != nil {
+		return err
+	}
 	it, err := tx.Iter([]byte(cdxPrefix), []byte(cdxEOF))
 	if err != nil {
 		return err
@@ -165,7 +167,9 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo,
 
 func (db *DB) ListFileInfo(_ context.Context, limit int, res chan<- index.FileResponse) error {
 	tx, err := db.client.Begin()
-
+	if err != nil {
+		return err
+	}
 	it, err := tx.Iter([]byte(filePrefix), []byte(fileEOF))
 	if err != nil {
 		return err
@@ -207,7 +211,9 @@ func (db *DB) GetStorageRef(ctx context.Context, id string) (string, error) {
 
 func (db *DB) ListStorageRef(_ context.Context, limit int, res chan<- index.IdResponse) error {
 	tx, err := db.client.Begin()
-
+	if err != nil {
+		return err
+	}
 	it, err := tx.Iter([]byte(idPrefix), []byte(idEOF))
 	if err != nil {
 		return err
