@@ -26,8 +26,8 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/nlnwa/gowarcserver/index"
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
 )

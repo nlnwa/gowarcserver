@@ -11,11 +11,11 @@ import (
 
 	"github.com/nlnwa/gowarc"
 	"github.com/nlnwa/gowarcserver/index"
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/loader"
 	"github.com/nlnwa/gowarcserver/server/api"
 	"github.com/nlnwa/gowarcserver/server/handlers"
 	"github.com/nlnwa/gowarcserver/surt"
+	"github.com/nlnwa/gowarcserver/timestamp"
 	urlErrors "github.com/nlnwa/whatwg-url/errors"
 	"github.com/nlnwa/whatwg-url/url"
 	"github.com/rs/zerolog/log"

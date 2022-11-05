@@ -20,7 +20,7 @@ import (
 	"sort"
 
 	"github.com/dgraph-io/badger/v3"
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
+	"github.com/nlnwa/gowarcserver/timestamp"
 )
 
 type value struct {

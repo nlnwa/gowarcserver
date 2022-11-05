@@ -17,7 +17,7 @@
 package tikvidx
 
 import (
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
+	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/rs/zerolog/log"
 )
 

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/nlnwa/gowarcserver/index"
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
+	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/tikv/client-go/v2/txnkv/transaction"
 )
 

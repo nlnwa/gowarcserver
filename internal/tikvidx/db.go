@@ -28,8 +28,8 @@ import (
 	"time"
 
 	"github.com/nlnwa/gowarcserver/index"
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/rs/zerolog/log"
 	"github.com/tikv/client-go/v2/txnkv"
 	"google.golang.org/protobuf/proto"

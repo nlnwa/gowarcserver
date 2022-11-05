@@ -24,8 +24,8 @@ import (
 	"strings"
 
 	"github.com/nlnwa/gowarcserver/index"
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/surt"
+	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/nlnwa/whatwg-url/url"
 )
 

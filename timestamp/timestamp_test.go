@@ -17,7 +17,8 @@
 package timestamp_test
 
 import (
-	"github.com/nlnwa/gowarcserver/internal/timestamp"
+	"github.com/nlnwa/gowarcserver/timestamp"
+
 	"testing"
 )
 
