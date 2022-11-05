@@ -22,9 +22,9 @@ import (
 	"strconv"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/surt"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/nlnwa/gowarcserver/surt"
 	"github.com/nlnwa/whatwg-url/url"
 )
 

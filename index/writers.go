@@ -22,7 +22,7 @@ import (
 	"sync"
 
 	"github.com/bits-and-blooms/bloom/v3"
-	"github.com/nlnwa/gowarcserver/internal/surt"
+	"github.com/nlnwa/gowarcserver/surt"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )

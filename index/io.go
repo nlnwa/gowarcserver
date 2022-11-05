@@ -19,12 +19,13 @@ package index
 import (
 	"errors"
 	"fmt"
-	"github.com/nlnwa/gowarc"
-	"github.com/rs/zerolog/log"
 	"io"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/nlnwa/gowarc"
+	"github.com/rs/zerolog/log"
 )
 
 type recordFilter func(gowarc.WarcRecord) bool

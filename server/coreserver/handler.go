@@ -28,10 +28,10 @@ import (
 	"time"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/nlnwa/gowarcserver/internal/loader"
-	"github.com/nlnwa/gowarcserver/internal/server/api"
-	"github.com/nlnwa/gowarcserver/internal/server/handlers"
+	"github.com/nlnwa/gowarcserver/index"
+	"github.com/nlnwa/gowarcserver/loader"
+	"github.com/nlnwa/gowarcserver/server/api"
+	"github.com/nlnwa/gowarcserver/server/handlers"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/encoding/protojson"
 )

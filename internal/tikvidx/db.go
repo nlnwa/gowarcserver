@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nlnwa/gowarcserver/internal/index"
+	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/rs/zerolog/log"

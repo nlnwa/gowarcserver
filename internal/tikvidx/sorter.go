@@ -17,7 +17,6 @@
 package tikvidx
 
 import (
-	"github.com/nlnwa/gowarcserver/internal/index"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/rs/zerolog/log"
 )
@@ -36,54 +35,7 @@ func CompareDesc(a int64, b int64) bool {
 	return a > b
 }
 
-// mergeSort sorts elements of input channels to output channel according to sort direction.
-func mergeSort(done <-chan struct{}, cmp func(*index.CdxResponse, *index.CdxResponse) bool, in ...chan index.CdxResponse) <-chan index.CdxResponse {
-	out := make(chan index.CdxResponse)
-	cords := make([]*index.CdxResponse, len(in))
-
-	go func() {
-		var zombie []int
-		for {
-			var curr *index.CdxResponse
-			for i, cord := range cords {
-				if cord == nil {
-					v, ok := <-in[i]
-					if !ok {
-						// closed channel becomes a zombie
-						zombie = append(zombie, i)
-						continue
-					}
-					cord = &v
-				}
-				if cmp(curr, cord) {
-					curr = cord
-				}
-			}
-			if curr == nil {
-				return
-			}
-			select {
-			case out <- *curr:
-			case <-done:
-				return
-			}
-			if len(zombie) > 0 {
-				// kill zombies to avoid checking on them every round
-				for _, i := range zombie {
-					cords[i] = cords[len(cords)-1]
-					cords = cords[:len(cords)-1]
-					in[i] = in[len(in)-1]
-					in = in[:len(in)-1]
-				}
-				zombie = nil
-			}
-		}
-	}()
-
-	return out
-}
-
-// mergeSort merges sorted input channels to a sorted output channel
+// mergeIter merges sorted input channels into a sorted output channel
 //
 // Sorting is done by comparing keys from key-value pairs.
 //

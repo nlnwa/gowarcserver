@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nlnwa/gowarcserver/internal/index"
+	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
 	"github.com/tikv/client-go/v2/txnkv/transaction"
 )

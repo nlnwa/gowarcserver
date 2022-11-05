@@ -28,8 +28,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nlnwa/gowarc"
-	"github.com/nlnwa/gowarcserver/internal/surt"
 	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/nlnwa/gowarcserver/surt"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"

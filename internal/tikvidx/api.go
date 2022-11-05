@@ -3,7 +3,7 @@ package tikvidx
 import (
 	"context"
 
-	"github.com/nlnwa/gowarcserver/internal/index"
+	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
 	"google.golang.org/protobuf/proto"
 )

@@ -23,9 +23,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/nlnwa/gowarcserver/internal/surt"
+	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/timestamp"
+	"github.com/nlnwa/gowarcserver/surt"
 	"github.com/nlnwa/whatwg-url/url"
 )
 
