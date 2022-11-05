@@ -1,9 +1,12 @@
 name: release
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
-      - master
+      - main
     tags:
       - v*
 
