@@ -2,9 +2,11 @@ package tikvidx
 
 import (
 	"context"
+	"errors"
 
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/tikv/client-go/v2/txnkv/transaction"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -57,26 +59,31 @@ func cdxFromValue(value []byte) (*schema.Cdx, error) {
 }
 
 func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- index.CdxResponse) error {
-	// begin transaction
-	tx, err := db.client.Begin()
+	var err error
+	var tx *transaction.KVTxn
+	var it iterator
+
+	if len(req.Keys()) == 0 {
+		return errors.New("search request has no keys")
+	}
+	tx, err = db.client.Begin()
 	if err != nil {
 		return err
 	}
 
-	// initialize iterator
-	it, err := NewIter(ctx, tx, req)
+	it, err = newIter(ctx, tx, req)
 	if err != nil {
 		return err
-	}
-
-	limit := req.Limit()
-	if limit == 0 {
-		limit = 100
 	}
 
 	go func() {
 		defer close(res)
 		defer it.Close()
+
+		limit := req.Limit()
+		if limit == 0 {
+			limit = 100
+		}
 
 		for it.Valid() && limit > 0 {
 			select {

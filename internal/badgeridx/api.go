@@ -19,6 +19,7 @@ package badgeridx
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -183,7 +184,7 @@ func (db *DB) Search(ctx context.Context, search index.SearchRequest, results ch
 	keyLen := len(search.Keys())
 
 	if keyLen == 0 {
-		return fmt.Errorf("search got 0 keys")
+		return errors.New("search request is missing keys")
 	} else if keyLen > 1 {
 		if search.Sort() == index.SortNone {
 			return db.unsortedSerialSearch(ctx, search, results)

@@ -3,7 +3,6 @@ package tikvidx
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/nlnwa/gowarcserver/index"
@@ -126,33 +125,14 @@ type iterSort struct {
 	valid     bool
 	cmp       func([]byte, []byte) bool
 	next      <-chan maybeKV
-	// done      <-chan struct{}
 }
 
-func NewIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest) (iterator, error) {
+func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest) (*iterSort, error) {
 	is := new(iterSort)
-	// iter.done = ctx.Done()
 
 	// initialize iterators
 	var results []chan *maybeKV
 	var err error
-	var it iterator
-
-	if len(req.Keys()) == 0 {
-		k := []byte(cdxPrefix)
-		switch req.Sort() {
-		case index.SortDesc:
-			it, err = tx.IterReverse(k)
-		case index.SortAsc:
-			it, err = tx.Iter(k, []byte(cdxEOF))
-		case index.SortClosest:
-			return nil, fmt.Errorf("invalid request: sort=closest with no keys")
-		default:
-			it, err = tx.Iter(k, []byte(cdxEOF))
-		}
-		return it, nil
-	}
-
 	for _, key := range req.Keys() {
 		k := []byte(cdxPrefix + key)
 		var it iterator
@@ -176,7 +156,9 @@ func NewIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 		defer is.Close()
 		return nil, err
 	}
-
+	if len(results) == 0 {
+		return nil, nil
+	}
 	// initialize comparator
 	var cmp func(a KV, b KV) bool
 
