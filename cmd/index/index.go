@@ -62,7 +62,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
 	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
 	cmd.Flags().IntP("max-depth", "d", indexDepth, "maximum directory recursion")
-	cmd.Flags().Int("workers", indexWorkers, "number of index workers")
+	cmd.Flags().Int("workers", indexWorkers, "number of files")
 	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
 	cmd.Flags().Uint("toc-bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
 	cmd.Flags().Float64("toc-bloom-fp", bloomFp, "estimated bloom filter false positive rate")

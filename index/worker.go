@@ -66,28 +66,31 @@ func NewWorker(a Indexer, nrOfWorkers int) *indexWorker {
 }
 
 func (iw *indexWorker) Close() {
-	// Wait for all timers to complete
+	// Wait for all queued jobs to complete
 	iw.wg.Wait()
 	// before closing workers.
 	close(iw.done)
 }
 
+// Schedule schedules a job to be processed by a worker
 func (iw *indexWorker) Schedule(job string, batchWindow time.Duration) {
+	if batchWindow == 0 {
+		iw.wg.Add(1)
+		iw.jobs <- job
+		return
+	}
+
 	iw.mx.Lock()
+	defer iw.mx.Unlock()
 	timer, ok := iw.jobMap[job]
-	iw.mx.Unlock()
 
 	if ok {
 		timer.Stop()
 		timer.Reset(batchWindow)
 	} else {
 		iw.wg.Add(1)
-		if batchWindow == 0 {
+		iw.jobMap[job] = time.AfterFunc(batchWindow, func() {
 			iw.jobs <- job
-		} else {
-			iw.jobMap[job] = time.AfterFunc(batchWindow, func() {
-				iw.jobs <- job
-			})
-		}
+		})
 	}
 }
