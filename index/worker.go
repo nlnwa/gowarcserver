@@ -49,7 +49,7 @@ func NewWorker(a Indexer, nrOfWorkers int) *indexWorker {
 				select {
 				case job := <-iw.jobs:
 					if err := a.Index(job); err != nil {
-						log.Error().Err(err).Msgf("Index job: %s", job)
+						log.Warn().Err(err).Msgf("Index: %s", job)
 					}
 					iw.wg.Done()
 					iw.mx.Lock()
