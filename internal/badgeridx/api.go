@@ -93,6 +93,8 @@ func (db *DB) List(ctx context.Context, limit int, results chan<- index.CdxRespo
 func (db *DB) Closest(_ context.Context, search index.ClosestRequest, results chan<- index.CdxResponse) error {
 	go func() {
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
+			defer close(results)
+
 			key := search.Key()
 			closest := search.Closest()
 

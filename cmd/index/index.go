@@ -55,6 +55,7 @@ func NewCommand() *cobra.Command {
 	var tikvPdAddr []string
 	tikvBatchMaxSize := 1000
 	tikvBatchMaxWait := 5 * time.Second
+	tikvDatabase := ""
 	bloomCapacity := uint(1000)
 	bloomFp := 0.01
 
@@ -73,6 +74,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringSlice("tikv-pd-addr", tikvPdAddr, "host:port of TiKV placement driver")
 	cmd.Flags().Int("tikv-batch-max-size", tikvBatchMaxSize, "max transaction batch size")
 	cmd.Flags().Duration("tikv-batch-max-wait", tikvBatchMaxWait, "max wait time before flushing batched records regardless of max batch size")
+	cmd.Flags().String("tikv-database", tikvDatabase, "name of database")
 	return cmd
 }
 
@@ -97,7 +99,9 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		db, err := tikvidx.NewDB(
 			tikvidx.WithPDAddress(viper.GetStringSlice("tikv-pd-addr")),
 			tikvidx.WithBatchMaxSize(viper.GetInt("tikv-batch-max-size")),
-			tikvidx.WithBatchMaxWait(viper.GetDuration("tikv-batch-max-wait")))
+			tikvidx.WithBatchMaxWait(viper.GetDuration("tikv-batch-max-wait")),
+			tikvidx.WithDatabase(viper.GetString("tikv-database")),
+		)
 		if err != nil {
 			return err
 		}

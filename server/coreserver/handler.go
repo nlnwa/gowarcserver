@@ -151,7 +151,7 @@ func (h Handler) getStorageRefByURN(w http.ResponseWriter, r *http.Request) {
 	params := httprouter.ParamsFromContext(r.Context())
 	urn := params.ByName("urn")
 
-	storageRef, err := h.StorageRefResolver.Resolve(urn)
+	storageRef, err := h.StorageRefResolver.Resolve(r.Context(), urn)
 	if err != nil {
 		msg := fmt.Sprintf("failed to resolve storage reference of urn: %v", err)
 		http.Error(w, msg, http.StatusInternalServerError)

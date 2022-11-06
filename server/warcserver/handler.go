@@ -88,7 +88,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancelQuery := context.WithCancel(r.Context())
+	ctx, cancelQuery := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancelQuery()
 
 	// query API
@@ -106,12 +106,11 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 			log.Warn().Err(err).Msg("failed cdx response")
 			continue
 		}
-		cancelQuery()
+		if res.Cdx == nil {
+			http.NotFound(w, r)
+			return
+		}
 		break
-	}
-	if res.Cdx == nil {
-		http.NotFound(w, r)
-		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)

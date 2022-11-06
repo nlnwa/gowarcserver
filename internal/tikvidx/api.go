@@ -242,11 +242,11 @@ func (db *DB) ListStorageRef(_ context.Context, limit int, res chan<- index.IdRe
 }
 
 // Resolve looks up warcId in the id index of the database and returns corresponding storageRef, or an error if not found.
-func (db *DB) Resolve(warcId string) (storageRef string, err error) {
+func (db *DB) Resolve(ctx context.Context, warcId string) (storageRef string, err error) {
 	key := []byte(idPrefix + warcId)
 
 	var kv KV
-	kv, err = db.get(key)
+	kv, err = db.get(ctx, key)
 	if err != nil {
 		return
 	}

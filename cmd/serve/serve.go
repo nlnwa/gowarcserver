@@ -70,6 +70,7 @@ func NewCommand() *cobra.Command {
 	tikvPdAddr := []string{}
 	tikvBatchMaxSize := 1000
 	tikvBatchMaxWait := 5 * time.Second
+	tikvDatabase := ""
 	pathPrefix := ""
 
 	cmd.Flags().IntP("port", "p", port, "server port")
@@ -91,6 +92,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().StringSlice("tikv-pd-addr", tikvPdAddr, "host:port of TiKV placement driver")
 	cmd.Flags().Int("tikv-batch-max-size", tikvBatchMaxSize, "max transaction batch size")
 	cmd.Flags().Duration("tikv-batch-max-wait", tikvBatchMaxWait, "max wait time before flushing batched records regardless of max batch size")
+	cmd.Flags().String("tikv-database", tikvDatabase, "name of database")
 
 	return cmd
 }
@@ -102,11 +104,6 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 		dirs = append(dirs, args...)
 	} else {
 		dirs = viper.GetStringSlice("dirs")
-	}
-	// parse badger compression type
-	var c options.CompressionType
-	if err := viper.UnmarshalKey("badger-compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
-		return err
 	}
 	// parse include patterns
 	var includes []*regexp.Regexp
@@ -140,6 +137,12 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 		// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
 		runtime.GOMAXPROCS(128)
 
+		// parse badger compression type
+		var c options.CompressionType
+		if err := viper.UnmarshalKey("badger-compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
+			return err
+		}
+
 		db, err := badgeridx.NewDB(
 			badgeridx.WithCompression(c),
 			badgeridx.WithDir(viper.GetString("badger-dir")),
@@ -162,6 +165,7 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 			tikvidx.WithPDAddress(viper.GetStringSlice("tikv-pd-addr")),
 			tikvidx.WithBatchMaxSize(viper.GetInt("tikv-batch-max-size")),
 			tikvidx.WithBatchMaxWait(viper.GetDuration("tikv-batch-max-wait")),
+			tikvidx.WithDatabase(viper.GetString("tikv-database")),
 		)
 		if err != nil {
 			return err

@@ -14,6 +14,7 @@ type Options struct {
 	BatchMaxWait time.Duration
 	ReadOnly     bool
 	PdAddr       []string
+	Database     string
 }
 
 type Option func(opts *Options)
@@ -39,5 +40,11 @@ func WithBatchMaxSize(size int) Option {
 func WithBatchMaxWait(t time.Duration) Option {
 	return func(opts *Options) {
 		opts.BatchMaxWait = t
+	}
+}
+
+func WithDatabase(db string) Option {
+	return func(opts *Options) {
+		opts.Database = db
 	}
 }

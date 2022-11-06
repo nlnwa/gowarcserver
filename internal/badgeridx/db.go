@@ -292,7 +292,7 @@ func (db *DB) Index(fileName string) error {
 }
 
 // Resolve looks up warcId in the id index of the database and returns corresponding storageRef, or an error if not found.
-func (db *DB) Resolve(warcId string) (storageRef string, err error) {
+func (db *DB) Resolve(_ context.Context, warcId string) (storageRef string, err error) {
 	err = db.IdIndex.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(warcId))
 		if err != nil {

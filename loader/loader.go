@@ -26,7 +26,7 @@ import (
 )
 
 type StorageRefResolver interface {
-	Resolve(warcId string) (storageRef string, err error)
+	Resolve(ctx context.Context, warcId string) (storageRef string, err error)
 }
 
 type RecordLoader interface {
@@ -59,7 +59,7 @@ func (e ErrResolveRevisit) String() string {
 }
 
 func (l *Loader) LoadById(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
-	storageRef, err := l.StorageRefResolver.Resolve(warcId)
+	storageRef, err := l.StorageRefResolver.Resolve(ctx, warcId)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowar
 		}
 
 		var revisitOf gowarc.WarcRecord
-		storageRef, err = l.Resolve(warcRefersTo)
+		storageRef, err = l.Resolve(ctx, warcRefersTo)
 		if err != nil {
 			return nil, fmt.Errorf("unable to resolve referred Warc-Record-ID [%s]: %w", warcRefersTo, err)
 		}
@@ -105,6 +105,7 @@ func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowar
 			return nil, err
 		}
 	case gowarc.Continuation:
+		log.Warn().Msg("Not implemented: storage ref resolved to a continuation record")
 		// TODO continuation not implemented
 		fallthrough
 	default:

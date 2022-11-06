@@ -58,7 +58,7 @@ func (k cdxKey) ts() string {
 }
 
 // tikv does not (yet) have a notion of keyspace, so we use key prefixes
-const (
+var (
 	idPrefix   = "i"
 	idEOF      = "j"
 	filePrefix = "f"
@@ -82,6 +82,15 @@ func NewDB(options ...Option) (db *DB, err error) {
 	for _, opt := range options {
 		opt(opts)
 	}
+
+	// prefix all keys with name of database
+	// TODO use keyspace when TiKV support it
+	idPrefix = opts.Database + idPrefix
+	idEOF = opts.Database + idEOF
+	filePrefix = opts.Database + filePrefix
+	fileEOF = opts.Database + fileEOF
+	cdxPrefix = opts.Database + cdxPrefix
+	cdxEOF = opts.Database + cdxEOF
 
 	client, err := txnkv.NewClient(opts.PdAddr)
 	if err != nil {
@@ -171,19 +180,19 @@ func (db *DB) updateFilePath(filePath string) error {
 	return db.putFileInfo(fileInfo)
 }
 
-func (db *DB) get(k []byte) (KV, error) {
+func (db *DB) get(ctx context.Context, k []byte) (KV, error) {
 	tx, err := db.client.Begin()
 	if err != nil {
 		return KV{}, err
 	}
-	v, err := tx.Get(context.TODO(), k)
+	v, err := tx.Get(ctx, k)
 	if err != nil {
 		return KV{}, err
 	}
 	return KV{K: k, V: v}, nil
 }
 
-func (db *DB) puts(kvs ...KV) error {
+func (db *DB) puts(ctx context.Context, kvs ...KV) error {
 	tx, err := db.client.Begin()
 	if err != nil {
 		return err
@@ -195,21 +204,25 @@ func (db *DB) puts(kvs ...KV) error {
 			return err
 		}
 	}
-	return tx.Commit(context.Background())
+	return tx.Commit(ctx)
 }
 
 func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	k := []byte(filePrefix + fi.Name)
 	v, err := proto.Marshal(fi)
 	if err != nil {
 		return err
 	}
-	return db.puts(KV{K: k, V: v})
+	return db.puts(ctx, KV{K: k, V: v})
 }
 
 func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	key := []byte(filePrefix + fileName)
-	val, err := db.get(key)
+	val, err := db.get(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +277,9 @@ func (db *DB) flushBatch() {
 		}
 		kvs = append(kvs, id, cdx)
 	}
-	err := db.puts(kvs...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	err := db.puts(ctx, kvs...)
 	if err != nil {
 		log.Error().Err(err).Msgf("failed to commit batch (first batch ref is %s)", records[0].Ref)
 	}
