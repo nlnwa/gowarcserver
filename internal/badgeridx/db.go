@@ -18,7 +18,6 @@ package badgeridx
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -63,17 +62,16 @@ func NewDB(options ...DbOption) (db *DB, err error) {
 	var fileIndex *badger.DB
 	var cdxIndex *badger.DB
 
-	dir := path.Join(opts.Path, "warcdb")
 	batch := make(chan index.Record, opts.BatchMaxSize)
 	done := make(chan struct{})
 
-	if idIndex, err = newBadgerDB(path.Join(dir, opts.Database, "id-index"), opts.Compression, opts.ReadOnly); err != nil {
+	if idIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "id-index"), opts.Compression, opts.ReadOnly); err != nil {
 		return
 	}
-	if fileIndex, err = newBadgerDB(path.Join(dir, opts.Database, "file-index"), opts.Compression, opts.ReadOnly); err != nil {
+	if fileIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "file-index"), opts.Compression, opts.ReadOnly); err != nil {
 		return
 	}
-	if cdxIndex, err = newBadgerDB(path.Join(dir, opts.Database, "cdx-index"), opts.Compression, opts.ReadOnly); err != nil {
+	if cdxIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "cdx-index"), opts.Compression, opts.ReadOnly); err != nil {
 		return
 	}
 
@@ -171,7 +169,7 @@ func (db *DB) addFile(filePath string) error {
 		}
 		fileInfoLastModified := fileInfo.LastModified.AsTime()
 		if fileInfo.Size == fileSize && fileInfoLastModified.Equal(fileLastModified) {
-			return errors.New("already indexed")
+			return index.AlreadyIndexedError
 		}
 	}
 

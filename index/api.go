@@ -7,6 +7,14 @@ import (
 	"github.com/nlnwa/gowarcserver/schema"
 )
 
+type indexError string
+
+const AlreadyIndexedError indexError = "already indexed"
+
+func (a indexError) Error() string {
+	return string(a)
+}
+
 type DateRange interface {
 	ContainsTime(time.Time) (bool, error)
 	ContainsStr(string) (bool, error)

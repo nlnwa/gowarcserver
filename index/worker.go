@@ -17,6 +17,7 @@
 package index
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -49,7 +50,11 @@ func NewWorker(a Indexer, nrOfWorkers int) *indexWorker {
 				select {
 				case job := <-iw.jobs:
 					if err := a.Index(job); err != nil {
-						log.Warn().Err(err).Msgf("Index: %s", job)
+						if errors.Is(err, AlreadyIndexedError) {
+							log.Debug().Err(err).Msg(job)
+						} else {
+							log.Warn().Err(err).Msgf(job)
+						}
 					}
 					iw.wg.Done()
 					iw.mx.Lock()

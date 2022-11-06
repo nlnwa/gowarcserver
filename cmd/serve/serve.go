@@ -61,7 +61,7 @@ func NewCommand() *cobra.Command {
 	autoIndex := true
 	indexDepth := 4
 	indexWorkers := 8
-	badgerDir := "."
+	badgerDir := "./warcdb"
 	badgerCompression := "snappy"
 	badgerDatabase := ""
 	badgerBatchMaxSize := 1000

@@ -85,5 +85,5 @@ func initConfig() {
 	}
 	logger.InitLog(viper.GetString("log-level"), viper.GetString("log-formatter"), viper.GetBool("log-method"))
 
-	log.Debug().Msgf("Using config file: %s", viper.ConfigFileUsed())
+	log.Info().Msgf("Using config file: %s", viper.ConfigFileUsed())
 }

@@ -48,7 +48,7 @@ func NewCommand() *cobra.Command {
 	format := "cdxj"
 	indexDepth := 4
 	indexWorkers := 8
-	badgerDir := "."
+	badgerDir := "./warcdb"
 	badgerBatchMaxSize := 1000
 	badgerBatchMaxWait := 5 * time.Second
 	badgerCompression := "snappy"
@@ -159,6 +159,7 @@ func indexCmd(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	log.Info().Msg("Starting auto indexer")
 	indexer, err := index.NewAutoIndexer(indexWorker,
 		index.WithMaxDepth(viper.GetInt("max-depth")),
 		index.WithIncludes(includes...),

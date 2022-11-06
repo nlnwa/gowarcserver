@@ -38,11 +38,11 @@ func (l logger) Warningf(fmt string, args ...interface{}) {
 }
 
 func (l logger) Infof(fmt string, args ...interface{}) {
-	log.Debug().Msgf(l.prefix+fmt, args...)
+	log.Trace().Msgf(l.prefix+fmt, args...)
 }
 
 func (l logger) Debugf(fmt string, args ...interface{}) {
-	log.Debug().Msgf(l.prefix+fmt, args...)
+	log.Trace().Msgf(l.prefix+fmt, args...)
 }
 
 func newBadgerDB(dir string, compression options.CompressionType, readOnly bool) (*badger.DB, error) {

@@ -19,7 +19,6 @@ package tikvidx
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -152,7 +151,7 @@ func (db *DB) addFile(filePath string) error {
 		}
 		fileInfoLastModified := fileInfo.LastModified.AsTime()
 		if fileInfo.Size == fileSize && fileInfoLastModified.Equal(fileLastModified) {
-			return errors.New("already indexed")
+			return index.AlreadyIndexedError
 		}
 	}
 
