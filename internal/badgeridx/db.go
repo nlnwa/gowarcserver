@@ -67,13 +67,13 @@ func NewDB(options ...DbOption) (db *DB, err error) {
 	batch := make(chan index.Record, opts.BatchMaxSize)
 	done := make(chan struct{})
 
-	if idIndex, err = newBadgerDB(path.Join(dir, "id-index"), opts.Compression, opts.ReadOnly); err != nil {
+	if idIndex, err = newBadgerDB(path.Join(dir, opts.Database, "id-index"), opts.Compression, opts.ReadOnly); err != nil {
 		return
 	}
-	if fileIndex, err = newBadgerDB(path.Join(dir, "file-index"), opts.Compression, opts.ReadOnly); err != nil {
+	if fileIndex, err = newBadgerDB(path.Join(dir, opts.Database, "file-index"), opts.Compression, opts.ReadOnly); err != nil {
 		return
 	}
-	if cdxIndex, err = newBadgerDB(path.Join(dir, "cdx-index"), opts.Compression, opts.ReadOnly); err != nil {
+	if cdxIndex, err = newBadgerDB(path.Join(dir, opts.Database, "cdx-index"), opts.Compression, opts.ReadOnly); err != nil {
 		return
 	}
 
@@ -393,7 +393,6 @@ func defaultDbOptions() *dbOptions {
 		BatchMaxWait: 5 * time.Second,
 		GcInterval:   15 * time.Second,
 		Path:         ".",
-		ReadOnly:     false,
 	}
 }
 
@@ -404,6 +403,7 @@ type dbOptions struct {
 	GcInterval   time.Duration
 	Path         string
 	ReadOnly     bool
+	Database     string
 }
 
 type DbOption func(opts *dbOptions)
@@ -435,6 +435,12 @@ func WithBatchMaxWait(t time.Duration) DbOption {
 func WithGcInterval(t time.Duration) DbOption {
 	return func(opts *dbOptions) {
 		opts.GcInterval = t
+	}
+}
+
+func WithDatabase(db string) DbOption {
+	return func(opts *dbOptions) {
+		opts.Database = db
 	}
 }
 

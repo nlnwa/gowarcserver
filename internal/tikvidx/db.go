@@ -180,33 +180,6 @@ func (db *DB) updateFilePath(filePath string) error {
 	return db.putFileInfo(fileInfo)
 }
 
-func (db *DB) get(ctx context.Context, k []byte) (KV, error) {
-	tx, err := db.client.Begin()
-	if err != nil {
-		return KV{}, err
-	}
-	v, err := tx.Get(ctx, k)
-	if err != nil {
-		return KV{}, err
-	}
-	return KV{K: k, V: v}, nil
-}
-
-func (db *DB) puts(ctx context.Context, kvs ...KV) error {
-	tx, err := db.client.Begin()
-	if err != nil {
-		return err
-	}
-
-	for _, kv := range kvs {
-		err := tx.Set(kv.K, kv.V)
-		if err != nil {
-			return err
-		}
-	}
-	return tx.Commit(ctx)
-}
-
 func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -232,6 +205,33 @@ func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
 		return nil, err
 	}
 	return fi, nil
+}
+
+func (db *DB) get(ctx context.Context, k []byte) (KV, error) {
+	tx, err := db.client.Begin()
+	if err != nil {
+		return KV{}, err
+	}
+	v, err := tx.Get(ctx, k)
+	if err != nil {
+		return KV{}, err
+	}
+	return KV{K: k, V: v}, nil
+}
+
+func (db *DB) puts(ctx context.Context, kvs ...KV) error {
+	tx, err := db.client.Begin()
+	if err != nil {
+		return err
+	}
+
+	for _, kv := range kvs {
+		err := tx.Set(kv.K, kv.V)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // write schedules a Record to be added to the DB via the batch channel.

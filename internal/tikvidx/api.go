@@ -3,6 +3,7 @@ package tikvidx
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
@@ -228,7 +229,8 @@ func (db *DB) ListStorageRef(_ context.Context, limit int, res chan<- index.IdRe
 			if err != nil {
 				res <- index.IdResponse{Error: err}
 			} else {
-				res <- index.IdResponse{Key: string(it.Key()[1:]), Value: string(it.Value())}
+				k := strings.TrimPrefix(string(it.Key()), idPrefix)
+				res <- index.IdResponse{Key: k, Value: string(it.Value())}
 			}
 			err = it.Next()
 			if err != nil {

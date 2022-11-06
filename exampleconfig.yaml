@@ -47,13 +47,17 @@ badger-batch-max-size: 1000
 badger-batch-max-wait: 5s
 # badger compression algorithm
 badger-compression: "snappy"
+# badger database to use
+badger-database: ""
 
 # address of tikv placement driver
-tikv-pd-addr: "127.0.0.1: 2379"
+tikv-pd-addr: "127.0.0.1:2379"
 # max transaction batch size
 tikv-batch-max-size: 1000
 # max wait time before flushing batched records regardless of max batch size
 tikv-batch-max-wait: 5s
+# tikv database to use
+tikv-database: ""
 
 # estimated bloom filter capacity
 toc-bloom-capacity: 10000

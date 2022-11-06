@@ -52,6 +52,7 @@ func NewCommand() *cobra.Command {
 	badgerBatchMaxSize := 1000
 	badgerBatchMaxWait := 5 * time.Second
 	badgerCompression := "snappy"
+	badgerDatabase := ""
 	var tikvPdAddr []string
 	tikvBatchMaxSize := 1000
 	tikvBatchMaxWait := 5 * time.Second
@@ -68,13 +69,14 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().Uint("toc-bloom-capacity", bloomCapacity, "estimated bloom filter capacity")
 	cmd.Flags().Float64("toc-bloom-fp", bloomFp, "estimated bloom filter false positive rate")
 	cmd.Flags().String("badger-dir", badgerDir, "path to index database")
+	cmd.Flags().String("badger-database", badgerDatabase, "name of badger database")
 	cmd.Flags().Int("badger-batch-max-size", badgerBatchMaxSize, "max transaction batch size in badger")
 	cmd.Flags().Duration("badger-batch-max-wait", badgerBatchMaxWait, "max wait time before flushing batched records")
 	cmd.Flags().String("badger-compression", badgerCompression, "compression algorithm")
 	cmd.Flags().StringSlice("tikv-pd-addr", tikvPdAddr, "host:port of TiKV placement driver")
 	cmd.Flags().Int("tikv-batch-max-size", tikvBatchMaxSize, "max transaction batch size")
 	cmd.Flags().Duration("tikv-batch-max-wait", tikvBatchMaxWait, "max wait time before flushing batched records regardless of max batch size")
-	cmd.Flags().String("tikv-database", tikvDatabase, "name of database")
+	cmd.Flags().String("tikv-database", tikvDatabase, "name of tikv database")
 	return cmd
 }
 
@@ -121,6 +123,7 @@ func indexCmd(_ *cobra.Command, args []string) error {
 			badgeridx.WithDir(viper.GetString("badger-dir")),
 			badgeridx.WithBatchMaxSize(viper.GetInt("badger-batch-max-size")),
 			badgeridx.WithBatchMaxWait(viper.GetDuration("badger-batch-max-wait")),
+			badgeridx.WithDatabase(viper.GetString("badger-database")),
 		)
 		if err != nil {
 			return err
