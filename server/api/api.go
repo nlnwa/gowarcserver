@@ -93,8 +93,10 @@ func (c SearchAPI) Keys() []string {
 
 func (c SearchAPI) Sort() index.Sort {
 	switch c.CoreAPI.Sort {
-	case "reverse":
+	case SortReverse:
 		return index.SortDesc
+	case SortClosest:
+		return index.SortClosest
 	default:
 		return index.SortAsc
 	}
@@ -178,7 +180,7 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 		coreApi.Limit = l
 	}
 
-	closest := query.Get("Closest")
+	closest := query.Get("closest")
 	if closest != "" {
 		_, err := timestamp.Parse(closest)
 		if err != nil {
@@ -192,7 +194,7 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 		if !contains(sorts, sort) {
 			return nil, fmt.Errorf("sort must be one of %v, was: %s", sorts, sort)
 		} else if sort == SortClosest && closest == "" {
-			return nil, fmt.Errorf("missing closest parameter")
+			sort = ""
 		} else if sort == SortClosest && len(coreApi.Urls) == 0 {
 			return nil, fmt.Errorf("sort=closest is not valid without urls")
 		}
