@@ -145,10 +145,13 @@ func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 		case index.SortNone:
 			fallthrough
 		default:
-			it, err = tx.Iter(k, []byte(cdxEOF))
+			it, err = tx.Iter(k, nil)
 		}
 		if err != nil {
 			break
+		}
+		if !it.Valid() {
+			continue
 		}
 		is.iterators = append(is.iterators, it)
 		results = append(results, make(chan *maybeKV))
