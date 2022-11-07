@@ -4,17 +4,19 @@ import "time"
 
 func defaultOptions() *Options {
 	return &Options{
-		BatchMaxSize: 10000,
-		BatchMaxWait: 5 * time.Second,
+		BatchMaxSize:    255,
+		BatchMaxWait:    5 * time.Second,
+		BatchMaxRetries: 3,
 	}
 }
 
 type Options struct {
-	BatchMaxSize int
-	BatchMaxWait time.Duration
-	ReadOnly     bool
-	PdAddr       []string
-	Database     string
+	BatchMaxSize    int
+	BatchMaxWait    time.Duration
+	BatchMaxRetries int
+	ReadOnly        bool
+	PdAddr          []string
+	Database        string
 }
 
 type Option func(opts *Options)

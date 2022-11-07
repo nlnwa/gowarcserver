@@ -8,8 +8,22 @@ import (
 
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/timestamp"
-	"github.com/tikv/client-go/v2/txnkv/transaction"
+	"github.com/tikv/client-go/v2/txnkv"
 )
+
+func CompareClosest(ts int64) func(int64, int64) bool {
+	return func(ts1 int64, ts2 int64) bool {
+		return timestamp.AbsInt64(ts-ts1) < timestamp.AbsInt64(ts-ts2)
+	}
+}
+
+func CompareAsc(a int64, b int64) bool {
+	return a <= b
+}
+
+func CompareDesc(a int64, b int64) bool {
+	return a > b
+}
 
 // iterator mimics tikv's internal iterator interface
 type iterator interface {
@@ -23,6 +37,7 @@ type iterator interface {
 type iterClosest struct {
 	forward  iterator
 	backward iterator
+	curr     iterator
 	prefix   []byte
 	key      []byte
 	value    []byte
@@ -30,7 +45,7 @@ type iterClosest struct {
 	cmp      func(int64, int64) bool
 }
 
-func NewIterClosest(_ context.Context, tx *transaction.KVTxn, key string, closest string) (*iterClosest, error) {
+func NewIterClosest(_ context.Context, snapshot *txnkv.KVSnapshot, key string, closest string) (*iterClosest, error) {
 	ic := new(iterClosest)
 	if t, err := time.Parse(timestamp.CDX, closest); err != nil {
 		return nil, err
@@ -42,23 +57,31 @@ func NewIterClosest(_ context.Context, tx *transaction.KVTxn, key string, closes
 	k := []byte(cdxPrefix + key + " " + closest)
 
 	// initialize forward iterator
-	forward, err := tx.Iter(k, []byte(cdxEOF))
+	forward, err := snapshot.Iter(k, []byte(cdxEOF))
 	if err != nil {
 		return nil, err
 	}
 	ic.forward = forward
 
 	// initialize backward iterator
-	backward, err := tx.IterReverse(k)
+	backward, err := snapshot.IterReverse(k)
 	if err != nil {
 		return nil, err
 	}
 	ic.backward = backward
 
-	return ic, ic.Next()
+	return ic, ic.next()
 }
 
 func (ic *iterClosest) Next() error {
+	err := ic.curr.Next()
+	if err != nil {
+		return err
+	}
+	return ic.next()
+}
+
+func (ic *iterClosest) next() error {
 	var ft int64
 	var bt int64
 
@@ -90,11 +113,13 @@ func (ic *iterClosest) Next() error {
 		ic.valid = false
 		return nil
 	}
+
+	ic.curr = it
 	ic.key = it.Key()
 	ic.value = it.Value()
 	ic.valid = true
 
-	return it.Next()
+	return nil
 }
 
 func (ic *iterClosest) Key() []byte {
@@ -127,23 +152,24 @@ type iterSort struct {
 	next      <-chan maybeKV
 }
 
-func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest) (*iterSort, error) {
+func newIter(ctx context.Context, tx *txnkv.KVSnapshot, req index.SearchRequest) (iterator, error) {
 	is := new(iterSort)
-
-	// initialize iterators
 	var prefixes [][]byte
 	var results []chan *maybeKV
+	var it iterator
 	var err error
 	for _, key := range req.Keys() {
 		k := []byte(cdxPrefix + key)
-		var it iterator
 		switch req.Sort() {
-		case index.SortDesc:
-			it, err = tx.IterReverse(k)
+		case index.SortAsc:
+			it, err = tx.Iter(k, []byte(cdxEOF))
 		case index.SortClosest:
 			it, err = NewIterClosest(ctx, tx, key, req.Closest())
-		case index.SortAsc:
-			fallthrough
+		case index.SortDesc:
+			if len(req.Keys()) == 1 {
+				return tx.IterReverse(k)
+			}
+			it, err = tx.Iter(k, []byte(cdxEOF))
 		case index.SortNone:
 			fallthrough
 		default:
@@ -156,15 +182,18 @@ func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 			continue
 		}
 		is.iterators = append(is.iterators, it)
-		prefixes = append(prefixes, k[:])
+		prefixes = append(prefixes, k)
 		results = append(results, make(chan *maybeKV))
 	}
 	if err != nil {
-		defer is.Close()
+		is.Close()
 		return nil, err
 	}
-	if len(results) == 0 {
+	if len(is.iterators) == 0 {
 		return nil, nil
+	}
+	if len(is.iterators) == 1 {
+		return is.iterators[0], nil
 	}
 	// initialize comparator
 	var cmp func(a KV, b KV) bool
@@ -256,4 +285,67 @@ func (is *iterSort) Close() {
 			it.Close()
 		}
 	}
+}
+
+// mergeIter merges sorted input channels into a sorted output channel
+//
+// Sorting is done by comparing keys from key-value pairs.
+//
+// The input channels are closed externally
+func mergeIter(done <-chan struct{}, cmp func(KV, KV) bool, in ...chan *maybeKV) <-chan maybeKV {
+	out := make(chan maybeKV)
+	cords := make([]*maybeKV, len(in))
+	go func() {
+		defer close(out)
+		var zombie []int
+		for {
+			curr := -1
+			for i, cord := range cords {
+				if cord == nil {
+					select {
+					case cord = <-in[i]:
+						cords[i] = cord
+					case <-done:
+						return
+					}
+					// closed channel becomes zombie
+					if cord == nil {
+						zombie = append(zombie, i)
+						continue
+					}
+				}
+				if cord.error != nil {
+					// prioritize errors
+					curr = i
+					break
+				}
+				if curr == -1 {
+					curr = i
+				} else if cmp(cords[i].kv, cord.kv) {
+					curr = i
+				}
+			}
+			if curr == -1 {
+				return
+			}
+			select {
+			case <-done:
+				return
+			case out <- *cords[curr]:
+				cords[curr] = nil
+			}
+			// if zombie, then kill
+			if len(zombie) > 0 {
+				for _, i := range zombie {
+					cords[i] = cords[len(cords)-1]
+					cords = cords[:len(cords)-1]
+					in[i] = in[len(in)-1]
+					in = in[:len(in)-1]
+				}
+				zombie = nil
+			}
+		}
+	}()
+
+	return out
 }

@@ -41,7 +41,6 @@ func readFile(path string, writer recordWriter, filter recordFilter, opts ...gow
 	}()
 
 	filename := filepath.Base(path)
-
 	var prevOffset int64
 	var prevWr gowarc.WarcRecord
 	// write record from the previous iteration because we need to calculate record length
@@ -60,7 +59,7 @@ func readFile(path string, writer recordWriter, filter recordFilter, opts ...gow
 		wr, offset, validation, err := wf.Next()
 		if prevWr != nil {
 			if err := write(offset); err != nil {
-				log.Warn().Err(err).Str("path", path).Int64("offset", offset).Msgf("Error writing index record")
+				log.Warn().Err(err).Msgf("Failed to index record: %s#%d", filename, prevOffset)
 			} else {
 				count++
 			}
@@ -70,10 +69,10 @@ func readFile(path string, writer recordWriter, filter recordFilter, opts ...gow
 			break
 		}
 		if err != nil {
-			return count, total, fmt.Errorf("failed to get record number %d in %s at offset %d: %w", count, path, offset, err)
+			return count, total, fmt.Errorf("failed to get record number %d in %s at offset %d: %w", count, filename, offset, err)
 		}
 		if !validation.Valid() {
-			log.Warn().Err(validation).Str("path", path).Int64("offset", offset).Msgf("Invalid %s record: %s", wr.Type(), wr.RecordId())
+			log.Warn().Err(validation).Str("filename", filename).Int64("offset", offset).Msgf("Invalid %s record: %s", wr.Type(), wr.RecordId())
 		}
 		if filter(wr) {
 			prevWr = wr

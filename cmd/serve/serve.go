@@ -69,7 +69,7 @@ func NewCommand() *cobra.Command {
 	badgerReadOnly := false
 	logRequests := false
 	tikvPdAddr := []string{}
-	tikvBatchMaxSize := 1000
+	tikvBatchMaxSize := 255
 	tikvBatchMaxWait := 5 * time.Second
 	tikvDatabase := ""
 	pathPrefix := ""

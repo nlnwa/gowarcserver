@@ -2,24 +2,21 @@ package tikvidx
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
-	"github.com/tikv/client-go/v2/txnkv/transaction"
 	"google.golang.org/protobuf/proto"
 )
 
 // Closest returns the first closest cdx value(s).
 func (db *DB) Closest(ctx context.Context, req index.ClosestRequest, res chan<- index.CdxResponse) error {
-	// begin transaction
-	tx, err := db.client.Begin()
+	ts, err := db.client.CurrentTimestamp("global")
 	if err != nil {
 		return err
 	}
-
-	it, err := NewIterClosest(ctx, tx, req.Key(), req.Closest())
+	snapshot := db.client.GetSnapshot(ts)
+	it, err := NewIterClosest(ctx, snapshot, req.Key(), req.Closest())
 	if err != nil {
 		return err
 	}
@@ -60,19 +57,13 @@ func cdxFromValue(value []byte) (*schema.Cdx, error) {
 }
 
 func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- index.CdxResponse) error {
-	var err error
-	var tx *transaction.KVTxn
-	var it iterator
-
-	if len(req.Keys()) == 0 {
-		return errors.New("search request has no keys")
-	}
-	tx, err = db.client.Begin()
+	ts, err := db.client.CurrentTimestamp("global")
 	if err != nil {
 		return err
 	}
+	snapshot := db.client.GetSnapshot(ts)
 
-	it, err = newIter(ctx, tx, req)
+	it, err := newIter(ctx, snapshot, req)
 	if err != nil {
 		return err
 	}
@@ -126,11 +117,13 @@ func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- in
 }
 
 func (db *DB) List(ctx context.Context, limit int, res chan<- index.CdxResponse) error {
-	tx, err := db.client.Begin()
+	ts, err := db.client.CurrentTimestamp("global")
 	if err != nil {
 		return err
 	}
-	it, err := tx.Iter([]byte(cdxPrefix), []byte(cdxEOF))
+	snapshot := db.client.GetSnapshot(ts)
+
+	it, err := snapshot.Iter([]byte(cdxPrefix), []byte(cdxEOF))
 	if err != nil {
 		return err
 	}
@@ -170,11 +163,13 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo,
 }
 
 func (db *DB) ListFileInfo(_ context.Context, limit int, res chan<- index.FileResponse) error {
-	tx, err := db.client.Begin()
+	ts, err := db.client.CurrentTimestamp("global")
 	if err != nil {
 		return err
 	}
-	it, err := tx.Iter([]byte(filePrefix), []byte(fileEOF))
+	snapshot := db.client.GetSnapshot(ts)
+
+	it, err := snapshot.Iter([]byte(filePrefix), []byte(fileEOF))
 	if err != nil {
 		return err
 	}
@@ -204,21 +199,24 @@ func (db *DB) ListFileInfo(_ context.Context, limit int, res chan<- index.FileRe
 }
 
 func (db *DB) GetStorageRef(ctx context.Context, id string) (string, error) {
-	tx, err := db.client.Begin()
+	ts, err := db.client.CurrentTimestamp("global")
 	if err != nil {
 		return "", err
 	}
+	snapshot := db.client.GetSnapshot(ts)
 
-	b, err := tx.Get(ctx, []byte(id))
+	b, err := snapshot.Get(ctx, []byte(id))
 	return string(b), err
 }
 
 func (db *DB) ListStorageRef(_ context.Context, limit int, res chan<- index.IdResponse) error {
-	tx, err := db.client.Begin()
+	ts, err := db.client.CurrentTimestamp("global")
 	if err != nil {
 		return err
 	}
-	it, err := tx.Iter([]byte(idPrefix), []byte(idEOF))
+	snapshot := db.client.GetSnapshot(ts)
+
+	it, err := snapshot.Iter([]byte(idPrefix), []byte(idEOF))
 	if err != nil {
 		return err
 	}
@@ -247,16 +245,14 @@ func (db *DB) ListStorageRef(_ context.Context, limit int, res chan<- index.IdRe
 }
 
 // Resolve looks up warcId in the id index of the database and returns corresponding storageRef, or an error if not found.
-func (db *DB) Resolve(ctx context.Context, warcId string) (storageRef string, err error) {
+func (db *DB) Resolve(ctx context.Context, warcId string) (string, error) {
 	key := []byte(idPrefix + warcId)
 
-	var kv KV
-	kv, err = db.get(ctx, key)
+	kv, err := db.get(ctx, key)
 	if err != nil {
-		return
+		return "", err
 	}
-	storageRef = string(kv.V)
-	return
+	return string(kv.V), nil
 }
 
 // ResolvePath looks up filename in file index and returns the path field.

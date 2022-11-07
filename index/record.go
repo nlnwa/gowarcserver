@@ -87,7 +87,7 @@ func newRecord(wr gowarc.WarcRecord, filename string, offset int64, length int64
 				var err error
 				rec.Ple, err = strconv.ParseInt(cl, 10, 64)
 				if err != nil {
-					log.Warn().Msgf("failed to parse HTTP header field 'Content-Length' as int64: %v", err)
+					log.Warn().Msgf("Failed to parse HTTP header field 'Content-Length' as int64: %v", err)
 				}
 			}
 		}
@@ -135,7 +135,7 @@ func newRecord(wr gowarc.WarcRecord, filename string, offset int64, length int64
 				var err error
 				rec.Ple, err = strconv.ParseInt(cl, 10, 64)
 				if err != nil {
-					log.Warn().Msgf("failed to parse HTTP header field 'Content-Length' as int64: %v", err)
+					log.Warn().Msgf("Failed to parse HTTP header field 'Content-Length' as int64: %v", err)
 				}
 			}
 			break

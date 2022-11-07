@@ -73,6 +73,8 @@ type DB struct {
 
 	done chan struct{}
 
+	opts *Options
+
 	wg sync.WaitGroup
 }
 
@@ -81,7 +83,6 @@ func NewDB(options ...Option) (db *DB, err error) {
 	for _, opt := range options {
 		opt(opts)
 	}
-
 	// prefix all keys with name of database
 	// TODO use keyspace when TiKV support it
 	idPrefix = opts.Database + idPrefix
@@ -101,6 +102,7 @@ func NewDB(options ...Option) (db *DB, err error) {
 	db = &DB{
 		client: client,
 		done:   done,
+		opts:   opts,
 	}
 
 	if opts.ReadOnly {
@@ -206,31 +208,46 @@ func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
 	return fi, nil
 }
 
-func (db *DB) get(ctx context.Context, k []byte) (KV, error) {
-	tx, err := db.client.Begin()
+func (db *DB) get(ctx context.Context, k []byte) (*KV, error) {
+	ts, err := db.client.CurrentTimestamp("global")
 	if err != nil {
-		return KV{}, err
+		return nil, err
 	}
-	v, err := tx.Get(ctx, k)
+	snapshot := db.client.GetSnapshot(ts)
+
 	if err != nil {
-		return KV{}, err
+		return nil, err
 	}
-	return KV{K: k, V: v}, nil
+	v, err := snapshot.Get(ctx, k)
+	if err != nil {
+		return nil, err
+	}
+	return &KV{K: k, V: v}, nil
 }
 
 func (db *DB) puts(ctx context.Context, kvs ...KV) error {
-	tx, err := db.client.Begin()
-	if err != nil {
-		return err
-	}
-
-	for _, kv := range kvs {
-		err := tx.Set(kv.K, kv.V)
+	retries := db.opts.BatchMaxRetries
+	for {
+		tx, err := db.client.Begin()
 		if err != nil {
 			return err
 		}
+		for _, kv := range kvs {
+			err := tx.Set(kv.K, kv.V)
+			if err != nil {
+				return err
+			}
+		}
+		err = tx.Commit(ctx)
+		if err == nil {
+			return nil
+		} else if retries > 0 {
+			retries--
+			log.Warn().Err(err).Msgf("Commit failed, will try again %d times", retries)
+		} else {
+			return err
+		}
 	}
-	return tx.Commit(ctx)
 }
 
 // write schedules a Record to be added to the DB via the batch channel.
@@ -276,11 +293,15 @@ func (db *DB) flushBatch() {
 		}
 		kvs = append(kvs, id, cdx)
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	err := db.puts(ctx, kvs...)
 	if err != nil {
-		log.Error().Err(err).Msgf("failed to commit batch (first batch ref is %s)", records[0].Ref)
+		for _, r := range records {
+			log.Warn().Err(err).Msgf("failed to commit record: %s", r.Ref)
+		}
 	}
 }
 
