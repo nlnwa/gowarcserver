@@ -76,7 +76,10 @@ func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- in
 	if err != nil {
 		return err
 	}
-
+	if it == nil {
+		close(res)
+		return nil
+	}
 	go func() {
 		defer close(res)
 		defer it.Close()

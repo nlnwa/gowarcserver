@@ -92,6 +92,7 @@ func (ic *iterClosest) Next() error {
 	}
 	ic.key = it.Key()
 	ic.value = it.Value()
+	ic.valid = true
 
 	return it.Next()
 }
