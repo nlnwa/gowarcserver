@@ -130,6 +130,7 @@ func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 	is := new(iterSort)
 
 	// initialize iterators
+	var prefixes [][]byte
 	var results []chan *maybeKV
 	var err error
 	for _, key := range req.Keys() {
@@ -145,7 +146,7 @@ func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 		case index.SortNone:
 			fallthrough
 		default:
-			it, err = tx.Iter(k, nil)
+			it, err = tx.Iter(k, []byte(cdxEOF))
 		}
 		if err != nil {
 			break
@@ -154,6 +155,7 @@ func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 			continue
 		}
 		is.iterators = append(is.iterators, it)
+		prefixes = append(prefixes, k[:])
 		results = append(results, make(chan *maybeKV))
 	}
 	if err != nil {
@@ -194,9 +196,9 @@ func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 
 	for i, iter := range is.iterators {
 		i := i
-		go func(iter iterator, ch chan<- *maybeKV) {
+		go func(iter iterator, prefix []byte, ch chan<- *maybeKV) {
 			defer close(ch)
-			for iter.Valid() && bytes.HasPrefix(iter.Key(), []byte(cdxPrefix)) {
+			for iter.Valid() && bytes.HasPrefix(iter.Key(), prefix) {
 				select {
 				case <-ctx.Done():
 					return
@@ -211,7 +213,7 @@ func newIter(ctx context.Context, tx *transaction.KVTxn, req index.SearchRequest
 					return
 				}
 			}
-		}(iter, results[i])
+		}(iter, prefixes[i], results[i])
 	}
 
 	return is, is.Next()
