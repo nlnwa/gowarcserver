@@ -76,9 +76,6 @@ func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- in
 		defer it.Close()
 
 		limit := req.Limit()
-		if limit == 0 {
-			limit = 100
-		}
 
 		for it.Valid() && limit > 0 {
 			select {
