@@ -17,49 +17,31 @@
 package index
 
 import (
-	"errors"
 	"sync"
-	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
-type indexWorker struct {
-	jobs   chan string
-	done   chan struct{}
-	jobMap map[string]*time.Timer
-	mx     sync.Mutex
-	wg     sync.WaitGroup
+type WorkQueue struct {
+	queue chan string
+	done  chan struct{}
+	wg    sync.WaitGroup
 }
 
-// Indexer is the interface that wraps the Index method
-type Indexer interface {
-	Index(string) error
-}
+type Worker func(string)
 
-func NewWorker(a Indexer, nrOfWorkers int) *indexWorker {
-	iw := &indexWorker{
-		jobs:   make(chan string, nrOfWorkers),
-		done:   make(chan struct{}),
-		jobMap: map[string]*time.Timer{},
+func NewWorkQueue(execute Worker, nrOfWorkers int) *WorkQueue {
+	iw := &WorkQueue{
+		queue: make(chan string, nrOfWorkers),
+		done:  make(chan struct{}),
 	}
 
 	for i := 0; i < nrOfWorkers; i++ {
+		iw.wg.Add(1)
 		go func() {
+			defer iw.wg.Done()
 			for {
 				select {
-				case job := <-iw.jobs:
-					if err := a.Index(job); err != nil {
-						if errors.Is(err, AlreadyIndexedError) {
-							log.Debug().Err(err).Msg(job)
-						} else {
-							log.Warn().Err(err).Msgf(job)
-						}
-					}
-					iw.wg.Done()
-					iw.mx.Lock()
-					delete(iw.jobMap, job)
-					iw.mx.Unlock()
+				case job := <-iw.queue:
+					execute(job)
 				case <-iw.done:
 					return
 				}
@@ -70,32 +52,14 @@ func NewWorker(a Indexer, nrOfWorkers int) *indexWorker {
 	return iw
 }
 
-func (iw *indexWorker) Close() {
-	// Wait for all queued jobs to complete
-	iw.wg.Wait()
-	// before closing workers.
+func (iw *WorkQueue) Close() {
+	// stop workers
 	close(iw.done)
+	// and wait for them to complete
+	iw.wg.Wait()
 }
 
-// Schedule schedules a job to be processed by a worker
-func (iw *indexWorker) Schedule(job string, batchWindow time.Duration) {
-	if batchWindow == 0 {
-		iw.wg.Add(1)
-		iw.jobs <- job
-		return
-	}
-
-	iw.mx.Lock()
-	defer iw.mx.Unlock()
-	timer, ok := iw.jobMap[job]
-
-	if ok {
-		timer.Stop()
-		timer.Reset(batchWindow)
-	} else {
-		iw.wg.Add(1)
-		iw.jobMap[job] = time.AfterFunc(batchWindow, func() {
-			iw.jobs <- job
-		})
-	}
+// Add job to work queue
+func (iw *WorkQueue) Add(job string) {
+	iw.queue <- job
 }

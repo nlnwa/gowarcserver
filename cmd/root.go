@@ -33,7 +33,7 @@ import (
 
 // NewCommand returns a new cobra.Command implementing the root command for warc
 func NewCommand() *cobra.Command {
-	cobra.OnInitialize(func() { initConfig() })
+	cobra.OnInitialize(initConfig)
 
 	cmd := &cobra.Command{
 		Use:   "gowarcserver",
@@ -41,7 +41,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	// Global flags
-	_ = cmd.PersistentFlags().StringP("config", "c", "", `path to config file, default paths are "./config.yaml", "$HOME/.gowarcserver/config.yaml" or "/etc/gowarcserver/config.yaml"`)
+	_ = cmd.PersistentFlags().String("config", "", `path to config file, default paths are "./config.yaml", "$HOME/.gowarcserver/config.yaml" or "/etc/gowarcserver/config.yaml"`)
 	_ = cmd.PersistentFlags().StringP("log-level", "l", "info", `set log level, available levels are "panic", "fatal", "error", "warn", "info", "debug" and "trace"`)
 	_ = cmd.PersistentFlags().String("log-formatter", "logfmt", "log formatter, available values are logfmt and json")
 	_ = cmd.PersistentFlags().Bool("log-method", false, "log method caller")
@@ -76,14 +76,14 @@ func initConfig() {
 		viper.AddConfigPath("/etc/gowarcserver/")  // global configuration directory
 	}
 
-	if err := viper.ReadInConfig(); err != nil {
-		if errors.As(err, new(viper.ConfigFileNotFoundError)) {
-			return
-		}
+	defer func() {
+		logger.InitLog(viper.GetString("log-level"), viper.GetString("log-formatter"), viper.GetBool("log-method"))
+		log.Debug().Msgf("Using config file: %s", viper.ConfigFileUsed())
+	}()
+
+	err := viper.ReadInConfig()
+	if err != nil && !errors.As(err, new(viper.ConfigFileNotFoundError)) {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to read config file: %v", err)
 		os.Exit(1)
 	}
-	logger.InitLog(viper.GetString("log-level"), viper.GetString("log-formatter"), viper.GetBool("log-method"))
-
-	log.Info().Msgf("Using config file: %s", viper.ConfigFileUsed())
 }

@@ -1,15 +1,33 @@
+/*
+ * Copyright 2022 National Library of Norway.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package tikvidx
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/nlnwa/gowarcserver/server/api"
+	"github.com/tikv/client-go/v2/rawkv"
 
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/timestamp"
-	"github.com/tikv/client-go/v2/txnkv"
 )
+
+type comparator func(KV, KV) bool
 
 func CompareClosest(ts int64) func(int64, int64) bool {
 	return func(ts1 int64, ts2 int64) bool {
@@ -34,109 +52,94 @@ type iterator interface {
 	Close()
 }
 
-type iterClosest struct {
-	forward  iterator
-	backward iterator
-	curr     iterator
-	prefix   []byte
-	key      []byte
-	value    []byte
-	valid    bool
-	cmp      func(int64, int64) bool
+type closestScanner struct {
+	fKeys, bKeys     [][]byte
+	fValues, bValues [][]byte
+	fIndex, bIndex   int
+	cmp              func(int64, int64) bool
 }
 
-func NewIterClosest(_ context.Context, snapshot *txnkv.KVSnapshot, key string, closest string) (*iterClosest, error) {
-	ic := new(iterClosest)
+const startDate = "19700101000000"
+const endbyte = "\xff"
+
+func scanClosest(ctx context.Context, client *rawkv.Client, key string, closest string, options ...rawkv.RawOption) ([][]byte, [][]byte, error) {
+	ic := new(closestScanner)
 	if t, err := time.Parse(timestamp.CDX, closest); err != nil {
-		return nil, err
+		return nil, nil, err
 	} else {
 		ic.cmp = CompareClosest(t.Unix())
 	}
 
-	ic.prefix = []byte(cdxPrefix + key)
-	k := []byte(cdxPrefix + key + " " + closest)
+	startKey := []byte(cdxPrefix + key + " " + closest)
+	limit := 10
+	var err error
 
-	// initialize forward iterator
-	forward, err := snapshot.Iter(k, []byte(cdxEOF))
+	ic.fKeys, ic.fValues, err = client.Scan(ctx, startKey, []byte(cdxPrefix+key+endbyte), limit, options...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	ic.forward = forward
 
-	// initialize backward iterator
-	backward, err := snapshot.IterReverse(k)
+	// scan backward
+	ic.bKeys, ic.bValues, err = client.ReverseScan(ctx, startKey, []byte(cdxPrefix+key+" "+startDate), limit, options...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	ic.backward = backward
 
-	return ic, ic.next()
+	var keys [][]byte
+	var values [][]byte
+	for {
+		k, v, valid := ic.next()
+		if !valid {
+			return keys, values, nil
+		}
+		keys = append(keys, k)
+		values = append(values, v)
+	}
 }
 
-func (ic *iterClosest) Next() error {
-	err := ic.curr.Next()
-	if err != nil {
-		return err
-	}
-	return ic.next()
-}
-
-func (ic *iterClosest) next() error {
+func (cs *closestScanner) next() ([]byte, []byte, bool) {
 	var ft int64
 	var bt int64
 
 	// get forward ts
-	if ic.forward.Valid() && bytes.HasPrefix(ic.forward.Key(), ic.prefix) {
-		ts, _ := time.Parse(timestamp.CDX, cdxKey(ic.forward.Key()).ts())
-		ft = ts.Unix()
-	}
-	// get backward ts
-	if ic.backward.Valid() && bytes.HasPrefix(ic.backward.Key(), ic.prefix) {
-		ts, _ := time.Parse(timestamp.CDX, cdxKey(ic.backward.Key()).ts())
-		bt = ts.Unix()
+	if len(cs.fKeys) > cs.fIndex {
+		fts, _ := time.Parse(timestamp.CDX, cdxKey(cs.fKeys[cs.fIndex]).ts())
+		ft = fts.Unix()
 	}
 
-	var it iterator
+	// get backward ts
+	if len(cs.bKeys) > cs.bIndex {
+		bts, _ := time.Parse(timestamp.CDX, cdxKey(cs.bKeys[cs.bIndex]).ts())
+		bt = bts.Unix()
+	}
+
+	var itKeys [][]byte
+	var itValues [][]byte
+	var i *int
 	if ft != 0 && bt != 0 {
 		// find closest of forward and backward
-		isForward := ic.cmp(ft, bt)
+		isForward := cs.cmp(ft, bt)
 		if isForward {
-			it = ic.forward
+			itKeys = cs.fKeys
+			i = &cs.fIndex
 		} else {
-			it = ic.backward
+			itKeys = cs.bKeys
+			i = &cs.bIndex
 		}
 	} else if ft != 0 {
-		it = ic.forward
+		itKeys = cs.fKeys
+		i = &cs.fIndex
 	} else if bt != 0 {
-		it = ic.backward
+		itKeys = cs.bKeys
+		i = &cs.bIndex
 	} else {
-		ic.valid = false
-		return nil
+		return nil, nil, false
 	}
+	key := itKeys[*i]
+	value := itValues[*i]
+	*i++
 
-	ic.curr = it
-	ic.key = it.Key()
-	ic.value = it.Value()
-	ic.valid = true
-
-	return nil
-}
-
-func (ic *iterClosest) Key() []byte {
-	return ic.key
-}
-
-func (ic *iterClosest) Value() []byte {
-	return ic.value
-}
-
-func (ic *iterClosest) Valid() bool {
-	return ic.valid
-}
-
-func (ic *iterClosest) Close() {
-	ic.forward.Close()
-	ic.backward.Close()
+	return key, value, true
 }
 
 type maybeKV struct {
@@ -144,113 +147,112 @@ type maybeKV struct {
 	error error
 }
 
-type iterSort struct {
-	iterators []iterator
-	key       []byte
-	value     []byte
-	valid     bool
-	next      <-chan maybeKV
-}
-
-func newIter(ctx context.Context, tx *txnkv.KVSnapshot, req index.SearchRequest) (iterator, error) {
-	is := new(iterSort)
-	var prefixes [][]byte
-	var results []chan *maybeKV
-	var it iterator
-	var err error
-	for _, key := range req.Keys() {
-		k := []byte(cdxPrefix + key)
-		switch req.Sort() {
-		case index.SortAsc:
-			it, err = tx.Iter(k, []byte(cdxEOF))
-		case index.SortClosest:
-			it, err = NewIterClosest(ctx, tx, key, req.Closest())
-		case index.SortDesc:
-			if len(req.Keys()) == 1 {
-				return tx.IterReverse(k)
-			}
-			it, err = tx.Iter(k, []byte(cdxEOF))
-		case index.SortNone:
-			fallthrough
-		default:
-			it, err = tx.Iter(k, []byte(cdxEOF))
-		}
-		if err != nil {
-			break
-		}
-		if !it.Valid() {
-			continue
-		}
-		is.iterators = append(is.iterators, it)
-		prefixes = append(prefixes, k)
-		results = append(results, make(chan *maybeKV))
-	}
-	if err != nil {
-		is.Close()
-		return nil, err
-	}
-	if len(is.iterators) == 0 {
-		return nil, nil
-	}
-	if len(is.iterators) == 1 {
-		return is.iterators[0], nil
-	}
-	// initialize comparator
-	var cmp func(a KV, b KV) bool
-
+func getComparator(req index.SearchRequest) (comparator, error) {
 	switch req.Sort() {
 	case index.SortDesc:
-		cmp = func(a KV, b KV) bool {
+		return func(a KV, b KV) bool {
 			return CompareDesc(a.ts(), b.ts())
-		}
-	case index.SortClosest:
-		var t time.Time
-		t, err = time.Parse(timestamp.CDX, req.Closest())
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse closest timestamp: %w", err)
-		}
-		cmp = func(a KV, b KV) bool {
-			return CompareClosest(t.Unix())(a.ts(), b.ts())
-		}
+		}, nil
 	case index.SortAsc:
 		fallthrough
 	case index.SortNone:
 		fallthrough
+	case index.SortClosest:
+		fallthrough
 	default:
-		cmp = func(a KV, b KV) bool {
+		return func(a KV, b KV) bool {
 			return CompareAsc(a.ts(), b.ts())
+		}, nil
+	}
+}
+
+type scan func(context.Context, []byte, []byte, int, ...rawkv.RawOption) ([][]byte, [][]byte, error)
+
+type iter struct {
+	key   []byte
+	value []byte
+	valid bool
+	next  <-chan maybeKV
+}
+
+func newIter(ctx context.Context, client *rawkv.Client, req index.SearchRequest) (iterator, error) {
+	cmp, err := getComparator(req)
+	if err != nil {
+		return nil, err
+	}
+
+	getScanner := func(sort index.Sort) scan {
+		switch sort {
+		case index.SortDesc:
+			if len(req.Keys()) == 1 {
+				return client.ReverseScan
+			} else {
+				return client.Scan
+			}
+		case index.SortAsc:
+			fallthrough
+		case index.SortNone:
+			fallthrough
+		case index.SortClosest:
+			fallthrough
+		default:
+			return client.Scan
 		}
 	}
 
-	is.next = mergeIter(ctx.Done(), cmp, results...)
+	makeStartKey := func(endKey []byte) []byte {
+		return append([]byte(api.MatchType(string(endKey), req.MatchType())), 0)
+	}
 
-	for i, iter := range is.iterators {
-		i := i
-		go func(iter iterator, prefix []byte, ch chan<- *maybeKV) {
+	makeEndkey := func(startKey []byte) []byte {
+		endKey := make([]byte, len(startKey)+1)
+		copy(endKey, startKey)
+		endKey[len(endKey)-1] = 0xff
+		return endKey
+	}
+
+	var results []chan *maybeKV
+	for i, key := range req.Keys() {
+		results = append(results, make(chan *maybeKV))
+
+		go func(scan scan, key []byte, ch chan<- *maybeKV, done <-chan struct{}) {
 			defer close(ch)
-			for iter.Valid() && bytes.HasPrefix(iter.Key(), prefix) {
-				select {
-				case <-ctx.Done():
-					return
-				case ch <- &maybeKV{kv: KV{K: iter.Key(), V: iter.Value()}}:
-				}
-				err := iter.Next()
+			scanLimit := 256
+			startKey := key
+			endKey := makeEndkey(startKey)
+			for {
+				keys, values, err := scan(ctx, startKey, endKey, scanLimit)
 				if err != nil {
 					select {
-					case <-ctx.Done():
+					case <-done:
+						return
 					case ch <- &maybeKV{error: err}:
+						return
 					}
+				}
+				for j, k := range keys {
+					select {
+					case <-done:
+						return
+					case ch <- &maybeKV{kv: KV{K: k, V: values[j]}}:
+					}
+				}
+				if len(keys) < scanLimit {
 					return
 				}
+				startKey = makeStartKey(keys[len(keys)-1])
 			}
-		}(iter, prefixes[i], results[i])
+		}(getScanner(req.Sort()), []byte(cdxPrefix+key), results[i], ctx.Done())
 	}
+
+	is := new(iter)
+	is.next = mergeIter(ctx.Done(), cmp, results...)
 
 	return is, is.Next()
 }
 
 // Next updates the next key, value and validity.
-func (is *iterSort) Next() error {
+func (is *iter) Next() error {
 	mkv, ok := <-is.next
 	if !ok {
 		is.valid = false
@@ -267,24 +269,20 @@ func (is *iterSort) Next() error {
 	return nil
 }
 
-func (is *iterSort) Key() []byte {
+func (is *iter) Key() []byte {
 	return is.key
 }
 
-func (is *iterSort) Value() []byte {
+func (is *iter) Value() []byte {
 	return is.value
 }
 
-func (is *iterSort) Valid() bool {
+func (is *iter) Valid() bool {
 	return is.valid
 }
 
-func (is *iterSort) Close() {
-	for _, it := range is.iterators {
-		if it != nil {
-			it.Close()
-		}
-	}
+func (is *iter) Close() {
+	// noop
 }
 
 // mergeIter merges sorted input channels into a sorted output channel

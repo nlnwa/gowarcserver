@@ -54,7 +54,10 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	log.Debug().Msgf("%v", coreAPI)
+	log.Debug().Msgf("%+v", coreAPI)
+	if coreAPI.Limit == 0 {
+		coreAPI.Limit = 100
+	}
 	if err = h.CdxAPI.Search(ctx, api.SearchAPI{CoreAPI: coreAPI}, response); err != nil {
 		log.Error().Err(err).Msg("failed to search")
 		http.Error(w, err.Error(), http.StatusInternalServerError)

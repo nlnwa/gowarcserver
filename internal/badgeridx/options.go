@@ -14,40 +14,46 @@
  * limitations under the License.
  */
 
-package tikvidx
+package badgeridx
 
 import (
+	badgerOptions "github.com/dgraph-io/badger/v3/options"
+	"github.com/nlnwa/gowarcserver/index"
 	"time"
 )
 
-func defaultOptions() *Options {
+func defaultDbOptions() *Options {
 	return &Options{
-		BatchMaxSize:    255,
-		BatchMaxWait:    5 * time.Second,
-		BatchMaxRetries: 3,
+		Compression:  badgerOptions.Snappy,
+		BatchMaxSize: 10000,
+		BatchMaxWait: 5 * time.Second,
+		GcInterval:   15 * time.Second,
+		Path:         ".",
 	}
 }
 
 type Options struct {
-	BatchMaxSize    int
-	BatchMaxWait    time.Duration
-	BatchMaxRetries int
-	ReadOnly        bool
-	PdAddr          []string
-	Database        string
+	Compression  badgerOptions.CompressionType
+	BatchMaxSize int
+	BatchMaxWait time.Duration
+	GcInterval   time.Duration
+	Path         string
+	ReadOnly     bool
+	Database     string
+	Index        index.Indexer
 }
 
 type Option func(opts *Options)
 
-func WithPDAddress(pdAddr []string) Option {
+func WithCompression(c badgerOptions.CompressionType) Option {
 	return func(opts *Options) {
-		opts.PdAddr = pdAddr
+		opts.Compression = c
 	}
 }
 
-func WithReadOnly(readOnly bool) Option {
+func WithDir(d string) Option {
 	return func(opts *Options) {
-		opts.ReadOnly = readOnly
+		opts.Path = d
 	}
 }
 
@@ -63,8 +69,26 @@ func WithBatchMaxWait(t time.Duration) Option {
 	}
 }
 
+func WithGcInterval(t time.Duration) Option {
+	return func(opts *Options) {
+		opts.GcInterval = t
+	}
+}
+
 func WithDatabase(db string) Option {
 	return func(opts *Options) {
 		opts.Database = db
+	}
+}
+
+func WithReadOnly(readOnly bool) Option {
+	return func(opts *Options) {
+		opts.ReadOnly = readOnly
+	}
+}
+
+func WithIndexer(indexer index.Indexer) Option {
+	return func(opts *Options) {
+		opts.Index = indexer
 	}
 }

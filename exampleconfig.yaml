@@ -10,10 +10,6 @@ log-method: false
 port: 8880
 # prefix for server endpoint paths
 path-prefix: ""
-# start autoindexer
-index: true
-# watch for file changes (NFS does not support this)
-watch: false
 # log server requests
 log-requests: true
 # index storage engine: "badger" or "tikv"
@@ -21,21 +17,42 @@ storage-engine: badger
 
 # INDEX
 
-# index format: "cdxj", "cdxpb", "badger", "tikv" or "toc"
-format: cdxj
-
-# directories to search for warc files in
-dirs:
-  - "./testdata"
+# index format (index): "cdxj", "cdxpb", "badger", "tikv" or "toc"
+# index format (serve): "badger" or "tikv"
+index-format: cdxj
+# index source:  "file" or "kafka"
+index-source: file
 # include only files matching regular expressions
-include:
+index-include:
   - ".warc.gz$"
 # exclude files matching regular expressions
-exclude: []
-# max number of directory recursions
-max-depth: 4
+index-exclude: []
 # number of index workers
-workers: 8
+index-workers: 8
+
+# FILE TRAVERSAL INDEX SOURCE
+
+# warc files or directories to search for warc files in
+file-paths:
+  - "./testdata"
+# max number of directory recursions
+file-max-depth: 4
+
+# KAFKA INDEX SOURCE
+
+# the list of broker addresses used to connect to the kafka cluster
+kafka-brokers:
+  - 127.0.0.1:3939
+# optional consumer group id
+kafka-group-id: "my-group-id"
+# the topic to read messages from
+kafka-topic: "my-topic"
+# indicates to the broker the minimum batch size that the consumer will accept
+kafka-min-bytes: 0
+# indicates to the broker the maximum batch size that the consumer will accept
+kafka-max-bytes: 0
+# maximum amount of time to wait for new data to come when fetching batches of messages from kafka
+kafka-max-wait: 0
 
 # path to badger database
 badger-dir: ./badger

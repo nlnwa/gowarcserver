@@ -1,8 +1,28 @@
+/*
+ * Copyright 2022 National Library of Norway.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package tikvidx
 
 import (
 	"context"
+	"fmt"
 	"strings"
+
+	"github.com/rs/zerolog/log"
+	"github.com/tikv/client-go/v2/rawkv"
 
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
@@ -11,36 +31,27 @@ import (
 
 // Closest returns the first closest cdx value(s).
 func (db *DB) Closest(ctx context.Context, req index.ClosestRequest, res chan<- index.CdxResponse) error {
-	ts, err := db.client.CurrentTimestamp("global")
-	if err != nil {
-		return err
-	}
-	snapshot := db.client.GetSnapshot(ts)
-	it, err := NewIterClosest(ctx, snapshot, req.Key(), req.Closest())
+	_, values, err := scanClosest(ctx, db.client, req.Key(), req.Closest())
 	if err != nil {
 		return err
 	}
 
 	go func() {
 		defer close(res)
-		defer it.Close()
 
-		for it.Valid() {
+		for _, v := range values {
+			var cdxResponse index.CdxResponse
+			cdx := new(schema.Cdx)
+			err := proto.Unmarshal(v, cdx)
+			if err != nil {
+				cdxResponse = index.CdxResponse{Error: err}
+			} else {
+				cdxResponse = index.CdxResponse{Cdx: cdx}
+			}
 			select {
 			case <-ctx.Done():
 				return
-			default:
-			}
-
-			cdx, err := cdxFromValue(it.Value())
-			if err != nil {
-				res <- index.CdxResponse{Error: err}
-			} else {
-				res <- index.CdxResponse{Cdx: cdx}
-			}
-
-			if err := it.Next(); err != nil {
-				res <- index.CdxResponse{Error: err}
+			case res <- cdxResponse:
 			}
 		}
 	}()
@@ -48,22 +59,8 @@ func (db *DB) Closest(ctx context.Context, req index.ClosestRequest, res chan<- 
 	return nil
 }
 
-func cdxFromValue(value []byte) (*schema.Cdx, error) {
-	result := new(schema.Cdx)
-	if err := proto.Unmarshal(value, result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- index.CdxResponse) error {
-	ts, err := db.client.CurrentTimestamp("global")
-	if err != nil {
-		return err
-	}
-	snapshot := db.client.GetSnapshot(ts)
-
-	it, err := newIter(ctx, snapshot, req)
+	it, err := newIter(ctx, db.client, req)
 	if err != nil {
 		return err
 	}
@@ -71,6 +68,7 @@ func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- in
 		close(res)
 		return nil
 	}
+
 	go func() {
 		defer close(res)
 		defer it.Close()
@@ -80,10 +78,8 @@ func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- in
 		for it.Valid() && limit > 0 {
 			select {
 			case <-ctx.Done():
-				res <- index.CdxResponse{Error: ctx.Err()}
 				return
 			default:
-				limit--
 			}
 
 			func() {
@@ -114,40 +110,28 @@ func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- in
 }
 
 func (db *DB) List(ctx context.Context, limit int, res chan<- index.CdxResponse) error {
-	ts, err := db.client.CurrentTimestamp("global")
-	if err != nil {
-		return err
+	if limit > rawkv.MaxRawKVScanLimit {
+		limit = rawkv.MaxRawKVScanLimit
 	}
-	snapshot := db.client.GetSnapshot(ts)
-
-	it, err := snapshot.Iter([]byte(cdxPrefix), []byte(cdxEOF))
+	_, values, err := db.client.Scan(ctx, []byte(cdxPrefix), []byte(cdxEOF), limit)
 	if err != nil {
 		return err
 	}
 
 	go func() {
-		defer it.Close()
 		defer close(res)
-
-		for it.Valid() && limit > 0 {
+		for _, v := range values {
 			select {
 			case <-ctx.Done():
-				res <- index.CdxResponse{Error: ctx.Err()}
 				return
 			default:
 			}
-			limit--
 			cdx := new(schema.Cdx)
-			err := proto.Unmarshal(it.Value(), cdx)
+			err := proto.Unmarshal(v, cdx)
 			if err != nil {
 				res <- index.CdxResponse{Error: err}
 			} else {
 				res <- index.CdxResponse{Cdx: cdx}
-			}
-			err = it.Next()
-			if err != nil {
-				res <- index.CdxResponse{Error: err}
-				break
 			}
 		}
 	}()
@@ -159,82 +143,63 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo,
 	return db.getFileInfo(filename)
 }
 
-func (db *DB) ListFileInfo(_ context.Context, limit int, res chan<- index.FileResponse) error {
-	ts, err := db.client.CurrentTimestamp("global")
+func (db *DB) ListFileInfo(ctx context.Context, limit int, res chan<- index.FileResponse) error {
+	if limit > rawkv.MaxRawKVScanLimit {
+		limit = rawkv.MaxRawKVScanLimit
+	}
+	_, values, err := db.client.Scan(ctx, []byte(filePrefix), []byte(fileEOF), limit)
 	if err != nil {
 		return err
 	}
-	snapshot := db.client.GetSnapshot(ts)
-
-	it, err := snapshot.Iter([]byte(filePrefix), []byte(fileEOF))
-	if err != nil {
-		return err
-	}
-
 	go func() {
-		defer it.Close() // close iterator
 		defer close(res) // close response channel
+		for _, v := range values {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 
-		for it.Valid() && limit > 0 {
-			limit--
 			fileInfo := new(schema.Fileinfo)
-			err := proto.Unmarshal(it.Value(), fileInfo)
+			err := proto.Unmarshal(v, fileInfo)
 			if err != nil {
 				res <- index.FileResponse{Error: err}
 			} else {
+				log.Info().Msgf("GOOD: %s", fileInfo.Name)
 				res <- index.FileResponse{Fileinfo: fileInfo}
 			}
-			err = it.Next()
-			if err != nil {
-				res <- index.FileResponse{Error: err}
-				break
-			}
 		}
+		log.Info().Msg("Hvordor kommer vi kkke hit")
 	}()
 
 	return nil
 }
 
 func (db *DB) GetStorageRef(ctx context.Context, id string) (string, error) {
-	ts, err := db.client.CurrentTimestamp("global")
-	if err != nil {
-		return "", err
-	}
-	snapshot := db.client.GetSnapshot(ts)
-
-	b, err := snapshot.Get(ctx, []byte(id))
+	b, err := db.client.Get(ctx, []byte(id))
 	return string(b), err
 }
 
-func (db *DB) ListStorageRef(_ context.Context, limit int, res chan<- index.IdResponse) error {
-	ts, err := db.client.CurrentTimestamp("global")
-	if err != nil {
-		return err
+func (db *DB) ListStorageRef(ctx context.Context, limit int, res chan<- index.IdResponse) error {
+	if limit > rawkv.MaxRawKVScanLimit {
+		limit = rawkv.MaxRawKVScanLimit
 	}
-	snapshot := db.client.GetSnapshot(ts)
-
-	it, err := snapshot.Iter([]byte(idPrefix), []byte(idEOF))
+	keys, values, err := db.client.Scan(ctx, []byte(idPrefix), []byte(idEOF), limit)
 	if err != nil {
 		return err
 	}
 
 	go func() {
-		defer it.Close()
 		defer close(res)
 
-		for it.Valid() && limit > 0 {
-			limit--
-			if err != nil {
-				res <- index.IdResponse{Error: err}
-			} else {
-				k := strings.TrimPrefix(string(it.Key()), idPrefix)
-				res <- index.IdResponse{Key: k, Value: string(it.Value())}
+		for i, k := range keys {
+			select {
+			case <-ctx.Done():
+				return
+			default:
 			}
-			err = it.Next()
-			if err != nil {
-				res <- index.IdResponse{Error: err}
-				break
-			}
+			k := strings.TrimPrefix(string(k), idPrefix)
+			res <- index.IdResponse{Key: k, Value: string(values[i])}
 		}
 	}()
 
@@ -245,15 +210,21 @@ func (db *DB) ListStorageRef(_ context.Context, limit int, res chan<- index.IdRe
 func (db *DB) Resolve(ctx context.Context, warcId string) (string, error) {
 	key := []byte(idPrefix + warcId)
 
-	kv, err := db.get(ctx, key)
+	val, err := db.client.Get(ctx, key)
 	if err != nil {
 		return "", err
 	}
-	return string(kv.V), nil
+	return string(val), nil
 }
 
 // ResolvePath looks up filename in file index and returns the path field.
 func (db *DB) ResolvePath(filename string) (filePath string, err error) {
 	fileInfo, err := db.getFileInfo(filename)
+	if err != nil {
+		return "", err
+	}
+	if fileInfo == nil {
+		return "", fmt.Errorf("file not found: %s", filename)
+	}
 	return fileInfo.Path, err
 }

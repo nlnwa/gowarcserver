@@ -18,9 +18,10 @@ package badgeridx
 
 import (
 	"fmt"
-	"github.com/mitchellh/mapstructure"
 	"reflect"
 	"strings"
+
+	"github.com/mitchellh/mapstructure"
 
 	"github.com/dgraph-io/badger/v3/options"
 )

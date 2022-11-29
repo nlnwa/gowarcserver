@@ -51,7 +51,7 @@ Content-Length: 0`)
 
 	tests := []struct {
 		format string
-		writer recordWriter
+		writer RecordWriter
 	}{
 		{
 			"cdxj",
@@ -70,7 +70,7 @@ Content-Length: 0`)
 
 	for _, tt := range tests {
 		t.Run(tt.format, func(t *testing.T) {
-			_, _, err = readFile(filepath, tt.writer, func(gowarc.WarcRecord) bool { return true })
+			_, _, err = readFile(filepath, tt.writer, func(gowarc.WarcRecord, *gowarc.Validation) bool { return true })
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}

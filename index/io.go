@@ -21,17 +21,21 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/nlnwa/gowarc"
 	"github.com/rs/zerolog/log"
 )
 
-type recordFilter func(gowarc.WarcRecord) bool
+type recordFilter func(gowarc.WarcRecord, *gowarc.Validation) bool
 
-// readFile reads a file using the supplied config and writes with a IndexWriter.
-func readFile(path string, writer recordWriter, filter recordFilter, opts ...gowarc.WarcRecordOption) (int, int, error) {
+type RecordWriter interface {
+	Write(Record) error
+}
+
+// readFile reads, filters and writes records of a warc file to a record writer
+func readFile(path string, writer RecordWriter, filter recordFilter, opts ...gowarc.WarcRecordOption) (int, int, error) {
+	filename := filepath.Base(path)
+
 	wf, err := gowarc.NewWarcFileReader(path, 0, opts...)
 	if err != nil {
 		return 0, 0, err
@@ -40,17 +44,8 @@ func readFile(path string, writer recordWriter, filter recordFilter, opts ...gow
 		_ = wf.Close()
 	}()
 
-	filename := filepath.Base(path)
 	var prevOffset int64
 	var prevWr gowarc.WarcRecord
-	// write record from the previous iteration because we need to calculate record length
-	write := func(offset int64) error {
-		r, err := newRecord(prevWr, filename, prevOffset, offset-prevOffset)
-		if err != nil {
-			return err
-		}
-		return writer.Write(r)
-	}
 
 	count := 0
 	total := 0
@@ -58,8 +53,10 @@ func readFile(path string, writer recordWriter, filter recordFilter, opts ...gow
 	for {
 		wr, offset, validation, err := wf.Next()
 		if prevWr != nil {
-			if err := write(offset); err != nil {
-				log.Warn().Err(err).Msgf("Failed to index record: %s#%d", filename, prevOffset)
+			if r, err := newRecord(prevWr, filename, prevOffset, offset-prevOffset); err != nil {
+				log.Error().Err(err).Msgf("Failed to create index record %s#%d", filename, prevOffset)
+			} else if err = writer.Write(r); err != nil {
+				log.Error().Err(err).Msgf("Failed to index record: %s#%d", filename, prevOffset)
 			} else {
 				count++
 			}
@@ -69,40 +66,13 @@ func readFile(path string, writer recordWriter, filter recordFilter, opts ...gow
 			break
 		}
 		if err != nil {
-			return count, total, fmt.Errorf("failed to get record number %d in %s at offset %d: %w", count, filename, offset, err)
+			return count, total, fmt.Errorf("failed to read record #%d at %s#%d: %w", total, filename, offset, err)
 		}
-		if !validation.Valid() {
-			log.Warn().Err(validation).Str("filename", filename).Int64("offset", offset).Msgf("Invalid %s record: %s", wr.Type(), wr.RecordId())
-		}
-		if filter(wr) {
+		if filter(wr, validation) {
 			prevWr = wr
 		}
 		total++
 		prevOffset = offset
 	}
 	return count, total, err
-}
-
-type recordWriter interface {
-	Write(Record) error
-}
-
-func warcRecordFilter(wr gowarc.WarcRecord) bool {
-	// only write response and revisit records
-	if wr.Type() == gowarc.Response || wr.Type() == gowarc.Revisit {
-		// of type application/http
-		if strings.HasPrefix(wr.WarcHeader().Get(gowarc.ContentType), gowarc.ApplicationHttp) {
-			return true
-		}
-	}
-	return false
-}
-
-func ReadFile(fileName string, r recordWriter) error {
-	start := time.Now()
-
-	count, total, err := readFile(fileName, r, warcRecordFilter)
-
-	log.Info().Msgf("Indexed %5d of %5d records in %10v: %s\n", count, total, time.Since(start), fileName)
-	return err
 }

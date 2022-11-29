@@ -7,6 +7,10 @@ import (
 	"github.com/nlnwa/gowarcserver/schema"
 )
 
+type Runner interface {
+	Run(context.Context) error
+}
+
 type indexError string
 
 const AlreadyIndexedError indexError = "already indexed"

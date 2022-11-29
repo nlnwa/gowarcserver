@@ -17,130 +17,112 @@
 package index
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
+	"regexp"
+
+	"github.com/rs/zerolog/log"
 )
 
-type autoIndexer struct {
-	done      chan struct{}
-	perFileFn func(string)
-	perDirFn  func(string) bool
-	watcher   *watcher
-	settings  *Options
+type AutoIndexOptions struct {
+	MaxDepth int
+	Paths    []string
+	Options
+}
+type AutoIndexOption func(*AutoIndexOptions)
+
+func WithMaxDepth(depth int) AutoIndexOption {
+	return func(opts *AutoIndexOptions) {
+		opts.MaxDepth = depth
+	}
 }
 
-type Scheduler interface {
-	Schedule(job string, batchWindow time.Duration)
+func WithPaths(paths []string) AutoIndexOption {
+	return func(opts *AutoIndexOptions) {
+		opts.Paths = paths
+	}
 }
 
-func NewAutoIndexer(s Scheduler, opts ...Option) (*autoIndexer, error) {
-	a := new(autoIndexer)
-
-	settings := defaultOptions()
-	for _, opt := range opts {
-		opt(settings)
+func WithExcludeDirs(res ...*regexp.Regexp) AutoIndexOption {
+	return func(opts *AutoIndexOptions) {
+		opts.Excludes = res
 	}
-	a.settings = settings
+}
 
-	done := make(chan struct{})
-	a.done = done
+type Queue interface {
+	Add(path string)
+}
 
-	isDone := func() bool {
-		select {
-		case <-done:
-			return true
-		default:
-			return false
-		}
-	}
+type AutoIndexer struct {
+	Queue
+	opts *AutoIndexOptions
+}
 
-	perDirFn := func(name string) bool {
-		if isDone() {
-			return false
-		}
-		return !settings.isExcluded(name)
+func NewAutoIndexer(s Queue, options ...AutoIndexOption) AutoIndexer {
+	opts := new(AutoIndexOptions)
+	for _, apply := range options {
+		apply(opts)
 	}
 
-	perFileFn := func(name string) {
-		if isDone() {
-			return
-		}
-		if settings.filter(name) {
-			s.Schedule(name, 0)
-		}
+	return AutoIndexer{
+		Queue: s,
+		opts:  opts,
 	}
+}
 
-	if settings.Watch {
-		w, err := newWatcher()
+func (a AutoIndexer) Run(ctx context.Context) error {
+	for _, path := range a.opts.Paths {
+		err := a.index(ctx.Done(), path)
 		if err != nil {
-			return nil, err
+			log.Warn().Msgf(`Error indexing "%s": %v`, path, err)
 		}
-		a.watcher = w
-
-		perDirFn = func(name string) bool {
-			if isDone() {
-				return false
-			}
-			if settings.isExcluded(name) {
-				return false
-			}
-			_ = w.Add(name)
-			return true
-		}
-
-		onFileChanged := func(name string) {
-			if isDone() {
-				return
-			}
-			if settings.filter(name) {
-				s.Schedule(name, 10*time.Second)
-			}
-		}
-		go w.Watch(onFileChanged)
 	}
-	a.perFileFn = perFileFn
-	a.perDirFn = perDirFn
-
-	return a, nil
+	return nil
 }
 
-func (a *autoIndexer) Index(path string) error {
+func (a AutoIndexer) index(done <-chan struct{}, path string) error {
+	select {
+	case <-done:
+		return nil
+	default:
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("failed to get file info: %w", err)
 	}
 	if info.IsDir() {
-		if err := a.walk(path, 0); err != nil {
+		if err := a.walk(done, path, 0); err != nil {
 			return err
 		}
 	} else {
-		a.perFileFn(path)
+		a.Add(path)
 	}
 	return nil
 }
 
-func (a *autoIndexer) Close() {
-	close(a.done)
-	a.watcher.Close()
-}
-
-func (a *autoIndexer) walk(dir string, currentDepth int) error {
+func (a AutoIndexer) walk(done <-chan struct{}, dir string, currentDepth int) error {
+	if a.opts.isExcluded(dir) {
+		return nil
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf(`failed to read directory "%s": %w`, dir, err)
 	}
 	for _, entry := range entries {
-		name := filepath.Join(dir, entry.Name())
+		select {
+		case <-done:
+			return nil
+		default:
+		}
+		path := filepath.Join(dir, entry.Name())
 		if !entry.IsDir() {
-			a.perFileFn(name)
-		} else if currentDepth < a.settings.MaxDepth {
-			if a.perDirFn(name) {
-				err = a.walk(name, currentDepth+1)
-				if err != nil {
-					return err
-				}
+			a.Queue.Add(path)
+		} else if currentDepth < a.opts.MaxDepth {
+			err = a.walk(done, path, currentDepth+1)
+			if err != nil {
+				return err
 			}
 		}
 	}

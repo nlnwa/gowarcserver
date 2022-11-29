@@ -18,14 +18,17 @@ package index
 
 import (
 	"regexp"
+
+	"github.com/nlnwa/gowarc"
 )
 
 type Options struct {
-	Watch    bool
-	Includes []*regexp.Regexp
-	Excludes []*regexp.Regexp
-	MaxDepth int
+	Includes         []*regexp.Regexp
+	Excludes         []*regexp.Regexp
+	warcRecordOption []gowarc.WarcRecordOption
 }
+
+type Option func(*Options)
 
 func (o *Options) filter(name string) bool {
 	return o.isIncluded(name) && !o.isExcluded(name)
@@ -52,21 +55,6 @@ func (o *Options) isIncluded(name string) bool {
 	return false
 }
 
-func defaultOptions() *Options {
-	return &Options{
-		Watch:    false,
-		MaxDepth: 4,
-	}
-}
-
-type Option func(*Options)
-
-func WithMaxDepth(depth int) Option {
-	return func(opts *Options) {
-		opts.MaxDepth = depth
-	}
-}
-
 func WithIncludes(res ...*regexp.Regexp) Option {
 	return func(opts *Options) {
 		opts.Includes = res
@@ -76,11 +64,5 @@ func WithIncludes(res ...*regexp.Regexp) Option {
 func WithExcludes(res ...*regexp.Regexp) Option {
 	return func(opts *Options) {
 		opts.Excludes = res
-	}
-}
-
-func WithWatch(watch bool) Option {
-	return func(opts *Options) {
-		opts.Watch = watch
 	}
 }

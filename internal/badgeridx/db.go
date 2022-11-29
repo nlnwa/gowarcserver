@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
-	"github.com/dgraph-io/badger/v3/options"
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/timestamp"
@@ -52,7 +51,7 @@ type DB struct {
 	wg sync.WaitGroup
 }
 
-func NewDB(options ...DbOption) (db *DB, err error) {
+func NewDB(options ...Option) (db *DB, err error) {
 	opts := defaultDbOptions()
 	for _, opt := range options {
 		opt(opts)
@@ -83,7 +82,7 @@ func NewDB(options ...DbOption) (db *DB, err error) {
 		done:      done,
 	}
 
-	// If read-only return. We don't need to run batch and gc workers when read-only.
+	// We don't need to run batch and gc workers when operating in read-only mode.
 	if opts.ReadOnly {
 		return
 	}
@@ -154,15 +153,15 @@ func (db *DB) Close() {
 }
 
 // addFile checks if file is indexed or has not changed since indexing, and adds file to file index.
-func (db *DB) addFile(filePath string) error {
-	stat, err := os.Stat(filePath)
+func (db *DB) addFile(path string) error {
+	stat, err := os.Stat(path)
 	if err != nil {
-		return fmt.Errorf("failed to get file info: %s: %w", filePath, err)
+		return fmt.Errorf("failed to get file info: %s: %w", path, err)
 	}
 
 	fileSize := stat.Size()
 	fileLastModified := stat.ModTime()
-	fn := filepath.Base(filePath)
+	fn := filepath.Base(path)
 	if fileInfo, err := db.getFileInfo(fn); err == nil {
 		if err := fileInfo.GetLastModified().CheckValid(); err != nil {
 			return err
@@ -173,14 +172,14 @@ func (db *DB) addFile(filePath string) error {
 		}
 	}
 
-	return db.updateFilePath(filePath)
+	return db.updateFilePath(path)
 }
 
-func (db *DB) updateFilePath(filePath string) error {
+func (db *DB) updateFilePath(path string) error {
 	var err error
 	fileInfo := &schema.Fileinfo{}
 
-	fileInfo.Path, err = filepath.Abs(filePath)
+	fileInfo.Path, err = filepath.Abs(path)
 	if err != nil {
 		return err
 	}
@@ -281,12 +280,8 @@ func (db *DB) Write(rec index.Record) error {
 	return nil
 }
 
-func (db *DB) Index(fileName string) error {
-	err := db.addFile(fileName)
-	if err != nil {
-		return err
-	}
-	return index.ReadFile(fileName, db)
+func (db *DB) Index(path string) error {
+	return db.addFile(path)
 }
 
 // Resolve looks up warcId in the id index of the database and returns corresponding storageRef, or an error if not found.
@@ -382,68 +377,4 @@ func (db *DB) GetCdx(key string) (*schema.Cdx, error) {
 		return err
 	})
 	return val, err
-}
-
-func defaultDbOptions() *dbOptions {
-	return &dbOptions{
-		Compression:  options.Snappy,
-		BatchMaxSize: 10000,
-		BatchMaxWait: 5 * time.Second,
-		GcInterval:   15 * time.Second,
-		Path:         ".",
-	}
-}
-
-type dbOptions struct {
-	Compression  options.CompressionType
-	BatchMaxSize int
-	BatchMaxWait time.Duration
-	GcInterval   time.Duration
-	Path         string
-	ReadOnly     bool
-	Database     string
-}
-
-type DbOption func(opts *dbOptions)
-
-func WithCompression(c options.CompressionType) DbOption {
-	return func(opts *dbOptions) {
-		opts.Compression = c
-	}
-}
-
-func WithDir(d string) DbOption {
-	return func(opts *dbOptions) {
-		opts.Path = d
-	}
-}
-
-func WithBatchMaxSize(size int) DbOption {
-	return func(opts *dbOptions) {
-		opts.BatchMaxSize = size
-	}
-}
-
-func WithBatchMaxWait(t time.Duration) DbOption {
-	return func(opts *dbOptions) {
-		opts.BatchMaxWait = t
-	}
-}
-
-func WithGcInterval(t time.Duration) DbOption {
-	return func(opts *dbOptions) {
-		opts.GcInterval = t
-	}
-}
-
-func WithDatabase(db string) DbOption {
-	return func(opts *dbOptions) {
-		opts.Database = db
-	}
-}
-
-func WithReadOnly(readOnly bool) DbOption {
-	return func(opts *dbOptions) {
-		opts.ReadOnly = readOnly
-	}
 }

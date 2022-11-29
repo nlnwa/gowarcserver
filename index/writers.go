@@ -18,7 +18,6 @@ package index
 
 import (
 	"fmt"
-	"strconv"
 	"sync"
 
 	"github.com/bits-and-blooms/bloom/v3"
@@ -27,8 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type Cdx struct {
-}
+type Cdx struct{}
 
 func (c Cdx) Write(rec Record) error {
 	cdxj := protojson.Format(rec)
@@ -37,8 +35,7 @@ func (c Cdx) Write(rec Record) error {
 	return nil
 }
 
-type CdxJ struct {
-}
+type CdxJ struct{}
 
 func (c CdxJ) Write(rec Record) error {
 	cdxj := protojson.Format(rec)
@@ -47,12 +44,7 @@ func (c CdxJ) Write(rec Record) error {
 	return nil
 }
 
-func (c CdxJ) Index(fileName string) error {
-	return ReadFile(fileName, c)
-}
-
-type CdxPb struct {
-}
+type CdxPb struct{}
 
 func (c CdxPb) Write(rec Record) error {
 	cdxpb, err := proto.Marshal(rec)
@@ -62,10 +54,6 @@ func (c CdxPb) Write(rec Record) error {
 	fmt.Printf("%s %s %s %s\n", rec.Ssu, rec.Sts, rec.Srt, cdxpb)
 
 	return nil
-}
-
-func (c CdxPb) Index(fileName string) error {
-	return ReadFile(fileName, c)
 }
 
 type Toc struct {
@@ -79,21 +67,14 @@ func (t *Toc) Write(rec Record) error {
 	if err != nil {
 		return nil
 	}
-	ts := rec.GetSts().AsTime()
-	year := strconv.Itoa(ts.Year())
-	key := surthost + " " + year
 
 	t.m.Lock()
-	hasSurt := t.BloomFilter.TestOrAddString(key)
+	hasSurt := t.BloomFilter.TestOrAddString(surthost)
 	t.m.Unlock()
 
 	if !hasSurt {
-		fmt.Println(key)
+		fmt.Println(surthost)
 	}
 
 	return nil
-}
-
-func (t *Toc) Index(fileName string) error {
-	return ReadFile(fileName, t)
 }

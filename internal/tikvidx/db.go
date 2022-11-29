@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 National Library of Norway.
+ * Copyright 2022 National Library of Norway.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import (
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/rs/zerolog/log"
-	"github.com/tikv/client-go/v2/txnkv"
+	"github.com/tikv/client-go/v2/rawkv"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -67,13 +67,11 @@ var (
 )
 
 type DB struct {
-	client *txnkv.Client
+	client *rawkv.Client
 
 	batch chan index.Record
 
 	done chan struct{}
-
-	opts *Options
 
 	wg sync.WaitGroup
 }
@@ -84,7 +82,6 @@ func NewDB(options ...Option) (db *DB, err error) {
 		opt(opts)
 	}
 	// prefix all keys with name of database
-	// TODO use keyspace when TiKV support it
 	idPrefix = opts.Database + idPrefix
 	idEOF = opts.Database + idEOF
 	filePrefix = opts.Database + filePrefix
@@ -92,7 +89,10 @@ func NewDB(options ...Option) (db *DB, err error) {
 	cdxPrefix = opts.Database + cdxPrefix
 	cdxEOF = opts.Database + cdxEOF
 
-	client, err := txnkv.NewClient(opts.PdAddr)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := rawkv.NewClientWithOpts(ctx, opts.PdAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,6 @@ func NewDB(options ...Option) (db *DB, err error) {
 	db = &DB{
 		client: client,
 		done:   done,
-		opts:   opts,
 	}
 
 	if opts.ReadOnly {
@@ -135,6 +134,7 @@ func NewDB(options ...Option) (db *DB, err error) {
 func (db *DB) Close() {
 	close(db.done)
 	db.wg.Wait()
+	_ = db.client.Close()
 }
 
 // addFile checks if file referenced by filePath is indexed or has changed and adds/updates the index accordingly.
@@ -147,7 +147,7 @@ func (db *DB) addFile(filePath string) error {
 	fileSize := stat.Size()
 	fileLastModified := stat.ModTime()
 	fn := filepath.Base(filePath)
-	if fileInfo, err := db.getFileInfo(fn); err == nil {
+	if fileInfo, err := db.getFileInfo(fn); err == nil && fileInfo != nil {
 		if err := fileInfo.GetLastModified().CheckValid(); err != nil {
 			return err
 		}
@@ -187,67 +187,35 @@ func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
 	k := []byte(filePrefix + fi.Name)
 	v, err := proto.Marshal(fi)
 	if err != nil {
+		log.Error().Err(err).Msg("")
+
 		return err
 	}
-	return db.puts(ctx, KV{K: k, V: v})
+	err = db.client.Put(ctx, k, v)
+	if err != nil {
+		log.Error().Err(err).Msg("")
+		return err
+	}
+	return nil
 }
 
 func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	key := []byte(filePrefix + fileName)
-	val, err := db.get(ctx, key)
+	val, err := db.client.Get(ctx, key)
 	if err != nil {
 		return nil, err
 	}
+	if val == nil {
+		return nil, nil
+	}
 	fi := new(schema.Fileinfo)
-	err = proto.Unmarshal(val.V, fi)
+	err = proto.Unmarshal(val, fi)
 	if err != nil {
 		return nil, err
 	}
 	return fi, nil
-}
-
-func (db *DB) get(ctx context.Context, k []byte) (*KV, error) {
-	ts, err := db.client.CurrentTimestamp("global")
-	if err != nil {
-		return nil, err
-	}
-	snapshot := db.client.GetSnapshot(ts)
-
-	if err != nil {
-		return nil, err
-	}
-	v, err := snapshot.Get(ctx, k)
-	if err != nil {
-		return nil, err
-	}
-	return &KV{K: k, V: v}, nil
-}
-
-func (db *DB) puts(ctx context.Context, kvs ...KV) error {
-	retries := db.opts.BatchMaxRetries
-	for {
-		tx, err := db.client.Begin()
-		if err != nil {
-			return err
-		}
-		for _, kv := range kvs {
-			err := tx.Set(kv.K, kv.V)
-			if err != nil {
-				return err
-			}
-		}
-		err = tx.Commit(ctx)
-		if err == nil {
-			return nil
-		} else if retries > 0 {
-			retries--
-			log.Warn().Err(err).Msgf("Commit failed, will try again %d times", retries)
-		} else {
-			return err
-		}
-	}
 }
 
 // write schedules a Record to be added to the DB via the batch channel.
@@ -264,44 +232,39 @@ func (db *DB) write(rec index.Record) {
 	}
 }
 
-// collectBatch returns a slice of all the records in the batch channel.
-func (db *DB) collectBatch() (records []index.Record) {
+func (db *DB) collectBatch() ([][]byte, [][]byte) {
+	var keys [][]byte
+	var values [][]byte
 	for {
 		select {
-		case record := <-db.batch:
-			records = append(records, record)
+		case r := <-db.batch:
+			id := idKV(r)
+			cdx, err := cdxKV(r)
+			if err != nil {
+				log.Error().Err(err).Msgf("failed to marshal record: %v", r)
+				continue
+			}
+			keys = append(keys, id.K, cdx.K)
+			values = append(values, id.V, cdx.V)
 		default:
-			return
+			return keys, values
 		}
 	}
 }
 
 // flushBatch collects all records in the batch channel and updates the id and cdx indices.
 func (db *DB) flushBatch() {
-	records := db.collectBatch()
-	if len(records) == 0 {
+	keys, values := db.collectBatch()
+	if len(keys) == 0 {
 		return
-	}
-
-	var kvs []KV
-	for _, r := range records {
-		id := idKV(r)
-		cdx, err := cdxKV(r)
-		if err != nil {
-			log.Error().Err(err).Msgf("failed to marshal record: %v", r)
-			continue
-		}
-		kvs = append(kvs, id, cdx)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := db.puts(ctx, kvs...)
+	err := db.client.BatchPut(ctx, keys, values)
 	if err != nil {
-		for _, r := range records {
-			log.Warn().Err(err).Msgf("failed to commit record: %s", r.Ref)
-		}
+		log.Error().Err(err).Msgf("Batch put failed")
 	}
 }
 
@@ -329,10 +292,6 @@ func (db *DB) Write(rec index.Record) error {
 	return nil
 }
 
-func (db *DB) Index(fileName string) error {
-	err := db.addFile(fileName)
-	if err != nil {
-		return err
-	}
-	return index.ReadFile(fileName, db)
+func (db *DB) Index(path string) error {
+	return db.addFile(path)
 }
