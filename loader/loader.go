@@ -99,18 +99,17 @@ func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowar
 		if err != nil {
 			return nil, err
 		}
+		defer revisitOf.Close()
 
 		rtrRecord, err = record.Merge(revisitOf)
 		if err != nil {
 			return nil, err
 		}
+		return rtrRecord, nil
 	case gowarc.Continuation:
-		log.Warn().Msg("Not implemented: storage ref resolved to a continuation record")
-		// TODO continuation not implemented
-		fallthrough
+		// TODO implement continuation record
+		return nil, fmt.Errorf("%s resolves to a continuation record (not implemented)", storageRef)
 	default:
-		rtrRecord = record
+		return record, nil
 	}
-
-	return rtrRecord, nil
 }
