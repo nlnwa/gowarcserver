@@ -38,19 +38,17 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	count := 0
 	defer func() {
-		if count > 0 {
-			log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
-		}
+		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
 	}()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	response := make(chan index.CdxResponse)
-	searchApi := api.SearchAPI{CoreAPI: coreAPI}
 
-	if err = h.CdxAPI.Search(ctx, searchApi, response); err != nil {
-		log.Error().Err(err).Msg("search failed")
+	response := make(chan index.CdxResponse)
+
+	if err = h.CdxAPI.Search(ctx, api.SearchAPI{CoreAPI: coreAPI}, response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msgf("Search failed: %+v", coreAPI)
 		return
 	}
 
@@ -74,9 +72,9 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to write result")
-		} else {
-			count++
+			return
 		}
+		count++
 	}
 }
 
@@ -95,15 +93,15 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	response := make(chan index.CdxResponse)
 	err = h.CdxAPI.Closest(ctx, closestReq, response)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to query closest cdx")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msgf("Failed search closest: %+v", closestReq)
 		return
 	}
 
 	var res index.CdxResponse
 	for res = range response {
 		if res.Error != nil {
-			log.Warn().Err(err).Msg("failed cdx response")
+			log.Warn().Err(err).Msg("Failed cdx response")
 			continue
 		}
 		if res.Cdx == nil {
@@ -127,15 +125,19 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		var errResolveRevisit loader.ErrResolveRevisit
 		if errors.As(err, &errResolveRevisit) {
 			http.Error(w, errResolveRevisit.Error(), http.StatusNotImplemented)
+			log.Error().Err(errResolveRevisit).Msg("Failed to load record")
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to load record")
 		return
 	}
 
 	block, ok := warcRecord.Block().(gowarc.HttpResponseBlock)
 	if !ok {
-		http.Error(w, fmt.Sprintf("Record not renderable: %s", warcRecord), http.StatusInternalServerError)
+		err := fmt.Errorf("record not renderable: %s", warcRecord)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to load resource")
 		return
 	}
 
@@ -145,11 +147,12 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		p, err := block.PayloadBytes()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Error().Err(err).Msg("Failed to load resource")
 			return
 		}
 		err = handlers.Render(w, *block.HttpHeader(), block.HttpStatusCode(), p)
 		if err != nil {
-			log.Warn().Err(err).Msg("Failed to render response")
+			log.Warn().Err(err).Msg("Failed to load resource")
 		}
 		return
 	}
@@ -157,7 +160,9 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	// handle redirect
 	location := block.HttpHeader().Get("Location")
 	if location == "" {
-		http.Error(w, "Redirected to empty location", http.StatusInternalServerError)
+		err := errors.New("empty redirect location")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to load resource")
 		return
 	}
 
@@ -165,12 +170,16 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	if urlErrors.Code(err) == urlErrors.FailRelativeUrlWithNoBase {
 		locUrl, err = url.ParseRef(closestReq.rawUrl, location)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to parse relative location header as URL: %s: %s: %v", warcRecord, location, err), http.StatusInternalServerError)
+			err = fmt.Errorf("failed to parse relative location header as URL: %s: %s: %w", warcRecord, location, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Error().Err(err).Msg("Failed to load resource")
 			return
 		}
 	}
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to parse location header as URL: %s: %s: %v", warcRecord, location, err), http.StatusInternalServerError)
+		err = fmt.Errorf("failed to parse location header as URL: %s: %s: %w", warcRecord, location, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to load resource")
 		return
 	}
 
@@ -183,6 +192,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	err = h.Closest(ctx, closestReq, response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to find closest redirect")
 		return
 	}
 
@@ -192,7 +202,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	for res := range response {
 		if res.Error != nil {
-			log.Warn().Err(err).Msg("")
+			log.Warn().Err(err).Msg("failed result")
 			continue
 		}
 		sts = timestamp.TimeTo14(res.GetSts().AsTime())
@@ -210,7 +220,9 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	host := r.Host
 	u, err := url.Parse(scheme + "://" + host)
 	if err != nil {
+		err := fmt.Errorf("failed to construct redirect location: %s: %w", uri, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed load resource")
 		return
 	}
 	u.SetPathname(path)

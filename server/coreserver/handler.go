@@ -50,17 +50,17 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	response := make(chan index.CdxResponse)
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	log.Debug().Msgf("%+v", coreAPI)
 	if coreAPI.Limit == 0 {
 		coreAPI.Limit = 100
 	}
 	if err = h.CdxAPI.Search(ctx, api.SearchAPI{CoreAPI: coreAPI}, response); err != nil {
-		log.Error().Err(err).Msg("failed to search")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msgf("Search failed: %+v", coreAPI)
 		return
 	}
 
@@ -85,11 +85,10 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
-			log.Warn().Err(err).Int("status", http.StatusInternalServerError).Msg("failed to write result")
+			log.Warn().Err(err).Msg("failed to write result")
 			return
-		} else {
-			count++
 		}
+		count++
 	}
 }
 
@@ -101,12 +100,14 @@ type storageRef struct {
 
 func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
+
 	response := make(chan index.IdResponse)
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
 	if err := h.IdAPI.ListStorageRef(ctx, limit, response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to list ids")
 		return
 	}
 	start := time.Now()
@@ -132,18 +133,15 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 		}
 		v, err := json.Marshal(ref)
 		if err != nil {
-			log.Warn().Err(err).Msg("failed to marshal storage ref")
+			log.Warn().Err(err).Msgf("failed to marshal storage ref: %+v", ref)
+			continue
 		}
 		if count > 0 {
 			_, _ = w.Write([]byte("\r\n"))
 		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
-			log.Error().Err(err).Int("status", http.StatusInternalServerError).Msg("failed to write storage ref")
-			if count == 0 {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
+			log.Warn().Err(err).Msgf("failed to write storage ref: %+v", ref)
 			return
 		}
 		count++
@@ -156,13 +154,14 @@ func (h Handler) getStorageRefByURN(w http.ResponseWriter, r *http.Request) {
 
 	storageRef, err := h.StorageRefResolver.Resolve(r.Context(), urn)
 	if err != nil {
-		msg := fmt.Sprintf("failed to resolve storage reference of urn: %v", err)
-		http.Error(w, msg, http.StatusInternalServerError)
+		err := fmt.Errorf("failed to resolve storage ref: %s: %w", urn, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("")
 		return
 	}
 	_, err = fmt.Fprintln(w, storageRef)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Warn().Err(err).Msgf("Failed to write storage ref: %s", storageRef)
 	}
 }
 
@@ -175,6 +174,7 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.FileAPI.ListFileInfo(ctx, limit, responses); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to list files")
 		return
 	}
 
@@ -191,14 +191,15 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		v, err := protojson.Marshal(res.Fileinfo)
 		if err != nil {
-			log.Warn().Err(err).Msg("failed to marshal storage ref")
+			log.Warn().Err(err).Msg("failed to marshal file info")
+			continue
 		}
 		if count > 0 {
 			_, _ = w.Write([]byte("\r\n"))
 		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
-			log.Error().Err(err).Int("status", http.StatusInternalServerError).Msg("failed to write storage ref")
+			log.Warn().Err(err).Msg("failed to write file info")
 			return
 		}
 		count++
@@ -215,11 +216,12 @@ func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
 	fileInfo, err := h.FileAPI.GetFileInfo(ctx, filename)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msgf("Failed to get file info: %s", filename)
 		return
 	}
 	_, err = fmt.Fprintln(w, protojson.Format(fileInfo))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Warn().Err(err).Msgf("Failed to write file info: %s", protojson.Format(fileInfo))
 	}
 }
 
@@ -231,6 +233,7 @@ func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.CdxAPI.List(ctx, limit, responses); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to list cdx records")
 		return
 	}
 
@@ -255,11 +258,7 @@ func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
 		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
-			log.Error().Err(err).Int("status", http.StatusInternalServerError).Msg("failed to write result")
-			if count == 0 {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
+			log.Warn().Err(err).Msg("failed to write cdx record")
 			return
 		}
 		count++
@@ -274,23 +273,18 @@ func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	record, err := h.WarcLoader.LoadById(ctx, warcId)
+	if record != nil {
+		defer record.Close()
+	}
 	if err != nil {
-		msg := fmt.Sprintf("failed to load record '%s': %v", warcId, err)
-		http.Error(w, msg, http.StatusInternalServerError)
+		err := fmt.Errorf("failed to load record '%s': %w", warcId, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("")
 		return
 	}
-	defer func() {
-		if err := record.Close(); err != nil {
-			log.Warn().Err(err).Msgf("Closing record: %v", record)
-		}
-	}()
-
-	n, err := handlers.RenderRecord(w, record)
-	if n == 0 {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	_, err = handlers.RenderRecord(w, record)
 	if err != nil {
-		log.Warn().Err(err).Msgf("Failed to write record: %v", record)
+		log.Warn().Err(err).Msgf("Failed to write record '%s': %v", warcId, record)
 	}
 }
 
