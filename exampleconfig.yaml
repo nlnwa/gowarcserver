@@ -12,8 +12,6 @@ port: 8880
 path-prefix: ""
 # log server requests
 log-requests: true
-# index storage engine: "badger" or "tikv"
-storage-engine: badger
 
 # INDEX
 
