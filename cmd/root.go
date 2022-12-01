@@ -25,7 +25,7 @@ import (
 	"github.com/nlnwa/gowarcserver/cmd/index"
 	"github.com/nlnwa/gowarcserver/cmd/serve"
 	"github.com/nlnwa/gowarcserver/cmd/version"
-	"github.com/nlnwa/gowarcserver/internal/logger"
+	"github.com/nlnwa/gowarcserver/logger"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
