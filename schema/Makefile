@@ -1,4 +1,4 @@
-PROTOC_VERSION=21.8
+PROTOC_VERSION=21.10
 
 .PHONY: all
 .PHONY: clean
@@ -7,7 +7,7 @@ go_files := $(patsubst %.proto,%.pb.go,$(wildcard *.proto))
 all: tools $(go_files)
 
 clean:
-	rm *.pb.go
+	rm -f *.pb.go
 
 distclean: clean
 	rm -rf tools
