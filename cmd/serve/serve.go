@@ -17,23 +17,26 @@
 package serve
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
+	"os/signal"
 	"regexp"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
-	"github.com/nlnwa/gowarcserver/internal/index"
-	"github.com/nlnwa/gowarcserver/internal/loader"
-	"github.com/nlnwa/gowarcserver/internal/server"
-	"github.com/nlnwa/gowarcserver/internal/server/coreserver"
-	"github.com/nlnwa/gowarcserver/internal/server/warcserver"
+	"github.com/nlnwa/gowarcserver/index"
+	"github.com/nlnwa/gowarcserver/internal/badgeridx"
+	"github.com/nlnwa/gowarcserver/internal/tikvidx"
+	"github.com/nlnwa/gowarcserver/loader"
+	"github.com/nlnwa/gowarcserver/server/coreserver"
+	"github.com/nlnwa/gowarcserver/server/warcserver"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -43,11 +46,6 @@ func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start warc server",
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// Increase GOMAXPROCS as recommended by badger
-			// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
-			runtime.GOMAXPROCS(128)
-		},
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := viper.BindPFlags(cmd.Flags()); err != nil {
 				return fmt.Errorf("failed to bind flags, err: %w", err)
@@ -56,56 +54,51 @@ func NewCommand() *cobra.Command {
 		},
 		RunE: serveCmd,
 	}
-	// defaults
-	port := 9999
-	watch := false
-	enableIndexing := true
-	indexDbDir := "."
-	indexDepth := 4
-	indexWorkers := 8
-	indexDbBatchMaxSize := 1000
-	indexDbBatchMaxWait := 5 * time.Second
-	compression := index.SnappyCompression
-	logRequests := false
-	readOnly := false
-	pathPrefix := ""
 
-	cmd.Flags().IntP("port", "p", port, "server port")
-	cmd.Flags().String("proxy-url", "", "url to a gowarc server proxy that will be used to resolve records")
-	cmd.Flags().String("path-prefix", pathPrefix, "prefix for all server endpoints")
-	cmd.Flags().StringSlice("include", nil, "only include files matching these regular expressions")
-	cmd.Flags().StringSlice("exclude", nil, "exclude files matching these regular expressions")
-	cmd.Flags().BoolP("index", "a", enableIndexing, "enable indexing")
-	cmd.Flags().IntP("max-depth", "w", indexDepth, "maximum directory recursion depth")
-	cmd.Flags().Int("workers", indexWorkers, "number of index workers")
-	cmd.Flags().StringSlice("dirs", nil, "directories to search for warc files in")
-	cmd.Flags().Bool("watch", watch, "watch files for changes")
-	cmd.Flags().String("db-dir", indexDbDir, "path to index database")
-	cmd.Flags().Int("db-batch-max-size", indexDbBatchMaxSize, "max transaction batch size in badger")
-	cmd.Flags().Bool("db-read-only", readOnly, "set database to read only")
-	cmd.Flags().Duration("db-batch-max-wait", indexDbBatchMaxWait, "max wait time before flushing batched records")
-	cmd.Flags().String("compression", compression, "database compression type: 'none', 'snappy' or 'zstd'")
-	cmd.Flags().Bool("log-requests", logRequests, "log http requests")
+	// server options
+	cmd.Flags().IntP("port", "p", 9999, "server port")
+	cmd.Flags().String("path-prefix", "", "path prefix for all server endpoints")
+	cmd.Flags().Bool("log-requests", false, "log incoming http requests")
+
+	// index options
+	cmd.Flags().StringP("index-source", "s", "file", `index source: "file" or "kafka"`)
+	cmd.Flags().StringP("index-format", "o", "badger", `index format: "badger", "tikv"`)
+	cmd.Flags().StringSlice("index-include", nil, "only include files matching these regular expressions")
+	cmd.Flags().StringSlice("index-exclude", nil, "exclude files matching these regular expressions")
+	cmd.Flags().Int("index-workers", 8, "number of index workers")
+
+	// auto indexer options
+	cmd.Flags().StringSlice("file-paths", []string{"./testdata"}, "list of paths to warc files or directories containing warc files")
+	cmd.Flags().Int("file-max-depth", 4, "maximum directory recursion depth")
+
+	// kafka indexer options
+	cmd.Flags().StringSlice("kafka-brokers", nil, "the list of broker addresses used to connect to the kafka cluster")
+	cmd.Flags().String("kafka-group-id", "", "optional consumer group id")
+	cmd.Flags().String("kafka-topic", "", "the topic to read messages from")
+	cmd.Flags().Int("kafka-min-bytes", 0, "indicates to the broker the minimum batch size that the consumer will accept")
+	cmd.Flags().Int("kafka-max-bytes", 0, "indicates to the broker the maximum batch size that the consumer will accept")
+	cmd.Flags().Duration("kafka-max-wait", 0, "maximum amount of time to wait for new data to come when fetching batches of messages from kafka")
+
+	// badger options
+	cmd.Flags().String("badger-dir", "./warcdb", "path to index database")
+	cmd.Flags().String("badger-database", "", "name of badger database")
+	cmd.Flags().Int("badger-batch-max-size", 1000, "max transaction batch size in badger")
+	cmd.Flags().Duration("badger-batch-max-wait", 5*time.Second, "max wait time before flushing batched records")
+	cmd.Flags().String("badger-compression", "snappy", "compression algorithm")
+
+	// tikv options
+	cmd.Flags().StringSlice("tikv-pd-addr", nil, "host:port of TiKV placement driver")
+	cmd.Flags().Int("tikv-batch-max-size", 1000, "max transaction batch size")
+	cmd.Flags().Duration("tikv-batch-max-wait", 5*time.Second, "max wait time before flushing batched records regardless of max batch size")
+	cmd.Flags().String("tikv-database", "", "name of tikv database")
 
 	return cmd
 }
 
-func serveCmd(cmd *cobra.Command, args []string) error {
-	// collect paths from args or flag
-	var dirs []string
-	if len(args) > 0 {
-		dirs = append(dirs, args...)
-	} else {
-		dirs = viper.GetStringSlice("dirs")
-	}
-	// parse database compression type
-	var c options.CompressionType
-	if err := viper.UnmarshalKey("compression", &c, viper.DecodeHook(index.CompressionDecodeHookFunc())); err != nil {
-		return err
-	}
+func serveCmd(_ *cobra.Command, _ []string) error {
 	// parse include patterns
 	var includes []*regexp.Regexp
-	for _, r := range viper.GetStringSlice("include") {
+	for _, r := range viper.GetStringSlice("index-include") {
 		if re, err := regexp.Compile(r); err != nil {
 			return fmt.Errorf("%s: %w", r, err)
 		} else {
@@ -114,68 +107,121 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 	}
 	// parse exclude patterns
 	var excludes []*regexp.Regexp
-	for _, r := range viper.GetStringSlice("exclude") {
+	for _, r := range viper.GetStringSlice("index-exclude") {
 		if re, err := regexp.Compile(r); err != nil {
 			return fmt.Errorf("%s: %w", r, err)
 		} else {
 			excludes = append(excludes, re)
 		}
 	}
-	// parse proxy url
-	var proxyUrl *url.URL
-	proxyStr := viper.GetString("proxy-url")
-	if proxyStr != "" {
-		var err error
-		proxyUrl, err = url.Parse(proxyStr)
-		if err != nil {
+
+	var writer index.RecordWriter
+	var fileApi index.FileAPI
+	var cdxApi index.CdxAPI
+	var idApi index.IdAPI
+	var storageRefResolver loader.StorageRefResolver
+	var filePathResolver loader.FilePathResolver
+
+	indexFormat := viper.GetString("index-format")
+	switch indexFormat {
+	case "badger":
+		// Increase GOMAXPROCS as recommended by badger
+		// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
+		runtime.GOMAXPROCS(128)
+
+		// parse badger compression type
+		var c options.CompressionType
+		if err := viper.UnmarshalKey("badger-compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
 			return err
 		}
-	}
-	// create index database
-	db, err := index.NewDB(
-		index.WithCompression(c),
-		index.WithDir(viper.GetString("db-dir")),
-		index.WithBatchMaxSize(viper.GetInt("db-batch-max-size")),
-		index.WithBatchMaxWait(viper.GetDuration("db-batch-max-wait")),
-		index.WithReadOnly(viper.GetBool("db-read-only")),
-	)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	// optionally start autoindexer
-	if viper.GetBool("index") {
-		log.Info().Msg("Starting auto indexer")
 
-		indexWorker := index.Worker(db, viper.GetInt("workers"))
-		defer indexWorker.Close()
-
-		indexer, err := index.NewAutoIndexer(indexWorker,
-			index.WithWatch(viper.GetBool("watch")),
-			index.WithMaxDepth(viper.GetInt("max-depth")),
-			index.WithIncludes(includes...),
-			index.WithExcludes(excludes...),
+		db, err := badgeridx.NewDB(
+			badgeridx.WithCompression(c),
+			badgeridx.WithDir(viper.GetString("badger-dir")),
+			badgeridx.WithBatchMaxSize(viper.GetInt("badger-batch-max-size")),
+			badgeridx.WithBatchMaxWait(viper.GetDuration("badger-batch-max-wait")),
+			badgeridx.WithReadOnly(viper.GetString("index-source") == ""),
+			badgeridx.WithDatabase(viper.GetString("badger-database")),
 		)
 		if err != nil {
 			return err
 		}
-		defer indexer.Close()
-
-		for _, dir := range dirs {
-			dir := dir
-			go func() {
-				if err := indexer.Index(dir); err != nil {
-					log.Warn().Msgf(`Error indexing "%s": %v`, dir, err)
-				}
-			}()
+		defer db.Close()
+		writer = db
+		storageRefResolver = db
+		filePathResolver = db
+		cdxApi = db
+		fileApi = db
+		idApi = db
+	case "tikv":
+		db, err := tikvidx.NewDB(
+			tikvidx.WithPDAddress(viper.GetStringSlice("tikv-pd-addr")),
+			tikvidx.WithBatchMaxSize(viper.GetInt("tikv-batch-max-size")),
+			tikvidx.WithBatchMaxWait(viper.GetDuration("tikv-batch-max-wait")),
+			tikvidx.WithDatabase(viper.GetString("tikv-database")),
+			tikvidx.WithReadOnly(viper.GetString("index-source") == ""),
+		)
+		if err != nil {
+			return err
 		}
+		defer db.Close()
+		writer = db
+		storageRefResolver = db
+		filePathResolver = db
+		cdxApi = db
+		fileApi = db
+		idApi = db
+	default:
+		return fmt.Errorf("unknown index format: %s", indexFormat)
 	}
+
+	ctx, cancelIndexer := context.WithCancel(context.Background())
+	defer cancelIndexer()
+
+	indexSource := viper.GetString("index-source")
+	if indexSource != "" {
+		indexer := index.NewIndexer(writer,
+			index.WithIncludes(includes...),
+			index.WithExcludes(excludes...),
+		)
+		queue := index.NewWorkQueue(indexer,
+			viper.GetInt("index-workers"),
+		)
+		defer queue.Close()
+
+		var runner index.Runner
+		switch indexSource {
+		case "file":
+			runner = index.NewAutoIndexer(queue,
+				index.WithMaxDepth(viper.GetInt("file-max-depth")),
+				index.WithPaths(viper.GetStringSlice("file-paths")),
+			)
+		case "kafka":
+			runner = index.NewKafkaIndexer(queue,
+				index.WithBrokers(viper.GetStringSlice("kafka-brokers")),
+				index.WithGroupID(viper.GetString("kafka-group-id")),
+				index.WithTopic(viper.GetString("kafka-topic")),
+				index.WithMinBytes(viper.GetInt("kafka-min-bytes")),
+				index.WithMaxBytes(viper.GetInt("kafka-max-bytes")),
+				index.WithMaxWait(viper.GetDuration("kafka-max-wait")),
+			)
+		default:
+			return fmt.Errorf("unknown index source: %s", indexSource)
+		}
+		go func() {
+			log.Info().Msg("Starting indexer")
+			err := runner.Run(ctx)
+			if err != nil {
+				log.Error().Err(err).Msg("Indexer has stopped")
+			}
+		}()
+
+	}
+
 	// create record loader
 	l := &loader.Loader{
-		StorageRefResolver: db,
-		RecordLoader:       &loader.FileStorageLoader{FilePathResolver: db},
-		NoUnpack:           false,
-		ProxyUrl:           proxyUrl,
+		StorageRefResolver: storageRefResolver,
+		FileStorageLoader:  loader.FileStorageLoader{FilePathResolver: filePathResolver},
 	}
 	// middleware chain
 	mw := func(h http.Handler) http.Handler {
@@ -188,14 +234,55 @@ func serveCmd(cmd *cobra.Command, args []string) error {
 		}
 	}
 	// create http router
-	r := httprouter.New()
+	handler := httprouter.New()
 	// register routes
 	pathPrefix := viper.GetString("path-prefix")
-	warcserver.Register(r, mw, pathPrefix+"/warcserver", l, db)
-	coreserver.Register(r, mw, pathPrefix, l, db)
-	// start server
-	if err := server.Serve(viper.GetInt("port"), r); !errors.Is(err, http.ErrServerClosed) {
-		return err
+
+	// register warcserver API
+	warcserver.Register(warcserver.Handler{
+		CdxAPI:     cdxApi,
+		FileAPI:    fileApi,
+		IdAPI:      idApi,
+		WarcLoader: l,
+	}, handler, mw, pathPrefix+"/warcserver")
+
+	// register core API
+	coreserver.Register(coreserver.Handler{
+		CdxAPI:             cdxApi,
+		FileAPI:            fileApi,
+		IdAPI:              idApi,
+		StorageRefResolver: storageRefResolver,
+		WarcLoader:         l,
+	}, handler, mw, pathPrefix)
+
+	port := viper.GetInt("port")
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: handler,
 	}
-	return nil
+
+	go func() {
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+		sig := <-sigs
+		log.Info().Msgf("Received %s signal, shutting down...", sig)
+
+		cancelIndexer()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err := httpServer.Shutdown(ctx)
+		if err != nil {
+			log.Error().Msgf("Failed to shut down server: %v", err)
+		}
+	}()
+
+	log.Info().Msgf("Starting server at :%v", port)
+
+	err := httpServer.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }

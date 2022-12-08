@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 National Library of Norway.
+ * Copyright 2020 National Library of Norway.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,16 @@
  * limitations under the License.
  */
 
-package version
+package warcserver
 
 import (
-	"fmt"
+	"net/http"
 
-	"github.com/spf13/cobra"
+	"github.com/julienschmidt/httprouter"
 )
 
-var Version string
-
-func NewCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print version",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println(Version)
-		},
-	}
+func Register(h Handler, r *httprouter.Router, mw func(http.Handler) http.Handler, pathPrefix string) {
+	// https://pywb.readthedocs.io/en/latest/manual/warcserver.html#warcserver-api
+	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(h.index)))
+	r.Handler("GET", pathPrefix+"/web/:timestamp/*url", mw(http.HandlerFunc(h.resource)))
 }

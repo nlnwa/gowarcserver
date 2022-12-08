@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 National Library of Norway.
+ * Copyright 2020 National Library of Norway.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,31 @@
  * limitations under the License.
  */
 
-package version
+package api
 
 import (
-	"fmt"
-
-	"github.com/spf13/cobra"
+	"strings"
 )
 
-var Version string
-
-func NewCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print version",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println(Version)
-		},
+func MatchType(ssurt string, matchType string) string {
+	switch matchType {
+	case MatchTypeExact:
+		return ssurt + " "
+	case MatchTypePrefix:
+		i := strings.IndexAny(ssurt, "?#")
+		if i > 0 {
+			return ssurt[:i]
+		}
+	case MatchTypeHost:
+		i := strings.Index(ssurt, "//")
+		if i > 0 {
+			return ssurt[:i+2]
+		}
+	case MatchTypeDomain:
+		i := strings.Index(ssurt, "//")
+		if i > 0 {
+			return ssurt[:i]
+		}
 	}
+	return ssurt
 }
