@@ -116,67 +116,65 @@ func (db *DB) Closest(_ context.Context, search index.ClosestRequest, results ch
 			// check if we got a literal match on forward seek key (fast path)
 			if forward.ValidForPrefix(fk) {
 				cdx, err := cdxFromItem(forward.Item())
-				if err != nil {
-					results <- index.CdxResponse{Error: err}
-				} else {
-					results <- index.CdxResponse{Cdx: cdx, Error: err}
+				if err == nil {
+					results <- index.CdxResponse{Cdx: cdx}
 					return nil
 				}
-				// if we got a error on cdx parsing, we migth as well try to find another result
+				// report error and move iterator forward
+				results <- index.CdxResponse{Error: err}
+				forward.Next()
 			}
 
-			// no literal match; iterate forward and backward to find next closest (slow path)
-
-			// iterate forward
-			forward.Next()
-			// and backward
 			opts.Reverse = true
 			backward := txn.NewIterator(opts)
 			defer backward.Close()
 			backward.Seek(bk)
 
-			var ft int64
-			var bt int64
 			t, _ := timestamp.Parse(closest)
 			cl := t.Unix()
 
-			// get forward ts
-			if forward.ValidForPrefix(prefix) {
-				t, _ = timestamp.Parse(cdxKey(forward.Item().Key()).ts())
-				ft = t.Unix()
-			}
-			// get backward ts
-			backward.Seek(bk)
-			if backward.ValidForPrefix(prefix) {
-				t, _ = timestamp.Parse(cdxKey(backward.Item().Key()).ts())
-				bt = t.Unix()
-			}
+			for {
+				var ft int64
+				var bt int64
 
-			var item *badger.Item
-
-			if ft != 0 && bt != 0 {
-				// find closest of forward and backward
-				isForward := timestamp.AbsInt64(cl-ft) < timestamp.AbsInt64(cl-bt)
-				if isForward {
-					item = forward.Item()
-				} else {
-					item = backward.Item()
+				// get forward ts
+				if forward.ValidForPrefix(prefix) {
+					t, _ = timestamp.Parse(cdxKey(forward.Item().Key()).ts())
+					ft = t.Unix()
 				}
-			} else if ft != 0 {
-				item = forward.Item()
-			} else if bt != 0 {
-				item = backward.Item()
-			} else {
-				// found nothing
-				return nil
-			}
-			cdx, err := cdxFromItem(item)
-			if err != nil {
+				// get backward ts
+				if backward.ValidForPrefix(prefix) {
+					t, _ = timestamp.Parse(cdxKey(backward.Item().Key()).ts())
+					bt = t.Unix()
+				}
+
+				var iter *badger.Iterator
+
+				if ft != 0 && bt != 0 {
+					// find closest of forward and backward
+					isForward := timestamp.AbsInt64(cl-ft) < timestamp.AbsInt64(cl-bt)
+					if isForward {
+						iter = forward
+					} else {
+						iter = backward
+					}
+				} else if ft != 0 {
+					iter = forward
+				} else if bt != 0 {
+					iter = backward
+				} else {
+					// found nothing
+					return nil
+				}
+				cdx, err := cdxFromItem(iter.Item())
+				if err == nil {
+					results <- index.CdxResponse{Cdx: cdx}
+					return nil
+				}
+				// report error and move iterator forward
 				results <- index.CdxResponse{Error: err}
-			} else {
-				results <- index.CdxResponse{Cdx: cdx, Error: nil}
+				iter.Next()
 			}
-			return nil
 		})
 	}()
 	return nil
@@ -187,16 +185,16 @@ func (db *DB) Search(ctx context.Context, search index.SearchRequest, results ch
 
 	if keyLen == 0 {
 		return errors.New("search request is missing keys")
-	} else if keyLen > 1 {
-		if search.Sort() == index.SortNone {
-			return db.unsortedSerialSearch(ctx, search, results)
-		}
-		return db.sortedParallelSearch(ctx, search, results)
-	} else {
+	} else if keyLen == 1 {
 		if search.Sort() == index.SortClosest {
 			return db.closestUniSearch(ctx, search, results)
 		}
 		return db.uniSearch(ctx, search, results)
+	} else {
+		if search.Sort() == index.SortNone {
+			return db.unsortedSerialSearch(ctx, search, results)
+		}
+		return db.sortedParallelSearch(ctx, search, results)
 	}
 }
 
