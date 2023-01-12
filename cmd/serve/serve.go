@@ -221,7 +221,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 	// create record loader
 	l := &loader.Loader{
 		StorageRefResolver: storageRefResolver,
-		FileStorageLoader:  loader.FileStorageLoader{FilePathResolver: filePathResolver},
+		RecordLoader:       loader.FileStorageLoader{FilePathResolver: filePathResolver},
 	}
 	// middleware chain
 	mw := func(h http.Handler) http.Handler {
