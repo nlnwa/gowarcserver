@@ -334,10 +334,10 @@ func mergeIter(done <-chan struct{}, cmp func(KV, KV) bool, in ...chan *maybeKV)
 			}
 			// if zombie, then kill
 			if len(zombie) > 0 {
-				for _, i := range zombie {
-					cords[i] = cords[len(cords)-1]
+				for _, z := range zombie {
+					cords[z] = cords[len(cords)-1]
 					cords = cords[:len(cords)-1]
-					in[i] = in[len(in)-1]
+					in[z] = in[len(in)-1]
 					in = in[:len(in)-1]
 				}
 				zombie = nil
