@@ -53,7 +53,7 @@ kafka-max-bytes: 0
 kafka-max-wait: 0
 
 # path to badger database
-badger-dir: ./badger
+badger-dir: ./warcdb
 # run badger read-only
 badger-read-only: false
 # max transaction batch size
