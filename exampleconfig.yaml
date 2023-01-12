@@ -1,7 +1,7 @@
 # GLOBAL
 
 log-level: "debug"
-log-formatter: "log-fmt"
+log-formatter: "logfmt"
 log-method: false
 
 # SERVER
