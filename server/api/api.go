@@ -140,12 +140,28 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 	// currently the "cdx" does not accept collection as a query or param
 	coreApi.Collection = "all"
 
+	matchType := query.Get("matchType")
+	if matchType != "" {
+		if !contains(matchTypes, matchType) {
+			return nil, fmt.Errorf("matchType must be one of %v, was: %s", matchTypes, matchType)
+		}
+		coreApi.MatchType = matchType
+	} else {
+		// Default to exact
+		coreApi.MatchType = MatchTypeExact
+	}
+
 	urls := query["url"]
 	if len(urls) == 1 && !schemeRegExp.MatchString(urls[0]) {
 		u := urls[0]
+		// Add http scheme
 		urls = []string{
 			"http://" + u,
-			"https://" + u,
+		}
+		// Add https scheme only for exact match to get results for both http/https
+		// If match type is prefix, domain or host the scheme part will be stripped so no need.
+		if coreApi.MatchType == MatchTypeExact {
+			urls = append(urls, "https://"+u)
 		}
 	}
 	for _, urlStr := range urls {
@@ -158,17 +174,6 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 
 	if coreApi.FromTo, err = NewDateRange(query.Get("from"), query.Get("to")); err != nil {
 		return nil, err
-	}
-
-	matchType := query.Get("matchType")
-	if matchType != "" {
-		if !contains(matchTypes, matchType) {
-			return nil, fmt.Errorf("matchType must be one of %v, was: %s", matchTypes, matchType)
-		}
-		coreApi.MatchType = matchType
-	} else {
-		// Default to exact
-		coreApi.MatchType = MatchTypeExact
 	}
 
 	limit := query.Get("limit")
