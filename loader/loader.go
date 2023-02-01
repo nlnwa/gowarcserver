@@ -40,7 +40,7 @@ type WarcLoader interface {
 
 type Loader struct {
 	StorageRefResolver
-	FileStorageLoader
+	RecordLoader
 	NoUnpack bool
 }
 
@@ -67,7 +67,7 @@ func (l *Loader) LoadById(ctx context.Context, warcId string) (gowarc.WarcRecord
 }
 
 func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowarc.WarcRecord, error) {
-	record, err := l.FileStorageLoader.Load(ctx, storageRef)
+	record, err := l.RecordLoader.Load(ctx, storageRef)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowar
 		if err != nil {
 			return nil, fmt.Errorf("unable to resolve referred Warc-Record-ID [%s]: %w", warcRefersTo, err)
 		}
-		revisitOf, err = l.FileStorageLoader.Load(ctx, storageRef)
+		revisitOf, err = l.RecordLoader.Load(ctx, storageRef)
 		if err != nil {
 			return nil, err
 		}
