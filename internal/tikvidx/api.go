@@ -21,11 +21,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rs/zerolog/log"
-	"github.com/tikv/client-go/v2/rawkv"
-
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/tikv/client-go/v2/rawkv"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -165,11 +163,9 @@ func (db *DB) ListFileInfo(ctx context.Context, limit int, res chan<- index.File
 			if err != nil {
 				res <- index.FileResponse{Error: err}
 			} else {
-				log.Info().Msgf("GOOD: %s", fileInfo.Name)
 				res <- index.FileResponse{Fileinfo: fileInfo}
 			}
 		}
-		log.Info().Msg("Hvordor kommer vi kkke hit")
 	}()
 
 	return nil
