@@ -56,24 +56,18 @@ func (k cdxKey) ts() string {
 	return strings.Split(string(k), " ")[1]
 }
 
-// tikv does not (yet) have a notion of keyspace, so we use key prefixes
 var (
+	dbPrefix   = "d"
 	idPrefix   = "i"
-	idEOF      = "j"
 	filePrefix = "f"
-	fileEOF    = "g"
 	cdxPrefix  = "c"
-	cdxEOF     = "d"
 )
 
 type DB struct {
 	client *rawkv.Client
-
-	batch chan index.Record
-
-	done chan struct{}
-
-	wg sync.WaitGroup
+	batch  chan index.Record
+	done   chan struct{}
+	wg     sync.WaitGroup
 }
 
 func NewDB(options ...Option) (db *DB, err error) {
@@ -81,13 +75,12 @@ func NewDB(options ...Option) (db *DB, err error) {
 	for _, opt := range options {
 		opt(opts)
 	}
+	dbName := dbPrefix + opts.Database
+
 	// prefix all keys with name of database
-	idPrefix = opts.Database + idPrefix
-	idEOF = opts.Database + idEOF
-	filePrefix = opts.Database + filePrefix
-	fileEOF = opts.Database + fileEOF
-	cdxPrefix = opts.Database + cdxPrefix
-	cdxEOF = opts.Database + cdxEOF
+	idPrefix = dbName + idPrefix
+	filePrefix = dbName + filePrefix
+	cdxPrefix = dbName + cdxPrefix
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -188,12 +181,11 @@ func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
 	v, err := proto.Marshal(fi)
 	if err != nil {
 		log.Error().Err(err).Msg("")
-
 		return err
 	}
 	err = db.client.Put(ctx, k, v)
 	if err != nil {
-		log.Error().Err(err).Msg("")
+		log.Error().Err(err).Msgf("Failed to put file info: %s", fi.Name)
 		return err
 	}
 	return nil

@@ -38,10 +38,10 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	count := 0
 	defer func() {
-		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
+		log.Debug().Str("request", fmt.Sprintf("%+v", coreAPI)).Msgf("Found %d items in %s", count, time.Since(start))
 	}()
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
 	response := make(chan index.CdxResponse)
@@ -86,7 +86,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancelQuery := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancelQuery := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancelQuery()
 
 	// query API

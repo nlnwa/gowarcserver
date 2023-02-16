@@ -20,7 +20,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/nlnwa/gowarcserver/server/api"
 	"github.com/tikv/client-go/v2/rawkv"
 
 	"github.com/nlnwa/gowarcserver/index"
@@ -53,25 +52,28 @@ type iterator interface {
 }
 
 type closestScanner struct {
-	fKeys, bKeys     [][]byte
-	fValues, bValues [][]byte
-	fIndex, bIndex   int
-	cmp              func(int64, int64) bool
+	fKeys, fValues [][]byte
+	bKeys, bValues [][]byte
+	fIndex, bIndex int
+	cmp            func(int64, int64) bool
 }
 
 const startDate = "19700101000000"
 const endbyte = "\xff"
 
-func scanClosest(ctx context.Context, client *rawkv.Client, key string, closest string, options ...rawkv.RawOption) ([][]byte, [][]byte, error) {
+func scanClosest(client *rawkv.Client, ctx context.Context, key string, closest string, limit int, options ...rawkv.RawOption) ([][]byte, [][]byte, error) {
 	ic := new(closestScanner)
 	if t, err := time.Parse(timestamp.CDX, closest); err != nil {
 		return nil, nil, err
 	} else {
 		ic.cmp = CompareClosest(t.Unix())
 	}
+	startKey := []byte(cdxPrefix + key + closest)
 
-	startKey := []byte(cdxPrefix + key + " " + closest)
-	limit := 10
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
+		limit = rawkv.MaxRawKVScanLimit
+	}
+
 	var err error
 
 	ic.fKeys, ic.fValues, err = client.Scan(ctx, startKey, []byte(cdxPrefix+key+endbyte), limit, options...)
@@ -80,7 +82,7 @@ func scanClosest(ctx context.Context, client *rawkv.Client, key string, closest 
 	}
 
 	// scan backward
-	ic.bKeys, ic.bValues, err = client.ReverseScan(ctx, startKey, []byte(cdxPrefix+key+" "+startDate), limit, options...)
+	ic.bKeys, ic.bValues, err = client.ReverseScan(ctx, startKey, []byte(cdxPrefix+key+startDate), limit, options...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -113,33 +115,24 @@ func (cs *closestScanner) next() ([]byte, []byte, bool) {
 		bt = bts.Unix()
 	}
 
-	var itKeys [][]byte
-	var itValues [][]byte
-	var i *int
+	var isForward bool
 	if ft != 0 && bt != 0 {
 		// find closest of forward and backward
-		isForward := cs.cmp(ft, bt)
-		if isForward {
-			itKeys = cs.fKeys
-			i = &cs.fIndex
-		} else {
-			itKeys = cs.bKeys
-			i = &cs.bIndex
-		}
+		isForward = cs.cmp(ft, bt)
 	} else if ft != 0 {
-		itKeys = cs.fKeys
-		i = &cs.fIndex
+		isForward = true
 	} else if bt != 0 {
-		itKeys = cs.bKeys
-		i = &cs.bIndex
+		isForward = false
 	} else {
 		return nil, nil, false
 	}
-	key := itKeys[*i]
-	value := itValues[*i]
-	*i++
-
-	return key, value, true
+	if isForward {
+		defer func() { cs.fIndex++ }()
+		return cs.fKeys[cs.fIndex], cs.fValues[cs.fIndex], true
+	} else {
+		defer func() { cs.bIndex++ }()
+		return cs.bKeys[cs.bIndex], cs.bValues[cs.bIndex], true
+	}
 }
 
 type maybeKV struct {
@@ -153,11 +146,17 @@ func getComparator(req index.SearchRequest) (comparator, error) {
 		return func(a KV, b KV) bool {
 			return CompareDesc(a.ts(), b.ts())
 		}, nil
+	case index.SortClosest:
+		if t, err := time.Parse(timestamp.CDX, req.Closest()); err != nil {
+			return nil, err
+		} else {
+			return func(a KV, b KV) bool {
+				return CompareClosest(t.Unix())(a.ts(), b.ts())
+			}, nil
+		}
 	case index.SortAsc:
 		fallthrough
 	case index.SortNone:
-		fallthrough
-	case index.SortClosest:
 		fallthrough
 	default:
 		return func(a KV, b KV) bool {
@@ -166,7 +165,7 @@ func getComparator(req index.SearchRequest) (comparator, error) {
 	}
 }
 
-type scan func(context.Context, []byte, []byte, int, ...rawkv.RawOption) ([][]byte, [][]byte, error)
+type scan func([]byte) ([][]byte, [][]byte, error)
 
 type iter struct {
 	key   []byte
@@ -176,39 +175,35 @@ type iter struct {
 }
 
 func newIter(ctx context.Context, client *rawkv.Client, req index.SearchRequest) (iterator, error) {
+	limit := req.Limit()
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
+		limit = rawkv.MaxRawKVScanLimit
+	}
+
 	cmp, err := getComparator(req)
 	if err != nil {
 		return nil, err
 	}
 
-	getScanner := func(sort index.Sort) scan {
+	getScanner := func(sort index.Sort, i int) scan {
 		switch sort {
 		case index.SortDesc:
-			if len(req.Keys()) == 1 {
-				return client.ReverseScan
-			} else {
-				return client.Scan
+			return func(key []byte) ([][]byte, [][]byte, error) {
+				return client.ReverseScan(ctx, append(key, 0xff), key, limit)
+			}
+		case index.SortClosest:
+			return func(key []byte) ([][]byte, [][]byte, error) {
+				return scanClosest(client, ctx, req.Keys()[i], req.Closest(), limit)
 			}
 		case index.SortAsc:
 			fallthrough
 		case index.SortNone:
 			fallthrough
-		case index.SortClosest:
-			fallthrough
 		default:
-			return client.Scan
+			return func(key []byte) ([][]byte, [][]byte, error) {
+				return client.Scan(ctx, key, append(key, 0xff), limit)
+			}
 		}
-	}
-
-	makeStartKey := func(endKey []byte) []byte {
-		return append([]byte(api.MatchType(string(endKey), req.MatchType())), 0)
-	}
-
-	makeEndkey := func(startKey []byte) []byte {
-		endKey := make([]byte, len(startKey)+1)
-		copy(endKey, startKey)
-		endKey[len(endKey)-1] = 0xff
-		return endKey
 	}
 
 	var results []chan *maybeKV
@@ -217,32 +212,23 @@ func newIter(ctx context.Context, client *rawkv.Client, req index.SearchRequest)
 
 		go func(scan scan, key []byte, ch chan<- *maybeKV, done <-chan struct{}) {
 			defer close(ch)
-			scanLimit := 256
-			startKey := key
-			endKey := makeEndkey(startKey)
-			for {
-				keys, values, err := scan(ctx, startKey, endKey, scanLimit)
-				if err != nil {
-					select {
-					case <-done:
-						return
-					case ch <- &maybeKV{error: err}:
-						return
-					}
-				}
-				for j, k := range keys {
-					select {
-					case <-done:
-						return
-					case ch <- &maybeKV{kv: KV{K: k, V: values[j]}}:
-					}
-				}
-				if len(keys) < scanLimit {
+			keys, values, err := scan(key)
+			if err != nil {
+				select {
+				case <-done:
+					return
+				case ch <- &maybeKV{error: err}:
 					return
 				}
-				startKey = makeStartKey(keys[len(keys)-1])
 			}
-		}(getScanner(req.Sort()), []byte(cdxPrefix+key), results[i], ctx.Done())
+			for j, k := range keys {
+				select {
+				case <-done:
+					return
+				case ch <- &maybeKV{kv: KV{K: k, V: values[j]}}:
+				}
+			}
+		}(getScanner(req.Sort(), i), []byte(cdxPrefix+key), results[i], ctx.Done())
 	}
 
 	is := new(iter)
@@ -286,10 +272,6 @@ func (is *iter) Close() {
 }
 
 // mergeIter merges sorted input channels into a sorted output channel
-//
-// Sorting is done by comparing keys from key-value pairs.
-//
-// The input channels are closed externally
 func mergeIter(done <-chan struct{}, cmp func(KV, KV) bool, in ...chan *maybeKV) <-chan maybeKV {
 	out := make(chan maybeKV)
 	cords := make([]*maybeKV, len(in))
@@ -317,9 +299,7 @@ func mergeIter(done <-chan struct{}, cmp func(KV, KV) bool, in ...chan *maybeKV)
 					curr = i
 					break
 				}
-				if curr == -1 {
-					curr = i
-				} else if cmp(cords[i].kv, cord.kv) {
+				if curr == -1 || cmp(cord.kv, cords[curr].kv) {
 					curr = i
 				}
 			}
