@@ -86,6 +86,11 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
+	defer func() {
+		log.Debug().Str("request", fmt.Sprintf("%+v", closestReq)).Msgf("Fetched resource in %s", time.Since(start))
+	}()
+
 	ctx, cancelQuery := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancelQuery()
 
