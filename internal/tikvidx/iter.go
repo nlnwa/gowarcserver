@@ -89,14 +89,15 @@ func scanClosest(client *rawkv.Client, ctx context.Context, key string, closest 
 
 	var keys [][]byte
 	var values [][]byte
-	for {
+	for count := 0; count < limit; count++ {
 		k, v, valid := ic.next()
 		if !valid {
-			return keys, values, nil
+			break
 		}
 		keys = append(keys, k)
 		values = append(values, v)
 	}
+	return keys, values, nil
 }
 
 func (cs *closestScanner) next() ([]byte, []byte, bool) {
@@ -140,7 +141,7 @@ type maybeKV struct {
 	error error
 }
 
-func getComparator(req index.SearchRequest) (comparator, error) {
+func getComparator(req index.Request) (comparator, error) {
 	switch req.Sort() {
 	case index.SortDesc:
 		return func(a KV, b KV) bool {
@@ -174,7 +175,7 @@ type iter struct {
 	next  <-chan maybeKV
 }
 
-func newIter(ctx context.Context, client *rawkv.Client, req index.SearchRequest) (iterator, error) {
+func newIter(ctx context.Context, client *rawkv.Client, req index.Request) (iterator, error) {
 	limit := req.Limit()
 	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit

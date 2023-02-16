@@ -320,7 +320,7 @@ func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
 	return val, err
 }
 
-func (db *DB) listFileInfo(ctx context.Context, limit int, results chan<- index.FileResponse) error {
+func (db *DB) listFileInfo(ctx context.Context, limit int, results chan<- index.FileInfoResponse) error {
 	go func() {
 		_ = db.FileIndex.View(func(txn *badger.Txn) error {
 			opts := badger.DefaultIteratorOptions
@@ -334,7 +334,7 @@ func (db *DB) listFileInfo(ctx context.Context, limit int, results chan<- index.
 			for iter.Seek(nil); iter.Valid(); iter.Next() {
 				select {
 				case <-ctx.Done():
-					results <- index.FileResponse{Error: ctx.Err()}
+					results <- index.FileInfoResponse{Error: ctx.Err()}
 					return nil
 				default:
 				}
@@ -350,11 +350,11 @@ func (db *DB) listFileInfo(ctx context.Context, limit int, results chan<- index.
 					if err != nil {
 						return err
 					}
-					results <- index.FileResponse{Fileinfo: fileInfo, Error: nil}
+					results <- index.FileInfoResponse{Fileinfo: fileInfo, Error: nil}
 					return nil
 				})
 				if err != nil {
-					results <- index.FileResponse{Error: err}
+					results <- index.FileInfoResponse{Error: err}
 					return nil
 				}
 			}

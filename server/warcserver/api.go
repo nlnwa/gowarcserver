@@ -17,16 +17,13 @@
 package warcserver
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/server/api"
-	"github.com/nlnwa/gowarcserver/surt"
 	"github.com/nlnwa/gowarcserver/timestamp"
-	"github.com/nlnwa/whatwg-url/url"
 )
 
 type pywbJson struct {
@@ -51,7 +48,18 @@ func cdxToPywbJson(cdx *schema.Cdx) *pywbJson {
 	}
 }
 
-func parseResourceRequest(r *http.Request) (closestRequest, error) {
+func searchApi(coreAPI *api.CoreAPI) *api.SearchAPI {
+	return &api.SearchAPI{
+		CoreAPI: coreAPI,
+		FilterMap: map[string]string{
+			"status": "hsc",
+			"mime":   "mct",
+			"url":    "uri",
+		},
+	}
+}
+
+func parseResourceRequest(r *http.Request) (string, string) {
 	params := httprouter.ParamsFromContext(r.Context())
 
 	// closest parameter
@@ -74,35 +82,6 @@ func parseResourceRequest(r *http.Request) (closestRequest, error) {
 		uri += "#" + r.URL.Fragment
 	}
 
-	u, err := url.Parse(uri)
-	if err != nil {
-		return closestRequest{}, fmt.Errorf("failed to parse uri: %w", err)
-	}
-	key := api.MatchType(surt.UrlToSsurt(u), api.MatchTypeExact)
+	return closest, uri
 
-	return closestRequest{
-		rawUrl:  uri,
-		key:     key,
-		closest: closest,
-		limit:   1,
-	}, nil
-}
-
-type closestRequest struct {
-	rawUrl  string
-	key     string
-	closest string
-	limit   int
-}
-
-func (c closestRequest) Key() string {
-	return c.key
-}
-
-func (c closestRequest) Closest() string {
-	return c.closest
-}
-
-func (c closestRequest) Limit() int {
-	return c.limit
 }

@@ -148,6 +148,7 @@ func newRecord(wr gowarc.WarcRecord, filename string, offset int64, length int64
 	return
 }
 
+// Marshal is a wrapper around proto.Marshal that can handle invalid UTF-8 runes in the MIME type.
 func (r Record) Marshal() ([]byte, error) {
 	value, err := proto.Marshal(r)
 	if err != nil && strings.HasSuffix(err.Error(), "contains invalid UTF-8") {

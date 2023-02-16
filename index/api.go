@@ -38,7 +38,8 @@ const (
 	SortClosest
 )
 
-type SearchRequest interface {
+type Request interface {
+	Key() string
 	Keys() []string
 	Sort() Sort
 	DateRange() DateRange
@@ -48,15 +49,9 @@ type SearchRequest interface {
 	MatchType() string
 }
 
-type ClosestRequest interface {
-	Key() string
-	Closest() string
-	Limit() int
-}
-
 type FileAPI interface {
 	GetFileInfo(ctx context.Context, filename string) (*schema.Fileinfo, error)
-	ListFileInfo(context.Context, int, chan<- FileResponse) error
+	ListFileInfo(context.Context, int, chan<- FileInfoResponse) error
 }
 
 type IdAPI interface {
@@ -66,11 +61,11 @@ type IdAPI interface {
 
 type CdxAPI interface {
 	List(context.Context, int, chan<- CdxResponse) error
-	Search(context.Context, SearchRequest, chan<- CdxResponse) error
-	Closest(context.Context, ClosestRequest, chan<- CdxResponse) error
+	Search(context.Context, Request, chan<- CdxResponse) error
+	Closest(context.Context, Request, chan<- CdxResponse) error
 }
 
-type FileResponse struct {
+type FileInfoResponse struct {
 	*schema.Fileinfo
 	Error error
 }

@@ -29,7 +29,7 @@ func TestParse(t *testing.T) {
 			t.Error(err)
 		}
 
-		got := SearchAPI{a}.Key()
+		got := SearchAPI{CoreAPI: a}.Key()
 		want := MatchType(surt.UrlToSsurt(a.Urls[0]), MatchTypeDomain)
 		if got != want {
 			t.Errorf("Got: '%s', Want: '%s'", got, want)

@@ -90,20 +90,20 @@ func (db *DB) List(ctx context.Context, limit int, results chan<- index.CdxRespo
 }
 
 // Closest returns the first closest cdx value
-func (db *DB) Closest(_ context.Context, search index.ClosestRequest, results chan<- index.CdxResponse) error {
+func (db *DB) Closest(_ context.Context, request index.Request, results chan<- index.CdxResponse) error {
 	go func() {
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
 			defer close(results)
 
-			key := search.Key()
-			closest := search.Closest()
+			key := request.Key()
+			closest := request.Closest()
 
 			// prefix
 			prefix := []byte(key)
 			// forward seek key
-			fk := []byte(key + " " + closest)
+			fk := []byte(key + closest)
 			// backward seek key
-			bk := []byte(key + " " + closest + string(rune(0xff)))
+			bk := []byte(key + closest + string(rune(0xff)))
 
 			opts := badger.DefaultIteratorOptions
 			opts.PrefetchSize = 1
@@ -180,7 +180,7 @@ func (db *DB) Closest(_ context.Context, search index.ClosestRequest, results ch
 	return nil
 }
 
-func (db *DB) Search(ctx context.Context, search index.SearchRequest, results chan<- index.CdxResponse) error {
+func (db *DB) Search(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	keyLen := len(search.Keys())
 
 	if keyLen == 0 {
@@ -199,7 +199,7 @@ func (db *DB) Search(ctx context.Context, search index.SearchRequest, results ch
 }
 
 // unsortedParallelSearch searches the index database, sorts the results and processes each result with perCdxFunc.
-func (db *DB) sortedParallelSearch(ctx context.Context, search index.SearchRequest, results chan<- index.CdxResponse) error {
+func (db *DB) sortedParallelSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	count := 0
 	perItemFn := func(item *badger.Item) error {
 		err := item.Value(func(val []byte) error {
@@ -295,7 +295,7 @@ func (db *DB) sortedParallelSearch(ctx context.Context, search index.SearchReque
 	return nil
 }
 
-func (db *DB) unsortedSerialSearch(ctx context.Context, search index.SearchRequest, results chan<- index.CdxResponse) error {
+func (db *DB) unsortedSerialSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	go func() {
 		defer close(results)
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
@@ -390,7 +390,7 @@ func (db *DB) unsortedSerialSearch(ctx context.Context, search index.SearchReque
 	return nil
 }
 
-func (db *DB) closestUniSearch(ctx context.Context, search index.SearchRequest, results chan<- index.CdxResponse) error {
+func (db *DB) closestUniSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	// key len is guaranteed to be 1 at this point
 	key := search.Keys()[0]
 	seek := key + search.Closest()
@@ -491,7 +491,7 @@ func (db *DB) closestUniSearch(ctx context.Context, search index.SearchRequest, 
 }
 
 // uniSearch the index database and render each item with the provided renderFunc.
-func (db *DB) uniSearch(ctx context.Context, search index.SearchRequest, results chan<- index.CdxResponse) error {
+func (db *DB) uniSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	go func() {
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
 			reverse := search.Sort() == index.SortAsc
@@ -630,6 +630,6 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo,
 	return db.getFileInfo(filename)
 }
 
-func (db *DB) ListFileInfo(ctx context.Context, limit int, results chan<- index.FileResponse) error {
+func (db *DB) ListFileInfo(ctx context.Context, limit int, results chan<- index.FileInfoResponse) error {
 	return db.listFileInfo(ctx, limit, results)
 }
