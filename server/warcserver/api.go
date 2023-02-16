@@ -23,6 +23,7 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/nlnwa/gowarcserver/server/api"
 	"github.com/nlnwa/gowarcserver/surt"
 	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/nlnwa/whatwg-url/url"
@@ -77,7 +78,7 @@ func parseResourceRequest(r *http.Request) (closestRequest, error) {
 	if err != nil {
 		return closestRequest{}, fmt.Errorf("failed to parse uri: %w", err)
 	}
-	key := surt.UrlToSsurt(u)
+	key := api.MatchType(surt.UrlToSsurt(u), api.MatchTypeExact)
 
 	return closestRequest{
 		rawUrl:  uri,
