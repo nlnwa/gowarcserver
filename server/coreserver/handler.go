@@ -51,24 +51,22 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := make(chan index.CdxResponse)
+	start := time.Now()
+	count := 0
+	defer func() {
+		log.Debug().Str("request", fmt.Sprintf("%+v", coreAPI)).Msgf("Found %d items in %s", count, time.Since(start))
+	}()
+
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	if coreAPI.Limit == 0 {
-		coreAPI.Limit = 100
-	}
+	response := make(chan index.CdxResponse)
+
 	if err = h.CdxAPI.Search(ctx, api.SearchAPI{CoreAPI: coreAPI}, response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msgf("Search failed: %+v", coreAPI)
 		return
 	}
-
-	start := time.Now()
-	count := 0
-	defer func() {
-		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
-	}()
 
 	for res := range response {
 		if res.Error != nil {
@@ -90,6 +88,7 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		}
 		count++
 	}
+	_, _ = w.Write([]byte("\r\n"))
 }
 
 type storageRef struct {
@@ -146,6 +145,7 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 		}
 		count++
 	}
+	_, _ = w.Write([]byte("\r\n"))
 }
 
 func (h Handler) getStorageRefByURN(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +204,7 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		count++
 	}
+	_, _ = w.Write([]byte("\r\n"))
 }
 
 func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
@@ -263,6 +264,7 @@ func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
 		}
 		count++
 	}
+	_, _ = w.Write([]byte("\r\n"))
 }
 
 func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
