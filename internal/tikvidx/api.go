@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rs/zerolog/log"
 	"github.com/tikv/client-go/v2/rawkv"
 
 	"github.com/nlnwa/gowarcserver/index"
@@ -31,7 +30,7 @@ import (
 
 // Closest returns the first closest cdx value(s).
 func (db *DB) Closest(ctx context.Context, req index.ClosestRequest, res chan<- index.CdxResponse) error {
-	_, values, err := scanClosest(ctx, db.client, req.Key(), req.Closest())
+	_, values, err := scanClosest(db.client, ctx, req.Key(), req.Closest(), req.Limit())
 	if err != nil {
 		return err
 	}
@@ -73,9 +72,9 @@ func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- in
 		defer close(res)
 		defer it.Close()
 
-		limit := req.Limit()
+		count := 0
 
-		for it.Valid() && limit > 0 {
+		for it.Valid() && (req.Limit() == 0 || count < req.Limit()) {
 			select {
 			case <-ctx.Done():
 				return
@@ -98,6 +97,7 @@ func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- in
 				}
 				if req.Filter().Eval(cdx) {
 					res <- index.CdxResponse{Cdx: cdx}
+					count++
 				}
 			}()
 			if err := it.Next(); err != nil {
@@ -113,7 +113,7 @@ func (db *DB) List(ctx context.Context, limit int, res chan<- index.CdxResponse)
 	if limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
-	_, values, err := db.client.Scan(ctx, []byte(cdxPrefix), []byte(cdxEOF), limit)
+	_, values, err := db.client.Scan(ctx, []byte(cdxPrefix), []byte(cdxPrefix+"\xff"), limit)
 	if err != nil {
 		return err
 	}
@@ -147,7 +147,7 @@ func (db *DB) ListFileInfo(ctx context.Context, limit int, res chan<- index.File
 	if limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
-	_, values, err := db.client.Scan(ctx, []byte(filePrefix), []byte(fileEOF), limit)
+	_, values, err := db.client.Scan(ctx, []byte(filePrefix), []byte(filePrefix+"\xff"), limit)
 	if err != nil {
 		return err
 	}
@@ -165,18 +165,16 @@ func (db *DB) ListFileInfo(ctx context.Context, limit int, res chan<- index.File
 			if err != nil {
 				res <- index.FileResponse{Error: err}
 			} else {
-				log.Info().Msgf("GOOD: %s", fileInfo.Name)
 				res <- index.FileResponse{Fileinfo: fileInfo}
 			}
 		}
-		log.Info().Msg("Hvordor kommer vi kkke hit")
 	}()
 
 	return nil
 }
 
 func (db *DB) GetStorageRef(ctx context.Context, id string) (string, error) {
-	b, err := db.client.Get(ctx, []byte(id))
+	b, err := db.client.Get(ctx, []byte(idPrefix+id))
 	return string(b), err
 }
 
@@ -184,7 +182,7 @@ func (db *DB) ListStorageRef(ctx context.Context, limit int, res chan<- index.Id
 	if limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
-	keys, values, err := db.client.Scan(ctx, []byte(idPrefix), []byte(idEOF), limit)
+	keys, values, err := db.client.Scan(ctx, []byte(idPrefix), []byte(idPrefix+"\xff"), limit)
 	if err != nil {
 		return err
 	}
@@ -208,9 +206,7 @@ func (db *DB) ListStorageRef(ctx context.Context, limit int, res chan<- index.Id
 
 // Resolve looks up warcId in the id index of the database and returns corresponding storageRef, or an error if not found.
 func (db *DB) Resolve(ctx context.Context, warcId string) (string, error) {
-	key := []byte(idPrefix + warcId)
-
-	val, err := db.client.Get(ctx, key)
+	val, err := db.client.Get(ctx, []byte(idPrefix+warcId))
 	if err != nil {
 		return "", err
 	}
