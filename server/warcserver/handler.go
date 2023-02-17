@@ -14,7 +14,6 @@ import (
 	"github.com/nlnwa/gowarcserver/loader"
 	"github.com/nlnwa/gowarcserver/server/api"
 	"github.com/nlnwa/gowarcserver/server/handlers"
-	"github.com/nlnwa/gowarcserver/surt"
 	"github.com/nlnwa/gowarcserver/timestamp"
 	urlErrors "github.com/nlnwa/whatwg-url/errors"
 	"github.com/nlnwa/whatwg-url/url"
@@ -46,7 +45,7 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 
 	response := make(chan index.CdxResponse)
 
-	if err = h.CdxAPI.Search(ctx, api.SearchAPI{CoreAPI: coreAPI}, response); err != nil {
+	if err = h.CdxAPI.Search(ctx, searchApi(coreAPI), response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msgf("Search failed: %+v", coreAPI)
 		return
@@ -80,7 +79,13 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 
 func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	// parse API
-	closestReq, err := parseResourceRequest(r)
+	closest, uri := parseResourceRequest(r)
+	u, err := url.Parse(uri)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to parse uri '%s': %v", uri, err), http.StatusBadRequest)
+		return
+	}
+	coreApi := api.ClosestAPI(closest, u)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -88,7 +93,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 	defer func() {
-		log.Debug().Str("request", fmt.Sprintf("%+v", closestReq)).Msgf("Fetched resource in %s", time.Since(start))
+		log.Debug().Str("request", fmt.Sprintf("%+v", coreApi)).Msgf("Fetched resource in %s", time.Since(start))
 	}()
 
 	ctx, cancelQuery := context.WithTimeout(r.Context(), 10*time.Second)
@@ -96,10 +101,10 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	// query API
 	response := make(chan index.CdxResponse)
-	err = h.CdxAPI.Closest(ctx, closestReq, response)
+	err = h.CdxAPI.Closest(ctx, api.SearchAPI{CoreAPI: coreApi}, response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Error().Err(err).Msgf("Failed search closest: %+v", closestReq)
+		log.Error().Err(err).Msgf("Failed search closest: %+v", coreApi)
 		return
 	}
 
@@ -173,7 +178,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	locUrl, err := url.Parse(location)
 	if urlErrors.Code(err) == urlErrors.FailRelativeUrlWithNoBase {
-		locUrl, err = url.ParseRef(closestReq.rawUrl, location)
+		locUrl, err = url.ParseRef(coreApi.Urls[0].String(), location)
 		if err != nil {
 			err = fmt.Errorf("failed to parse relative location header as URL: %s: %s: %w", warcRecord, location, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -188,13 +193,8 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	closestReq = closestRequest{
-		key:     surt.UrlToSsurt(locUrl),
-		closest: closestReq.closest,
-		limit:   1,
-	}
 	response = make(chan index.CdxResponse)
-	err = h.Closest(ctx, closestReq, response)
+	err = h.Closest(ctx, api.SearchAPI{CoreAPI: api.ClosestAPI(closest, locUrl)}, response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to find closest redirect")
@@ -203,7 +203,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	// fields needed to rewrite the location header
 	var sts string
-	var uri string
+	var loc string
 
 	for res := range response {
 		if res.Error != nil {
@@ -211,21 +211,21 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		sts = timestamp.TimeTo14(res.GetSts().AsTime())
-		uri = res.GetUri()
+		loc = res.GetUri()
 	}
-	if uri == "" {
+	if loc == "" {
 		http.NotFound(w, r)
 		return
 	}
-	path := r.URL.Path[:strings.Index(r.URL.Path, "id_")-14] + sts + "id_/" + uri
+	path := r.URL.Path[:strings.Index(r.URL.Path, "id_")-14] + sts + "id_/" + loc
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
 	host := r.Host
-	u, err := url.Parse(scheme + "://" + host)
+	u, err = url.Parse(scheme + "://" + host)
 	if err != nil {
-		err := fmt.Errorf("failed to construct redirect location: %s: %w", uri, err)
+		err := fmt.Errorf("failed to construct redirect location: %s: %w", loc, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed load resource")
 		return

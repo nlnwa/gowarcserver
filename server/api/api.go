@@ -71,8 +71,26 @@ type CoreAPI struct {
 	Fields     []string
 }
 
+func (capi *CoreAPI) Url() *url.Url {
+	if len(capi.Urls) < 1 {
+		return nil
+	}
+	return capi.Urls[0]
+}
+
+func ClosestAPI(closest string, u *url.Url) *CoreAPI {
+	return &CoreAPI{
+		Urls:      []*url.Url{u},
+		Sort:      SortClosest,
+		Closest:   closest,
+		MatchType: MatchTypeExact,
+		Limit:     10,
+	}
+}
+
 type SearchAPI struct {
 	*CoreAPI
+	FilterMap map[string]string
 }
 
 func (c SearchAPI) Closest() string {
@@ -107,7 +125,7 @@ func (c SearchAPI) DateRange() index.DateRange {
 }
 
 func (c SearchAPI) Filter() index.Filter {
-	return ParseFilter(c.CoreAPI.Filter)
+	return ParseFilter(c.CoreAPI.Filter, c.FilterMap)
 }
 
 func (c SearchAPI) Limit() int {

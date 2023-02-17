@@ -170,7 +170,7 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	limit := parseLimit(r)
-	responses := make(chan index.FileResponse)
+	responses := make(chan index.FileInfoResponse)
 
 	if err := h.FileAPI.ListFileInfo(ctx, limit, responses); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

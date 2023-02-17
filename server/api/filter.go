@@ -43,7 +43,7 @@ func (f Filter) Eval(c *schema.Cdx) bool {
 	return true
 }
 
-func ParseFilter(filterStrings []string) Filter {
+func ParseFilter(filterStrings []string, remap map[string]string) Filter {
 	var filters Filter
 
 	for _, f := range filterStrings {
@@ -65,9 +65,15 @@ func ParseFilter(filterStrings []string) Filter {
 		}
 
 		t := strings.SplitN(f, ":", 2)
+		field := t[0]
+		if rename, ok := remap[field]; ok {
+			field = rename
+		}
+		value := t[1]
+
 		filter := filter{
-			field:       t[0],
-			filterValue: t[1],
+			field:       field,
+			filterValue: value,
 			invert:      not,
 		}
 

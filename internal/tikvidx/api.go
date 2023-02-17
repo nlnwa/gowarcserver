@@ -29,7 +29,7 @@ import (
 )
 
 // Closest returns the first closest cdx value(s).
-func (db *DB) Closest(ctx context.Context, req index.ClosestRequest, res chan<- index.CdxResponse) error {
+func (db *DB) Closest(ctx context.Context, req index.Request, res chan<- index.CdxResponse) error {
 	_, values, err := scanClosest(db.client, ctx, req.Key(), req.Closest(), req.Limit())
 	if err != nil {
 		return err
@@ -58,7 +58,7 @@ func (db *DB) Closest(ctx context.Context, req index.ClosestRequest, res chan<- 
 	return nil
 }
 
-func (db *DB) Search(ctx context.Context, req index.SearchRequest, res chan<- index.CdxResponse) error {
+func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.CdxResponse) error {
 	it, err := newIter(ctx, db.client, req)
 	if err != nil {
 		return err
@@ -143,7 +143,7 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo,
 	return db.getFileInfo(filename)
 }
 
-func (db *DB) ListFileInfo(ctx context.Context, limit int, res chan<- index.FileResponse) error {
+func (db *DB) ListFileInfo(ctx context.Context, limit int, res chan<- index.FileInfoResponse) error {
 	if limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
@@ -163,9 +163,9 @@ func (db *DB) ListFileInfo(ctx context.Context, limit int, res chan<- index.File
 			fileInfo := new(schema.Fileinfo)
 			err := proto.Unmarshal(v, fileInfo)
 			if err != nil {
-				res <- index.FileResponse{Error: err}
+				res <- index.FileInfoResponse{Error: err}
 			} else {
-				res <- index.FileResponse{Fileinfo: fileInfo}
+				res <- index.FileInfoResponse{Fileinfo: fileInfo}
 			}
 		}
 	}()
