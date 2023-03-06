@@ -77,6 +77,32 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest string) (string, error) {
+	uri, err := url.Parse(targetURI)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve revisit record: failed to parse WARC-Refers-To-Target-URI: %s: %w", targetURI, err)
+	}
+
+	response := make(chan index.CdxResponse)
+	err = h.Closest(ctx, api.SearchAPI{CoreAPI: api.ClosestAPI(closest, uri)}, response)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve revisit record: failed to get closest match: %s %s: %w", closest, uri, err)
+	}
+
+	// we are looking for the record's storage ref
+	var ref string
+
+	for res := range response {
+		if res.Error != nil {
+			log.Warn().Err(err).Msgf("error when iterating response of closest search: %s %s", targetURI, closest)
+			continue
+		}
+		ref = res.GetRef()
+	}
+
+	return ref, nil
+}
+
 func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	// parse API
 	closest, uri := parseResourceRequest(r)
@@ -124,24 +150,26 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
+	ref := res.GetRef()
+
 	// load warc record by storage ref
-	warcRecord, err := h.LoadByStorageRef(ctx, res.GetRef())
-	defer func() {
-		if warcRecord != nil {
-			_ = warcRecord.Close()
-		}
-	}()
-	if err != nil {
+	var warcRecord gowarc.WarcRecord
+	for warcRecord == nil {
+		warcRecord, err = h.LoadByStorageRef(ctx, ref)
 		var errResolveRevisit loader.ErrResolveRevisit
 		if errors.As(err, &errResolveRevisit) {
-			http.Error(w, errResolveRevisit.Error(), http.StatusNotImplemented)
-			log.Error().Err(errResolveRevisit).Msg("Failed to load record")
+			ref, err = h.resolveRevisit(ctx, errResolveRevisit.TargetURI, errResolveRevisit.Date)
+		}
+		if err != nil {
+			if warcRecord != nil {
+				_ = warcRecord.Close()
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Error().Err(err).Msgf("Failed to load record")
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Error().Err(err).Msg("Failed to load record")
-		return
 	}
+	defer warcRecord.Close()
 
 	block, ok := warcRecord.Block().(gowarc.HttpResponseBlock)
 	if !ok {
