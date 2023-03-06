@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -251,7 +252,7 @@ func set(records []index.Record, m func(index.Record) ([]byte, []byte, error)) f
 		for _, r := range records {
 			key, value, err := m(r)
 			if err != nil {
-				return fmt.Errorf("failed to set '%s'-'%s': %w", key, r, err)
+				return fmt.Errorf("failed to marshal '%s'-'%s': %w", key, r, err)
 			}
 			err = txn.Set(key, value)
 			if err != nil {
@@ -272,6 +273,12 @@ func marshalCdxKey(r index.Record) ([]byte, []byte, error) {
 	ts := timestamp.TimeTo14(r.GetSts().AsTime())
 	key := []byte(r.GetSsu() + " " + ts + " " + r.GetSrt())
 	value, err := r.Marshal()
+	if err != nil && strings.HasSuffix(err.Error(), "contains invalid UTF-8") {
+		r.Uri = index.HandleInvalidUtf8String(r.GetUri())
+		r.Ssu = index.HandleInvalidUtf8String(r.GetSsu())
+		// and retry
+		value, err = r.Marshal()
+	}
 	return key, value, err
 }
 
