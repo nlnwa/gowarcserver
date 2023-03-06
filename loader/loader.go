@@ -51,7 +51,7 @@ type ErrResolveRevisit struct {
 }
 
 func (e ErrResolveRevisit) Error() string {
-	return fmt.Sprintf("Resolving via Warc-Refers-To-Date and Warc-Refers-To-Target-URI is not implemented: %s", e.String())
+	return fmt.Sprintf("Resolving via Warc-Refers-To-Date and Warc-Refers-To-Target-URI failed: %s", e.String())
 }
 
 func (e ErrResolveRevisit) String() string {

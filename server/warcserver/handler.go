@@ -154,11 +154,16 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	// load warc record by storage ref
 	var warcRecord gowarc.WarcRecord
+	retry := true
 	for warcRecord == nil {
 		warcRecord, err = h.LoadByStorageRef(ctx, ref)
 		var errResolveRevisit loader.ErrResolveRevisit
-		if errors.As(err, &errResolveRevisit) {
-			ref, err = h.resolveRevisit(ctx, errResolveRevisit.TargetURI, errResolveRevisit.Date)
+		if errors.As(err, &errResolveRevisit) && retry {
+			var date string
+			if date, err = timestamp.To14(errResolveRevisit.Date); err == nil {
+				ref, err = h.resolveRevisit(ctx, errResolveRevisit.TargetURI, date)
+			}
+			retry = false
 		}
 		if err != nil {
 			if warcRecord != nil {
