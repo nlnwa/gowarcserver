@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"github.com/nlnwa/gowarc"
 	"github.com/rs/zerolog/log"
-	"strings"
 )
 
 type StorageRefResolver interface {
@@ -82,8 +81,7 @@ func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowar
 	case gowarc.Revisit:
 		log.Debug().Msgf("Resolving revisit  %v -> %v", record.RecordId(), record.WarcHeader().Get(gowarc.WarcRefersTo))
 		warcRefersTo := record.WarcHeader().GetId(gowarc.WarcRefersTo)
-		// hack: workaround erroneous WARC-Refers-To urn
-		if warcRefersTo == "" || strings.HasSuffix(warcRefersTo[:len(warcRefersTo)-1], "\u0000") {
+		if warcRefersTo == "" {
 			warcRefersToTargetURI := record.WarcHeader().Get(gowarc.WarcRefersToTargetURI)
 			warcRefersToDate := record.WarcHeader().Get(gowarc.WarcRefersToDate)
 			if warcRefersToTargetURI == "" {
