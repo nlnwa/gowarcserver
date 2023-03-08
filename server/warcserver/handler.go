@@ -199,7 +199,6 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
 	// handle redirect
 	location := block.HttpHeader().Get("Location")
 	if location == "" {
@@ -250,7 +249,8 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	path := r.URL.Path[:strings.Index(r.URL.Path, "id_")-14] + sts + "id_/" + loc
+	before, after, ok := strings.Cut(loc, "?")
+	path := r.URL.Path[:strings.Index(r.URL.Path, "id_")-14] + sts + "id_/" + before
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -260,11 +260,13 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := fmt.Errorf("failed to construct redirect location: %s: %w", loc, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Error().Err(err).Msg("Failed load resource")
+		log.Error().Err(err).Msg("Failed to load resource")
 		return
 	}
 	u.SetPathname(path)
-
+	if ok {
+		u.SetSearch(after)
+	}
 	handlers.RenderRedirect(w, u.String())
 }
 
