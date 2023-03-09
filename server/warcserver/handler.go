@@ -98,6 +98,7 @@ func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest s
 			continue
 		}
 		ref = res.GetRef()
+		break
 	}
 
 	return ref, nil
