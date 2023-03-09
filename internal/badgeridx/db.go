@@ -251,7 +251,7 @@ func set(records []index.Record, m func(index.Record) ([]byte, []byte, error)) f
 		for _, r := range records {
 			key, value, err := m(r)
 			if err != nil {
-				return fmt.Errorf("failed to set '%s'-'%s': %w", key, r, err)
+				return fmt.Errorf("failed to marshal '%s'-'%s': %w", key, r, err)
 			}
 			err = txn.Set(key, value)
 			if err != nil {

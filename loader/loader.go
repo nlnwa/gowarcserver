@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
 	"github.com/nlnwa/gowarc"
 	"github.com/rs/zerolog/log"
 )
@@ -51,7 +50,7 @@ type ErrResolveRevisit struct {
 }
 
 func (e ErrResolveRevisit) Error() string {
-	return fmt.Sprintf("Resolving via Warc-Refers-To-Date and Warc-Refers-To-Target-URI is not implemented: %s", e.String())
+	return fmt.Sprintf("Resolving via Warc-Refers-To-Date and Warc-Refers-To-Target-URI failed: %s", e.String())
 }
 
 func (e ErrResolveRevisit) String() string {
@@ -80,13 +79,25 @@ func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowar
 	//nolint:exhaustive
 	switch record.Type() {
 	case gowarc.Revisit:
-		log.Debug().Msgf("Resolving revisit  %v -> %v", record.RecordId(), record.WarcHeader().Get(gowarc.WarcRefersTo))
+		log.Debug().Str("storageRef", storageRef).
+			Str("warcRefersTo", record.WarcHeader().Get(gowarc.WarcRefersTo)).
+			Str("warcRefersToTargetURI", record.WarcHeader().Get(gowarc.WarcRefersToTargetURI)).
+			Str("warcRefersToDate", record.WarcHeader().Get(gowarc.WarcRefersToDate)).
+			Msg("Loader found a revisit record")
 		warcRefersTo := record.WarcHeader().GetId(gowarc.WarcRefersTo)
 		if warcRefersTo == "" {
+			warcRefersToTargetURI := record.WarcHeader().Get(gowarc.WarcRefersToTargetURI)
+			warcRefersToDate := record.WarcHeader().Get(gowarc.WarcRefersToDate)
+			if warcRefersToTargetURI == "" {
+				return nil, fmt.Errorf("failed to resolve revisit record: neither WARC-Refers-To nor Warc-Refers-To-Target-URI")
+			}
+			if warcRefersToDate == "" {
+				warcRefersToDate = record.WarcHeader().Get(gowarc.WarcDate)
+			}
 			return nil, ErrResolveRevisit{
 				Profile:   record.WarcHeader().Get(gowarc.WarcProfile),
-				TargetURI: record.WarcHeader().Get(gowarc.WarcRefersToTargetURI),
-				Date:      record.WarcHeader().Get(gowarc.WarcRefersToDate),
+				TargetURI: warcRefersToTargetURI,
+				Date:      warcRefersToDate,
 			}
 		}
 

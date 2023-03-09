@@ -154,6 +154,8 @@ func (r Record) Marshal() ([]byte, error) {
 	if err != nil && strings.HasSuffix(err.Error(), "contains invalid UTF-8") {
 		// sanitize MIME type
 		r.Mct = handleInvalidUtf8String(r.GetMct())
+		r.Uri = handleInvalidUtf8String(r.GetUri())
+		r.Ssu = handleInvalidUtf8String(r.GetSsu())
 		// and retry
 		value, err = proto.Marshal(r)
 	}

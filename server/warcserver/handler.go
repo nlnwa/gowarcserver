@@ -77,6 +77,33 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest string) (string, error) {
+	uri, err := url.Parse(targetURI)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve revisit record: failed to parse WARC-Refers-To-Target-URI: %s: %w", targetURI, err)
+	}
+
+	response := make(chan index.CdxResponse)
+	err = h.Closest(ctx, api.SearchAPI{CoreAPI: api.ClosestAPI(closest, uri)}, response)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve revisit record: failed to get closest match: %s %s: %w", closest, uri, err)
+	}
+
+	// we are looking for the record's storage ref
+	var ref string
+
+	for res := range response {
+		if res.Error != nil {
+			log.Warn().Err(err).Msgf("error when iterating response of closest search: %s %s", targetURI, closest)
+			continue
+		}
+		ref = res.GetRef()
+		break
+	}
+
+	return ref, nil
+}
+
 func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	// parse API
 	closest, uri := parseResourceRequest(r)
@@ -124,24 +151,31 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
+	ref := res.GetRef()
+
 	// load warc record by storage ref
-	warcRecord, err := h.LoadByStorageRef(ctx, res.GetRef())
-	defer func() {
-		if warcRecord != nil {
-			_ = warcRecord.Close()
-		}
-	}()
-	if err != nil {
+	var warcRecord gowarc.WarcRecord
+	retry := true
+	for warcRecord == nil {
+		warcRecord, err = h.LoadByStorageRef(ctx, ref)
 		var errResolveRevisit loader.ErrResolveRevisit
-		if errors.As(err, &errResolveRevisit) {
-			http.Error(w, errResolveRevisit.Error(), http.StatusNotImplemented)
-			log.Error().Err(errResolveRevisit).Msg("Failed to load record")
+		if errors.As(err, &errResolveRevisit) && retry {
+			var date string
+			if date, err = timestamp.To14(errResolveRevisit.Date); err == nil {
+				ref, err = h.resolveRevisit(ctx, errResolveRevisit.TargetURI, date)
+			}
+			retry = false
+		}
+		if err != nil {
+			if warcRecord != nil {
+				_ = warcRecord.Close()
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Error().Err(err).Msgf("Failed to load record")
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Error().Err(err).Msg("Failed to load record")
-		return
 	}
+	defer warcRecord.Close()
 
 	block, ok := warcRecord.Block().(gowarc.HttpResponseBlock)
 	if !ok {
@@ -166,7 +200,6 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
 	// handle redirect
 	location := block.HttpHeader().Get("Location")
 	if location == "" {
@@ -217,7 +250,8 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	path := r.URL.Path[:strings.Index(r.URL.Path, "id_")-14] + sts + "id_/" + loc
+	before, after, ok := strings.Cut(loc, "?")
+	path := r.URL.Path[:strings.Index(r.URL.Path, "id_")-14] + sts + "id_/" + before
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -227,11 +261,13 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := fmt.Errorf("failed to construct redirect location: %s: %w", loc, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Error().Err(err).Msg("Failed load resource")
+		log.Error().Err(err).Msg("Failed to load resource")
 		return
 	}
 	u.SetPathname(path)
-
+	if ok {
+		u.SetSearch(after)
+	}
 	handlers.RenderRedirect(w, u.String())
 }
 
