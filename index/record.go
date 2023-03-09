@@ -153,15 +153,17 @@ func (r Record) Marshal() ([]byte, error) {
 	value, err := proto.Marshal(r)
 	if err != nil && strings.HasSuffix(err.Error(), "contains invalid UTF-8") {
 		// sanitize MIME type
-		r.Mct = HandleInvalidUtf8String(r.GetMct())
+		r.Mct = handleInvalidUtf8String(r.GetMct())
+		r.Uri = handleInvalidUtf8String(r.GetUri())
+		r.Ssu = handleInvalidUtf8String(r.GetSsu())
 		// and retry
 		value, err = proto.Marshal(r)
 	}
 	return value, err
 }
 
-// HandleInvalidUtf8String removes invalid utf-8 runes from a string.
-func HandleInvalidUtf8String(s string) string {
+// handleInvalidUtf8String removes invalid utf-8 runes from a string.
+func handleInvalidUtf8String(s string) string {
 	if !utf8.ValidString(s) {
 		v := make([]rune, 0, len(s))
 		for i, r := range s {

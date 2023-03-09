@@ -22,7 +22,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -273,12 +272,6 @@ func marshalCdxKey(r index.Record) ([]byte, []byte, error) {
 	ts := timestamp.TimeTo14(r.GetSts().AsTime())
 	key := []byte(r.GetSsu() + " " + ts + " " + r.GetSrt())
 	value, err := r.Marshal()
-	if err != nil && strings.HasSuffix(err.Error(), "contains invalid UTF-8") {
-		r.Uri = index.HandleInvalidUtf8String(r.GetUri())
-		r.Ssu = index.HandleInvalidUtf8String(r.GetSsu())
-		// and retry
-		value, err = r.Marshal()
-	}
 	return key, value, err
 }
 

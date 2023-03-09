@@ -273,12 +273,6 @@ func cdxKV(r index.Record) (KV, error) {
 	ts := timestamp.TimeTo14(r.GetSts().AsTime())
 	k := []byte(cdxPrefix + r.GetSsu() + " " + ts + " " + r.GetSrt())
 	v, err := r.Marshal()
-	if err != nil && strings.HasSuffix(err.Error(), "contains invalid UTF-8") {
-		r.Uri = index.HandleInvalidUtf8String(r.GetUri())
-		r.Ssu = index.HandleInvalidUtf8String(r.GetSsu())
-		// and retry
-		v, err = r.Marshal()
-	}
 	if err != nil {
 		return KV{}, err
 	}
