@@ -633,3 +633,21 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo,
 func (db *DB) ListFileInfo(ctx context.Context, limit int, results chan<- index.FileInfoResponse) error {
 	return db.listFileInfo(ctx, limit, results)
 }
+
+// Delete removes all data from the database.
+func (db *DB) Delete(ctx context.Context) error {
+	var firstErr error
+	err := db.IdIndex.DropAll()
+	if err != nil && firstErr == nil {
+		firstErr = err
+	}
+	err = db.CdxIndex.DropAll()
+	if err != nil && firstErr == nil {
+		firstErr = err
+	}
+	err = db.FileIndex.DropAll()
+	if err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
+}

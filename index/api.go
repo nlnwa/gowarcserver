@@ -7,6 +7,10 @@ import (
 	"github.com/nlnwa/gowarcserver/schema"
 )
 
+type Deleter interface {
+	Delete(context.Context) error
+}
+
 type Runner interface {
 	Run(context.Context) error
 }

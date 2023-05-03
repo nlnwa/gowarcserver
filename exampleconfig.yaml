@@ -16,7 +16,7 @@ log-requests: true
 # INDEX
 
 # index format (index): "cdxj", "cdxpb", "badger", "tikv" or "toc"
-# index format (serve): "badger" or "tikv"
+# index format (serve/reset): "badger" or "tikv"
 index-format: cdxj
 # index source:  "file" or "kafka"
 index-source: file
