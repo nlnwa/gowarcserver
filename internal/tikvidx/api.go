@@ -224,3 +224,22 @@ func (db *DB) ResolvePath(filename string) (filePath string, err error) {
 	}
 	return fileInfo.Path, err
 }
+
+// Delete removes all data from the database.
+func (db *DB) Delete(ctx context.Context) error {
+	var firstErr error
+	var err error
+	err = db.client.DeleteRange(ctx, []byte(cdxPrefix), []byte(cdxPrefix+"\xff"))
+	if err != nil {
+		firstErr = err
+	}
+	err = db.client.DeleteRange(ctx, []byte(filePrefix), []byte(filePrefix+"\xff"))
+	if err != nil && firstErr == nil {
+		firstErr = err
+	}
+	err = db.client.DeleteRange(ctx, []byte(idPrefix), []byte(idPrefix+"\xff"))
+	if err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
+}

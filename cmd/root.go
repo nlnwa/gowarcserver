@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/nlnwa/gowarcserver/cmd/index"
+	"github.com/nlnwa/gowarcserver/cmd/reset"
 	"github.com/nlnwa/gowarcserver/cmd/serve"
 	"github.com/nlnwa/gowarcserver/cmd/version"
 	"github.com/nlnwa/gowarcserver/logger"
@@ -55,7 +56,7 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(serve.NewCommand())
 	cmd.AddCommand(index.NewCommand())
 	cmd.AddCommand(version.NewCommand())
-
+	cmd.AddCommand(reset.NewCommand())
 	return cmd
 }
 
