@@ -24,7 +24,7 @@ import (
 )
 
 func UrlToSsurtHostname(uri string) (string, error) {
-	u, err := url.Parse(uri)
+	u, err := parser.Parse(uri)
 	if err != nil {
 		return "", err
 	}
@@ -49,7 +49,7 @@ func UrlToSsurt(u *url.Url) string {
 }
 
 func StringToSsurt(uri string) (string, error) {
-	u, err := url.Parse(uri)
+	u, err := parser.Parse(uri)
 	if err != nil {
 		return "", err
 	}
