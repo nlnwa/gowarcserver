@@ -38,6 +38,15 @@ func (db *DB) Closest(ctx context.Context, req index.Request, res chan<- index.C
 	go func() {
 		defer close(res)
 
+		if len(values) == 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case res <- index.CdxResponse{}:
+				return
+			}
+		}
+
 		for _, v := range values {
 			var cdxResponse index.CdxResponse
 			cdx := new(schema.Cdx)

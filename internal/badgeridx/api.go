@@ -164,6 +164,7 @@ func (db *DB) Closest(_ context.Context, request index.Request, results chan<- i
 					iter = backward
 				} else {
 					// found nothing
+					results <- index.CdxResponse{}
 					return nil
 				}
 				cdx, err := cdxFromItem(iter.Item())
