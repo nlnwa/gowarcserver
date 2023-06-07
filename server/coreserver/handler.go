@@ -36,6 +36,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+var lf = []byte("\n")
+
 type Handler struct {
 	index.CdxAPI
 	index.FileAPI
@@ -70,7 +72,7 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 
 	for res := range response {
 		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
+			log.Warn().Err(res.Error).Msg("response error")
 			continue
 		}
 		v, err := protojson.Marshal(res)
@@ -79,7 +81,7 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if count > 0 {
-			_, _ = w.Write([]byte("\r\n"))
+			_, _ = w.Write(lf)
 		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
@@ -88,7 +90,7 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		}
 		count++
 	}
-	_, _ = w.Write([]byte("\r\n"))
+	_, _ = w.Write(lf)
 }
 
 type storageRef struct {
@@ -117,7 +119,7 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 
 	for res := range response {
 		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
+			log.Warn().Err(res.Error).Msg("response error")
 			continue
 		}
 		filename, offset, err := parseStorageRef(res.Value)
@@ -136,7 +138,7 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if count > 0 {
-			_, _ = w.Write([]byte("\r\n"))
+			_, _ = w.Write(lf)
 		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
@@ -145,7 +147,7 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 		}
 		count++
 	}
-	_, _ = w.Write([]byte("\r\n"))
+	_, _ = w.Write(lf)
 }
 
 func (h Handler) getStorageRefByURN(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +188,7 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 
 	for res := range responses {
 		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
+			log.Warn().Err(res.Error).Msg("response error")
 			continue
 		}
 		v, err := protojson.Marshal(res.Fileinfo)
@@ -195,7 +197,7 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if count > 0 {
-			_, _ = w.Write([]byte("\r\n"))
+			_, _ = w.Write(lf)
 		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
@@ -204,7 +206,7 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		count++
 	}
-	_, _ = w.Write([]byte("\r\n"))
+	_, _ = w.Write(lf)
 }
 
 func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
@@ -246,7 +248,7 @@ func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
 
 	for res := range responses {
 		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
+			log.Warn().Err(res.Error).Msg("response error")
 			continue
 		}
 		v, err := protojson.Marshal(res.Cdx)
@@ -255,7 +257,7 @@ func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if count > 0 {
-			_, _ = w.Write([]byte("\r\n"))
+			_, _ = w.Write(lf)
 		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
@@ -264,7 +266,7 @@ func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
 		}
 		count++
 	}
-	_, _ = w.Write([]byte("\r\n"))
+	_, _ = w.Write(lf)
 }
 
 func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
@@ -274,16 +276,16 @@ func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	record, err := h.WarcLoader.LoadById(ctx, warcId)
-	if record != nil {
-		defer record.Close()
-	}
+	record, closer, err := h.WarcLoader.LoadById(ctx, warcId)
 	if err != nil {
 		err := fmt.Errorf("failed to load record '%s': %w", warcId, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("")
 		return
 	}
+	defer closer.Close()
+	defer record.Close()
+
 	_, err = handlers.RenderRecord(w, record)
 	if err != nil {
 		log.Warn().Err(err).Msgf("Failed to write record '%s': %v", warcId, record)

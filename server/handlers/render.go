@@ -85,9 +85,9 @@ func Render(w http.ResponseWriter, h http.Header, code int, r io.Reader) error {
 	}
 
 	// Write HTTP payload
-	_, err := io.Copy(w, r)
+	n, err := io.Copy(w, r)
 	if err != nil {
-		return fmt.Errorf("failed to write HTTP payload: %w", err)
+		return fmt.Errorf("failed to write HTTP payload after writing %d bytes: %w", n, err)
 	}
 
 	return nil

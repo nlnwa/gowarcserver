@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -53,7 +54,7 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 
 	for res := range response {
 		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
+			log.Warn().Err(res.Error).Msg("response error")
 			continue
 		}
 		cdxj, err := json.Marshal(cdxToPywbJson(res.Cdx))
@@ -154,10 +155,12 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	ref := res.GetRef()
 
 	// load warc record by storage ref
+
 	var warcRecord gowarc.WarcRecord
+	var closer io.Closer
 	retry := true
 	for warcRecord == nil {
-		warcRecord, err = h.LoadByStorageRef(ctx, ref)
+		warcRecord, closer, err = h.LoadByStorageRef(ctx, ref)
 		var errResolveRevisit loader.ErrResolveRevisit
 		if errors.As(err, &errResolveRevisit) && retry {
 			var date string
@@ -166,6 +169,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 			}
 			retry = false
 		}
+		// Handle error both from LoadByStorageRef and resolveRevisit
 		if err != nil {
 			if warcRecord != nil {
 				_ = warcRecord.Close()
@@ -175,6 +179,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	defer closer.Close()
 	defer warcRecord.Close()
 
 	block, ok := warcRecord.Block().(gowarc.HttpResponseBlock)
@@ -196,7 +201,9 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		}
 		err = handlers.Render(w, *block.HttpHeader(), block.HttpStatusCode(), p)
 		if err != nil {
-			log.Warn().Err(err).Msg("Failed to load resource")
+			// We can't write to the response after we've written the status code
+			// so we just log the error and return
+			log.Error().Err(err).Msg("Failed to load resource")
 		}
 		return
 	}
@@ -234,13 +241,13 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// fields needed to rewrite the location header
+	// sts and loc are the fields needed to rewrite the location header
 	var sts string
 	var loc string
 
 	for res := range response {
 		if res.Error != nil {
-			log.Warn().Err(err).Msg("failed result")
+			log.Warn().Err(err).Msg("response error")
 			continue
 		}
 		sts = timestamp.TimeTo14(res.GetSts().AsTime())

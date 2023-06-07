@@ -19,6 +19,7 @@ package loader
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -34,10 +35,13 @@ type FilePathResolver interface {
 	ResolvePath(filename string) (path string, err error)
 }
 
-func (f FileStorageLoader) Load(ctx context.Context, storageRef string) (record gowarc.WarcRecord, err error) {
+// Load loads a record from a storageRef.
+//
+// The storageRef is a string with the format: warcfile:filename#offset where filename is the path to the warc file and offset is the byte offset of the record in the file.
+func (f FileStorageLoader) Load(ctx context.Context, storageRef string) (record gowarc.WarcRecord, closer io.Closer, err error) {
 	filePath, offset, err := f.parseStorageRef(storageRef)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	log.Debug().Str("storageRef", storageRef).Msgf("Loading record from file: %s, offset: %v", filePath, offset)
 
@@ -46,15 +50,16 @@ func (f FileStorageLoader) Load(ctx context.Context, storageRef string) (record 
 		gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize warc reader: %s#%d, %w", filePath, offset, err)
+		return nil, nil, fmt.Errorf("failed to initialize warc reader: %s#%d, %w", filePath, offset, err)
 	}
-	defer wf.Close()
+	closer = wf
 
 	record, offset, _, err = wf.Next()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read record: %s#%d: %w", filePath, offset, err)
+		return nil, nil, fmt.Errorf("failed to read record: %s#%d: %w", filePath, offset, err)
 	}
-	return
+
+	return record, closer, nil
 }
 
 // parseStorageRef parses a storageRef (eg. warcfile:filename#offset) into parts.

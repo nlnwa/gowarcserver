@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+
 	"github.com/nlnwa/gowarc"
 	"github.com/rs/zerolog/log"
 )
@@ -29,12 +31,12 @@ type StorageRefResolver interface {
 }
 
 type RecordLoader interface {
-	Load(ctx context.Context, storageRef string) (wr gowarc.WarcRecord, err error)
+	Load(ctx context.Context, storageRef string) (gowarc.WarcRecord, io.Closer, error)
 }
 
 type WarcLoader interface {
-	LoadById(context.Context, string) (gowarc.WarcRecord, error)
-	LoadByStorageRef(context.Context, string) (gowarc.WarcRecord, error)
+	LoadById(context.Context, string) (gowarc.WarcRecord, io.Closer, error)
+	LoadByStorageRef(context.Context, string) (gowarc.WarcRecord, io.Closer, error)
 }
 
 type Loader struct {
@@ -57,24 +59,33 @@ func (e ErrResolveRevisit) String() string {
 	return fmt.Sprintf("Warc-Refers-To-Date: %s, Warc-Refers-To-Target-URI: %s, Warc-Profile: %s", e.Date, e.TargetURI, e.Profile)
 }
 
-func (l *Loader) LoadById(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
+// LoadById loads a record by warcId and returns the record and a closer.
+//
+// The closer must be closed by the caller when the record is no longer needed.
+func (l *Loader) LoadById(ctx context.Context, warcId string) (gowarc.WarcRecord, io.Closer, error) {
 	storageRef, err := l.StorageRefResolver.Resolve(ctx, warcId)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return l.LoadByStorageRef(ctx, storageRef)
 }
 
-func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowarc.WarcRecord, error) {
-	record, err := l.RecordLoader.Load(ctx, storageRef)
+// LoadByStorageRef loads a record from storageRef and returns the record and a closer.
+//
+// The closer must be closed by the caller when the record is no longer needed.
+//
+// If the record is a revisit record, the referred record will be loaded and merged with the revisit record.
+//
+// If the loader is set to not unpack, the closer will be closed and an error will be returned.
+func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowarc.WarcRecord, io.Closer, error) {
+	record, closer, err := l.RecordLoader.Load(ctx, storageRef)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if l.NoUnpack {
-		return nil, errors.New("loader set to not unpack")
+		defer closer.Close()
+		return nil, nil, errors.New("loader set to not unpack")
 	}
-
-	var rtrRecord gowarc.WarcRecord
 
 	//nolint:exhaustive
 	switch record.Type() {
@@ -86,42 +97,54 @@ func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowar
 			Msg("Loader found a revisit record")
 		warcRefersTo := record.WarcHeader().GetId(gowarc.WarcRefersTo)
 		if warcRefersTo == "" {
+			defer closer.Close()
+
 			warcRefersToTargetURI := record.WarcHeader().Get(gowarc.WarcRefersToTargetURI)
 			warcRefersToDate := record.WarcHeader().Get(gowarc.WarcRefersToDate)
 			if warcRefersToTargetURI == "" {
-				return nil, fmt.Errorf("failed to resolve revisit record: neither WARC-Refers-To nor Warc-Refers-To-Target-URI")
+				return nil, nil, fmt.Errorf("failed to resolve revisit record: neither WARC-Refers-To nor Warc-Refers-To-Target-URI is set")
 			}
 			if warcRefersToDate == "" {
 				warcRefersToDate = record.WarcHeader().Get(gowarc.WarcDate)
 			}
-			return nil, ErrResolveRevisit{
+			return nil, nil, ErrResolveRevisit{
 				Profile:   record.WarcHeader().Get(gowarc.WarcProfile),
 				TargetURI: warcRefersToTargetURI,
 				Date:      warcRefersToDate,
 			}
 		}
 
+		// We can safely defer the closer to the end of this function
+		// because we will return a new record that is a merge of the revisit record
+		// and the referred record. The merge operation substitutes the block of the referred
+		// record with the block of the revisit record so no more operations will be
+		// performed on the warc file containing the revisit record.
+		defer closer.Close()
+
+		// revisitOf is the referred record that the revisit record refers to.
 		var revisitOf gowarc.WarcRecord
+
+		// Resolve the storage ref of the referred record
 		storageRef, err = l.Resolve(ctx, warcRefersTo)
 		if err != nil {
-			return nil, fmt.Errorf("unable to resolve referred Warc-Record-ID [%s]: %w", warcRefersTo, err)
+			return nil, nil, fmt.Errorf("unable to resolve referred Warc-Record-ID [%s]: %w", warcRefersTo, err)
 		}
-		revisitOf, err = l.RecordLoader.Load(ctx, storageRef)
+		// Load the referred record
+		revisitOf, closer, err = l.RecordLoader.Load(ctx, storageRef)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		// Merge the revisit record with the referred record
+		record, err = record.Merge(revisitOf)
+		if err != nil {
+			// Close the closer of the referred record before returning the error
+			defer closer.Close()
+			return nil, nil, err
 		}
 
-		rtrRecord, err = record.Merge(revisitOf)
-		if err != nil {
-			return nil, err
-		}
 	case gowarc.Continuation:
 		log.Warn().Msg("Not implemented: storage ref resolved to a continuation record")
-		// TODO continuation not implemented
-		fallthrough
-	default:
-		rtrRecord = record
 	}
 
-	return rtrRecord, nil
+	return record, closer, nil
 }
