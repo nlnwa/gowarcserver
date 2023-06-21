@@ -80,17 +80,14 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 			log.Warn().Err(err).Msg("failed to marshal result")
 			continue
 		}
-		if count > 0 {
-			_, _ = w.Write(lf)
-		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to write result")
 			return
 		}
+		_, _ = w.Write(lf)
 		count++
 	}
-	_, _ = w.Write(lf)
 }
 
 type storageRef struct {

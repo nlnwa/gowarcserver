@@ -28,7 +28,7 @@ type Handler struct {
 	loader.WarcLoader
 }
 
-func (h Handler) index(w http.ResponseWriter, r *http.Request) {
+func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 	coreAPI, err := api.Parse(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -41,7 +41,7 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 		log.Debug().Str("request", fmt.Sprintf("%+v", coreAPI)).Msgf("Found %d items in %s", count, time.Since(start))
 	}()
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 1*time.Minute)
 	defer cancel()
 
 	response := make(chan index.CdxResponse)
@@ -53,6 +53,9 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for res := range response {
+		if errors.Is(res.Error, context.Canceled) {
+			return
+		}
 		if res.Error != nil {
 			log.Warn().Err(res.Error).Msg("response error")
 			continue
@@ -78,6 +81,7 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// resolveRevisit resolves a revisit record by looking up the closest matching target URI and date
 func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest string) (string, error) {
 	uri, err := url.Parse(targetURI)
 	if err != nil {
@@ -138,6 +142,9 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	var res index.CdxResponse
 	for res = range response {
+		if errors.Is(res.Error, context.Canceled) {
+			return
+		}
 		if res.Error != nil {
 			log.Warn().Err(err).Msg("Failed cdx response")
 			continue
@@ -207,6 +214,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
 	// handle redirect
 	location := block.HttpHeader().Get("Location")
 	if location == "" {

@@ -55,7 +55,7 @@ const (
 
 )
 
-var outputs = []string{OutputCdxj, OutputJson}
+var allowedOutputs = []string{OutputCdxj, OutputJson}
 
 // CoreAPI implements a subset of https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html.
 type CoreAPI struct {
@@ -146,7 +146,7 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-var schemeRegExp = regexp.MustCompile(`^([a-z][a-z0-9+\-.]*):`)
+var schemeRegExp = regexp.MustCompile(`^[a-z][a-z0-9+\-.]+(:.*)`)
 
 // Parse parses the request r into a *CoreAPI.
 func Parse(r *http.Request) (*CoreAPI, error) {
@@ -170,16 +170,15 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 	}
 
 	urls := query["url"]
-	if len(urls) == 1 && !schemeRegExp.MatchString(urls[0]) {
+	if len(urls) == 1 && (coreApi.MatchType == MatchTypeExact || coreApi.MatchType == MatchTypePrefix) {
 		u := urls[0]
-		// Add http scheme
-		urls = []string{
-			"http://" + u,
-		}
-		// Add https scheme only for exact match to get results for both http/https
-		// If match type is prefix, domain or host the scheme part will be stripped so no need.
-		if coreApi.MatchType == MatchTypeExact {
-			urls = append(urls, "https://"+u)
+
+		matches := schemeRegExp.FindStringSubmatch(u)
+		if matches == nil {
+			urls = []string{"http://" + u, "https://" + u}
+		} else {
+			rest := matches[1]
+			urls = []string{"http" + rest, "https" + rest}
 		}
 	}
 	for _, urlStr := range urls {
@@ -226,8 +225,8 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 
 	output := query.Get("output")
 	if output != "" {
-		if !contains(outputs, output) {
-			return nil, fmt.Errorf("output must be one of %v, was: %s", outputs, output)
+		if !contains(allowedOutputs, output) {
+			return nil, fmt.Errorf("output must be one of %v, was: %s", allowedOutputs, output)
 		}
 		coreApi.Output = output
 	}

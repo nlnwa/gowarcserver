@@ -58,11 +58,11 @@ func NewIndexer(w RecordWriter, options ...Option) func(string) {
 			}
 		}
 
-		index(path, w, opts)
+		indexFile(path, w, opts)
 	}
 }
 
-func index(filename string, r RecordWriter, opts *Options) {
+func indexFile(filename string, r RecordWriter, opts *Options) {
 	start := time.Now()
 
 	filter := func(wr gowarc.WarcRecord, validation *gowarc.Validation) bool {

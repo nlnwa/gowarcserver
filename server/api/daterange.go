@@ -51,7 +51,7 @@ func (d *DateRange) Contains(ts int64) bool {
 	return ts >= d.from && ts <= d.to
 }
 
-// ContainsStr returns true if the timestamp ts contained by the bounds defined by the DateRange d.
+// ContainsStr returns true if the timestamp ts is contained within the bounds defined by the DateRange d.
 // input 'ts' is 'trusted' and does not have the same parsing complexity as a From or To string
 func (d *DateRange) ContainsStr(ts string) (bool, error) {
 	if d == nil {

@@ -285,6 +285,7 @@ func mergeIter(done <-chan struct{}, cmp func(KV, KV) bool, in ...chan *maybeKV)
 				if cord == nil {
 					select {
 					case cord = <-in[i]:
+						// hydrate cord with new value from input channel
 						cords[i] = cord
 					case <-done:
 						return
@@ -296,7 +297,7 @@ func mergeIter(done <-chan struct{}, cmp func(KV, KV) bool, in ...chan *maybeKV)
 					}
 				}
 				if cord.error != nil {
-					// prioritize errors
+					// prioritize errors by returning first
 					curr = i
 					break
 				}
@@ -305,6 +306,7 @@ func mergeIter(done <-chan struct{}, cmp func(KV, KV) bool, in ...chan *maybeKV)
 				}
 			}
 			if curr == -1 {
+				// 
 				return
 			}
 			select {

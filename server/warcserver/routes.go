@@ -24,6 +24,6 @@ import (
 
 func Register(h Handler, r *httprouter.Router, mw func(http.Handler) http.Handler, pathPrefix string) {
 	// https://pywb.readthedocs.io/en/latest/manual/warcserver.html#warcserver-api
-	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(h.index)))
+	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(h.search)))
 	r.Handler("GET", pathPrefix+"/web/:timestamp/*url", mw(http.HandlerFunc(h.resource)))
 }

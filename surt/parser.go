@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 
- package surt
+package surt
 
- import (
-	 "github.com/nlnwa/whatwg-url/url"
- )
- 
- var parser = url.NewParser(url.WithSkipEqualsForEmptySearchParamsValue())
- 
+import (
+	"github.com/nlnwa/whatwg-url/url"
+)
+
+var parser = url.NewParser(url.WithSkipEqualsForEmptySearchParamsValue())

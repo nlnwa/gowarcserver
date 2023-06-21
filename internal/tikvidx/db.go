@@ -40,18 +40,22 @@ type KV struct {
 	K, V []byte
 }
 
+// String returns a string representation of the KV.
 func (kv KV) String() string {
 	return fmt.Sprintf("%s => %s (%v)", kv.K, kv.V, kv.V)
 }
 
+// ts returns the timestamp of the KV.
 func (kv KV) ts() int64 {
 	b := bytes.Split(kv.K, []byte{32})[1]
 	ts, _ := time.Parse(timestamp.CDX, string(b))
 	return ts.Unix()
 }
 
+// cdxKey represents a cdx key.
 type cdxKey string
 
+// ts returns the timestamp encoded in the cdx key.
 func (k cdxKey) ts() string {
 	return strings.Split(string(k), " ")[1]
 }
@@ -63,6 +67,7 @@ var (
 	cdxPrefix  = "c"
 )
 
+// DB represents a tikv database.
 type DB struct {
 	client *rawkv.Client
 	batch  chan index.Record
@@ -70,11 +75,13 @@ type DB struct {
 	wg     sync.WaitGroup
 }
 
+// NewDB creates a new DB instance.
 func NewDB(options ...Option) (db *DB, err error) {
 	opts := defaultOptions()
 	for _, opt := range options {
 		opt(opts)
 	}
+	// create database name from prefix and database name
 	dbName := dbPrefix + opts.Database
 
 	// prefix all keys with name of database
@@ -125,8 +132,11 @@ func NewDB(options ...Option) (db *DB, err error) {
 
 // Close stops the batch workers and closes the index databases.
 func (db *DB) Close() {
+	// stop batch worker
 	close(db.done)
+	// wait for batch worker to finish
 	db.wg.Wait()
+	// close database
 	_ = db.client.Close()
 }
 
@@ -144,6 +154,7 @@ func (db *DB) addFile(filePath string) error {
 		if err := fileInfo.GetLastModified().CheckValid(); err != nil {
 			return err
 		}
+		// check if file is already indexed and has not changed
 		fileInfoLastModified := fileInfo.LastModified.AsTime()
 		if fileInfo.Size == fileSize && fileInfoLastModified.Equal(fileLastModified) {
 			return index.AlreadyIndexedError
@@ -153,6 +164,7 @@ func (db *DB) addFile(filePath string) error {
 	return db.updateFilePath(filePath)
 }
 
+// updateFilePath updates the index for the file referenced by filePath.
 func (db *DB) updateFilePath(filePath string) error {
 	var err error
 	fileInfo := new(schema.Fileinfo)
@@ -174,6 +186,7 @@ func (db *DB) updateFilePath(filePath string) error {
 	return db.putFileInfo(fileInfo)
 }
 
+// putFileInfo adds or updates the file info index.
 func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -191,6 +204,7 @@ func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
 	return nil
 }
 
+// getFileInfo returns the file info for the file referenced by fileName.
 func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -224,6 +238,7 @@ func (db *DB) write(rec index.Record) {
 	}
 }
 
+// collectBatch collects all records in the batch channel and returns the keys and values.
 func (db *DB) collectBatch() ([][]byte, [][]byte) {
 	var keys [][]byte
 	var values [][]byte
@@ -279,11 +294,13 @@ func cdxKV(r index.Record) (KV, error) {
 	return KV{K: k, V: v}, nil
 }
 
+// Write adds a record to the index.
 func (db *DB) Write(rec index.Record) error {
 	db.write(rec)
 	return nil
 }
 
+// Index adds a file to the index.
 func (db *DB) Index(path string) error {
 	return db.addFile(path)
 }

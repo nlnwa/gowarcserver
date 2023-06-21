@@ -23,6 +23,9 @@ import (
 
 func parseLimit(r *http.Request) int {
 	l := r.URL.Query().Get("limit")
+	if l == "" {
+		return 100
+	}
 	limit, err := strconv.Atoi(l)
 	if err != nil {
 		limit = 100
