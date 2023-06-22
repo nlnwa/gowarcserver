@@ -98,7 +98,7 @@ func NewKafkaIndexer(q Queue, options ...KafkaIndexOption) KafkaIndexer {
 		apply(readerConfig)
 	}
 	return KafkaIndexer{
-		ReaderConfig: kafka.ReaderConfig{},
+		ReaderConfig: *readerConfig,
 		Queue:        q,
 	}
 }
