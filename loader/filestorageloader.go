@@ -43,16 +43,24 @@ func (f FileStorageLoader) Load(ctx context.Context, storageRef string) (record 
 
 	wf, err := gowarc.NewWarcFileReader(filePath, offset,
 		gowarc.WithSyntaxErrorPolicy(gowarc.ErrIgnore),
-		gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore),
-	)
+		gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore))
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize warc reader: %s#%d, %w", filePath, offset, err)
+		return nil, err
 	}
-	defer wf.Close()
 
-	record, offset, _, err = wf.Next()
+	go func() {
+		<-ctx.Done()
+		_ = wf.Close()
+	}()
+
+	record, offset, validation, err := wf.Next()
+	if !validation.Valid() {
+		log.Warn().Msg(validation.String())
+		return nil, fmt.Errorf("validation error in warcfile at offset %d", offset)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read record: %s#%d: %w", filePath, offset, err)
+		log.Error().Msgf("%s, offset %v\n", err, offset)
+		return nil, err
 	}
 	return
 }
