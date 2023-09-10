@@ -53,11 +53,7 @@ func (f FileStorageLoader) Load(ctx context.Context, storageRef string) (record 
 		_ = wf.Close()
 	}()
 
-	record, offset, validation, err := wf.Next()
-	if !validation.Valid() {
-		log.Warn().Msg(validation.String())
-		return nil, fmt.Errorf("validation error in warcfile at offset %d", offset)
-	}
+	record, offset, _, err = wf.Next()
 	if err != nil {
 		log.Error().Msgf("%s, offset %v\n", err, offset)
 		return nil, err
