@@ -36,6 +36,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+var lf = []byte("\n")
+
 type Handler struct {
 	index.CdxAPI
 	index.FileAPI
@@ -78,17 +80,14 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 			log.Warn().Err(err).Msg("failed to marshal result")
 			continue
 		}
-		if count > 0 {
-			_, _ = w.Write([]byte("\r\n"))
-		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to write result")
 			return
 		}
+		_, _ = w.Write(lf)
 		count++
 	}
-	_, _ = w.Write([]byte("\r\n"))
 }
 
 type storageRef struct {
@@ -135,17 +134,14 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 			log.Warn().Err(err).Msgf("failed to marshal storage ref: %+v", ref)
 			continue
 		}
-		if count > 0 {
-			_, _ = w.Write([]byte("\r\n"))
-		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
 			log.Warn().Err(err).Msgf("failed to write storage ref: %+v", ref)
 			return
 		}
+		_, _ = w.Write(lf)
 		count++
 	}
-	_, _ = w.Write([]byte("\r\n"))
 }
 
 func (h Handler) getStorageRefByURN(w http.ResponseWriter, r *http.Request) {
@@ -194,17 +190,15 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 			log.Warn().Err(err).Msg("failed to marshal file info")
 			continue
 		}
-		if count > 0 {
-			_, _ = w.Write([]byte("\r\n"))
-		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to write file info")
 			return
 		}
+		_, _ = w.Write(lf)
 		count++
 	}
-	_, _ = w.Write([]byte("\r\n"))
+	_, _ = w.Write(lf)
 }
 
 func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
@@ -254,17 +248,14 @@ func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
 			log.Warn().Err(err).Msg("failed to marshal cdx to json")
 			continue
 		}
-		if count > 0 {
-			_, _ = w.Write([]byte("\r\n"))
-		}
 		_, err = io.Copy(w, bytes.NewReader(v))
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to write cdx record")
 			return
 		}
+		_, _ = w.Write(lf)
 		count++
 	}
-	_, _ = w.Write([]byte("\r\n"))
 }
 
 func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
