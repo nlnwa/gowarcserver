@@ -90,33 +90,40 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 
 		count := 0
 
-		for it.Valid() && (req.Limit() == 0 || count < req.Limit()) {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			func() {
+		for it.Valid() {
+			cdxResponse := func() index.CdxResponse {
 				inDateRange, err := req.DateRange().ContainsStr(cdxKey(it.Key()).ts())
 				if err != nil {
-					res <- index.CdxResponse{Error: err}
-					return
+					return index.CdxResponse{Error: err}
 				}
 				if !inDateRange {
-					return
+					return index.CdxResponse{}
 				}
 				cdx := new(schema.Cdx)
 				if err := proto.Unmarshal(it.Value(), cdx); err != nil {
-					res <- index.CdxResponse{Error: err}
-					return
+					return index.CdxResponse{Error: err}
+				} else if req.Filter().Eval(cdx) {
+					return index.CdxResponse{Cdx: cdx}
 				}
-				if req.Filter().Eval(cdx) {
-					res <- index.CdxResponse{Cdx: cdx}
-					count++
-				}
+				return index.CdxResponse{}
 			}()
-			if err := it.Next(); err != nil {
+			if cdxResponse == (index.CdxResponse{}) {
+				// skip
+			} else {
+				select {
+				case <-ctx.Done():
+					res <- index.CdxResponse{Error: ctx.Err()}
+					return
+				case res <- cdxResponse:
+					if cdxResponse.Error == nil {
+						count++
+					}
+				}
+			}
+			if req.Limit() > 0 && count >= req.Limit() {
+				break
+			}
+			if err = it.Next(); err != nil {
 				res <- index.CdxResponse{Error: err}
 				break
 			}
