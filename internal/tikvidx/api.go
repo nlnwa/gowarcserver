@@ -133,7 +133,7 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 }
 
 func (db *DB) List(ctx context.Context, limit int, res chan<- index.CdxResponse) error {
-	if limit > rawkv.MaxRawKVScanLimit {
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
 	_, values, err := db.client.Scan(ctx, []byte(cdxPrefix), []byte(cdxPrefix+"\xff"), limit)
@@ -167,7 +167,7 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo,
 }
 
 func (db *DB) ListFileInfo(ctx context.Context, limit int, res chan<- index.FileInfoResponse) error {
-	if limit > rawkv.MaxRawKVScanLimit {
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
 	_, values, err := db.client.Scan(ctx, []byte(filePrefix), []byte(filePrefix+"\xff"), limit)
@@ -202,7 +202,7 @@ func (db *DB) GetStorageRef(ctx context.Context, id string) (string, error) {
 }
 
 func (db *DB) ListStorageRef(ctx context.Context, limit int, res chan<- index.IdResponse) error {
-	if limit > rawkv.MaxRawKVScanLimit {
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
 	keys, values, err := db.client.Scan(ctx, []byte(idPrefix), []byte(idPrefix+"\xff"), limit)
