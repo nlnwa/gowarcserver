@@ -398,6 +398,10 @@ func (db *DB) closestUniSearch(ctx context.Context, search index.Request, result
 	if err != nil {
 		return err
 	}
+	// narrow down search to prefix
+	prefix := []byte(key)
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefix
 
 	closest := ts.Unix()
 	isClosest := func(a int64, b int64) bool {
