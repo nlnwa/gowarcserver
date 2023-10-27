@@ -600,25 +600,29 @@ func (db *DB) ListStorageRef(ctx context.Context, limit int, results chan<- inde
 			defer close(results)
 
 			count := 0
-			for iter.Seek(nil); iter.Valid(); iter.Next() {
-				select {
-				case <-ctx.Done():
-					results <- index.IdResponse{Error: ctx.Err()}
-					return nil
-				default:
-				}
+			var cdxResponse index.IdResponse
 
+			for iter.Seek(nil); iter.Valid(); iter.Next() {
 				if count >= limit {
 					return nil
 				}
 				count++
 
 				key := iter.Item().KeyCopy(nil)
-				_ = iter.Item().Value(func(value []byte) error {
-					results <- index.IdResponse{Key: string(key), Value: string(value)}
-
+				err := iter.Item().Value(func(value []byte) error {
+					cdxResponse = index.IdResponse{Key: string(key), Value: string(value)}
 					return nil
 				})
+				if err != nil {
+					cdxResponse = index.IdResponse{Error: err}
+				}
+				select {
+				case <-ctx.Done():
+					results <- index.IdResponse{Error: ctx.Err()}
+					return nil
+				case results <- cdxResponse:
+				}
+
 			}
 			return nil
 		})
