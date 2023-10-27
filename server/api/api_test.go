@@ -10,9 +10,8 @@ import (
 
 func TestParse(t *testing.T) {
 	domains := []string{
-		"no",
-		"kommune.no",
-		"nb.no",
+		"http://kommune.no",
+		"http://nb.no",
 	}
 
 	for _, domain := range domains {
