@@ -51,13 +51,22 @@ func (db *DB) Closest(ctx context.Context, req index.Request, res chan<- index.C
 			err := proto.Unmarshal(v, cdx)
 			if err != nil {
 				cdxResponse = index.CdxResponse{Error: err}
-			} else {
+			} else if req.Filter().Eval(cdx) {
 				cdxResponse = index.CdxResponse{Cdx: cdx}
+			} else {
+				continue
 			}
 			select {
 			case <-ctx.Done():
+				res <- index.CdxResponse{Error: ctx.Err()}
 				return
 			case res <- cdxResponse:
+				if cdxResponse.Error == nil {
+					count++
+				}
+			}
+			if req.Limit() > 0 && count >= req.Limit() {
+				break
 			}
 		}
 	}()
