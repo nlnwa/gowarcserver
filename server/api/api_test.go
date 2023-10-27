@@ -27,6 +27,7 @@ func TestParse(t *testing.T) {
 		a, err := Parse(r)
 		if err != nil {
 			t.Error(err)
+			continue
 		}
 
 		got := SearchAPI{CoreAPI: a}.Key()
