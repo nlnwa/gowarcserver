@@ -411,13 +411,9 @@ func (db *DB) closestUniSearch(ctx context.Context, search index.Request, result
 	count := 0
 
 	go func() {
+		defer close(results)
+
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
-			defer close(results)
-			prefix := []byte(key)
-
-			opts := badger.DefaultIteratorOptions
-			opts.Prefix = prefix
-
 			forward := txn.NewIterator(opts)
 			defer forward.Close()
 
