@@ -19,7 +19,6 @@ package badgeridx
 import (
 	"sort"
 
-	"github.com/dgraph-io/badger/v3"
 	"github.com/nlnwa/gowarcserver/timestamp"
 )
 
@@ -70,17 +69,4 @@ func (s *Sorter) Sort() {
 	sort.Slice(s.Values, func(i, j int) bool {
 		return cmp(s.Values[i].ts, s.Values[j].ts)
 	})
-}
-
-func (s *Sorter) Walk(txn *badger.Txn, perItemFn PerItemFunc) error {
-	for _, value := range s.Values {
-		item, err := txn.Get(value.k)
-		if err != nil {
-			return err
-		}
-		if perItemFn(item) {
-			break
-		}
-	}
-	return nil
 }
