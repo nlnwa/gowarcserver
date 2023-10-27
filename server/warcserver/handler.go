@@ -52,6 +52,9 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for res := range response {
+		if errors.Is(res.Error, context.Canceled) {
+			return
+		}
 		if res.Error != nil {
 			log.Warn().Err(res.Error).Msg("failed result")
 			continue
@@ -137,6 +140,9 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	var res index.CdxResponse
 	for res = range response {
+		if errors.Is(res.Error, context.Canceled) {
+			return
+		}
 		if res.Error != nil {
 			log.Warn().Err(err).Msg("Failed cdx response")
 			continue
