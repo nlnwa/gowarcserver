@@ -514,32 +514,41 @@ func (db *DB) uniSearch(ctx context.Context, search index.Request, results chan<
 			}
 
 			for it.Seek([]byte(seekKey)); it.ValidForPrefix(prefix); it.Next() {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-				}
-				contains, _ := search.DateRange().ContainsStr(cdxKey(it.Item().Key()).ts())
-				if !contains {
+				cdxResponse := func() (cdxResponse index.CdxResponse) {
+					if contains, err := search.DateRange().ContainsStr(cdxKey(it.Item().Key()).ts()); err != nil {
+						cdxResponse.Error = err
+						return
+					} else if !contains {
+						return
+					}
+					if err := it.Item().Value(func(v []byte) error {
+						result := new(schema.Cdx)
+						if err := proto.Unmarshal(v, result); err != nil {
+							cdxResponse.Error = err
+						} else if search.Filter().Eval(result) {
+							cdxResponse.Cdx = result
+						}
+						return nil
+					}); err != nil {
+						cdxResponse.Error = err
+					}
+					return
+				}()
+				// skip if empty response
+				if cdxResponse == (index.CdxResponse{}) {
 					continue
 				}
-
-				err := it.Item().Value(func(v []byte) error {
-					result := new(schema.Cdx)
-					if err := proto.Unmarshal(v, result); err != nil {
-						return err
-					}
-
-					if search.Filter().Eval(result) {
-						results <- index.CdxResponse{Cdx: result, Error: nil}
+				// send result
+				select {
+				case <-ctx.Done():
+					results <- index.CdxResponse{Error: ctx.Err()}
+					return nil
+				case results <- cdxResponse:
+					if cdxResponse.Error == nil {
 						count++
 					}
-					return nil
-				})
-				if err != nil {
-					return fmt.Errorf("failed to process item value")
 				}
-
+				// stop iteration if limit is reached
 				if search.Limit() > 0 && count >= search.Limit() {
 					break
 				}
