@@ -35,12 +35,14 @@ import (
 
 type PerCdxFunc func(cdx *schema.Cdx) error
 
+// cdxKey is a wrapper around a badger key that provides a timestamp method.
 type cdxKey string
 
 func (k cdxKey) ts() string {
 	return strings.Split(string(k), " ")[1]
 }
 
+// cdxFromItem unmarshals a badger item value into a schema.Cdx.
 func cdxFromItem(item *badger.Item) (cdx *schema.Cdx, err error) {
 	err = item.Value(func(val []byte) error {
 		result := new(schema.Cdx)
@@ -53,6 +55,7 @@ func cdxFromItem(item *badger.Item) (cdx *schema.Cdx, err error) {
 	return
 }
 
+// List returns all cdx values in the database up to the limit.
 func (db *DB) List(ctx context.Context, limit int, results chan<- index.CdxResponse) error {
 	go func() {
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
@@ -91,7 +94,7 @@ func (db *DB) List(ctx context.Context, limit int, results chan<- index.CdxRespo
 	return nil
 }
 
-// Closest returns the first closest cdx value
+// Closest returns the closest cdx values in the database.
 func (db *DB) Closest(_ context.Context, request index.Request, results chan<- index.CdxResponse) error {
 	go func() {
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
@@ -182,6 +185,7 @@ func (db *DB) Closest(_ context.Context, request index.Request, results chan<- i
 	return nil
 }
 
+// Search searches the index database
 func (db *DB) Search(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	keyLen := len(search.Keys())
 
@@ -200,7 +204,7 @@ func (db *DB) Search(ctx context.Context, search index.Request, results chan<- i
 	}
 }
 
-// unsortedParallelSearch searches the index database, sorts the results and processes each result with perCdxFunc.
+// sortedParallelSearch searches the index database, sorts the results and processes each result with perCdxFunc.
 func (db *DB) sortedParallelSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	count := 0
 	perItemFn := func(item *badger.Item) error {

@@ -80,6 +80,7 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// resolveRevisit resolves a revisit record by looking up the closest matching target URI and date
 func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest string) (string, error) {
 	uri, err := url.Parse(targetURI)
 	if err != nil {
