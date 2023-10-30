@@ -63,25 +63,27 @@ func (db *DB) List(ctx context.Context, limit int, results chan<- index.CdxRespo
 			defer close(results)
 
 			count := 0
+
 			for iter.Seek(nil); iter.Valid(); iter.Next() {
+				var cdxResponse index.CdxResponse
+				cdx, err := cdxFromItem(iter.Item())
+				if err != nil {
+					cdxResponse.Error = err
+				} else {
+					cdxResponse.Cdx = cdx
+				}
 				select {
 				case <-ctx.Done():
 					results <- index.CdxResponse{Error: ctx.Err()}
 					return nil
-				default:
+				case results <- cdxResponse:
+					if cdxResponse.Error == nil {
+						count++
+					}
 				}
-
-				if count >= limit {
-					return nil
+				if limit > 0 && count >= limit {
+					break
 				}
-				count++
-
-				cdx, err := cdxFromItem(iter.Item())
-				if err != nil {
-					results <- index.CdxResponse{Error: err}
-					return nil
-				}
-				results <- index.CdxResponse{Cdx: cdx, Error: nil}
 			}
 			return nil
 		})
@@ -322,14 +324,6 @@ func (db *DB) unsortedSerialSearch(ctx context.Context, search index.Request, re
 				earliestIndex := -1
 				// find the earliest timestamp
 				for i, iter := range iterators {
-
-					select {
-					case <-ctx.Done():
-						results <- index.CdxResponse{Error: ctx.Err()}
-						return nil
-					default:
-					}
-
 					// if iter is no longer valid, close it, remove it from slice and restart search
 					if !iter.ValidForPrefix(prefixes[i]) {
 						iteratorsLen := len(iterators)
@@ -366,23 +360,37 @@ func (db *DB) unsortedSerialSearch(ctx context.Context, search index.Request, re
 				if earliestIndex == -1 {
 					break
 				}
+				// use iterator with earliest timestamp
 				iter := iterators[earliestIndex]
 
+				var cdxResponse index.CdxResponse
 				cdx, err := cdxFromItem(iter.Item())
 				if err != nil {
-					return err
+					cdxResponse.Error = err
+				} else if search.Filter().Eval(cdx) {
+					cdxResponse.Cdx = cdx
 				}
-
-				iter.Next()
-
-				if search.Filter().Eval(cdx) {
-					count++
-					results <- index.CdxResponse{Cdx: cdx, Error: nil}
+				// skip if empty response
+				if cdxResponse == (index.CdxResponse{}) {
+					iter.Next()
+					continue
 				}
-
+				// send result
+				select {
+				case <-ctx.Done():
+					results <- index.CdxResponse{Error: ctx.Err()}
+					return nil
+				case results <- cdxResponse:
+					if cdxResponse.Error == nil {
+						count++
+					}
+				}
+				// stop iteration if limit is reached
 				if search.Limit() > 0 && count >= search.Limit() {
 					break
 				}
+				// advance iterator
+				iter.Next()
 			}
 			return nil
 		})
@@ -470,19 +478,34 @@ func (db *DB) closestUniSearch(ctx context.Context, search index.Request, result
 					return nil
 				}
 
-				cdx, err := cdxFromItem(it.Item())
-				if err != nil {
-					results <- index.CdxResponse{Error: err}
-					return nil
+				var cdxResponse index.CdxResponse
+				if cdx, err := cdxFromItem(it.Item()); err != nil {
+					cdxResponse.Error = err
+				} else if search.Filter().Eval(cdx) {
+					cdxResponse.Cdx = cdx
 				}
-				it.Next()
-
-				results <- index.CdxResponse{Cdx: cdx, Error: nil}
-				count++
-
+				// skip if empty response
+				if cdxResponse == (index.CdxResponse{}) {
+					// but still advance iterator
+					it.Next()
+					continue
+				}
+				// send result
+				select {
+				case <-ctx.Done():
+					results <- index.CdxResponse{Error: ctx.Err()}
+					return nil
+				case results <- cdxResponse:
+					if cdxResponse.Error == nil {
+						count++
+					}
+				}
+				// stop iteration if limit is reached
 				if search.Limit() > 0 && count >= search.Limit() {
 					break
 				}
+				// advance iterator
+				it.Next()
 			}
 			return nil
 		})
