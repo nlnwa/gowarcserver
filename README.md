@@ -9,7 +9,7 @@ A tool to index and serve contents of WARC files.
 
 ### Requirements
 
-go version 1.16 or newer
+go version 1.19 or newer
 
 ### Build
 
