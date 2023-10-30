@@ -379,7 +379,6 @@ func (db *DB) unsortedSerialSearch(ctx context.Context, search index.Request, re
 					}
 
 					item := iter.Item()
-					// in the event of parse error we get a zero timestamp
 					ts, err := time.Parse(timestamp.CDX, cdxKey(item.Key()).ts())
 					if err != nil {
 						log.Warn().Err(err).Msgf("Failed to parse timestamp for key: '%s'", string(item.Key()))
