@@ -215,25 +215,22 @@ func (db *DB) Search(ctx context.Context, search index.Request, results chan<- i
 // sortedParallelSearch searches the index database, sorts the results and processes each result with perCdxFunc.
 func (db *DB) sortedParallelSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	count := 0
-	perItemFn := func(item *badger.Item) error {
+
+	perItemFn := func(item *badger.Item) (cdxResponse index.CdxResponse) {
 		err := item.Value(func(val []byte) error {
-			result := new(schema.Cdx)
-			err := proto.Unmarshal(val, result)
+			cdx := new(schema.Cdx)
+			err := proto.Unmarshal(val, cdx)
 			if err != nil {
 				return err
-			}
-
-			// filter (exact, contains, regexp)
-			if search.Filter().Eval(result) {
-				count++
-				results <- index.CdxResponse{Cdx: result, Error: nil}
+			} else if search.Filter().Eval(cdx) {
+				cdxResponse.Cdx = cdx
 			}
 			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("%s: %w", item.KeyCopy(nil), err)
+			cdxResponse.Error = err
 		}
-		return nil
+		return
 	}
 
 	var closest int64
@@ -244,21 +241,23 @@ func (db *DB) sortedParallelSearch(ctx context.Context, search index.Request, re
 		}
 		closest = ts.Unix()
 	}
+	sorter := NewSorter(closest, search.Sort() == index.SortAsc)
+	keys := make(chan []byte, len(search.Keys()))
+	done := make(chan struct{})
+
+	// add keys to sorter in separate goroutine
+	// to safely add items to sorter concurrently
+	go func() {
+		for key := range keys {
+			sorter.Add(key)
+		}
+		done <- struct{}{}
+	}()
+
 	go func() {
 		defer close(results)
-		sorter := NewSorter(closest, search.Sort() == index.SortAsc)
+
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
-			items := make(chan []byte, len(search.Keys()))
-
-			done := make(chan struct{})
-
-			go func() {
-				for key := range items {
-					sorter.Add(key)
-				}
-				sorter.Sort()
-				done <- struct{}{}
-			}()
 
 			// wg is used to synchronize multiple transaction iterators operating simultaneously.
 			var wg sync.WaitGroup
@@ -277,34 +276,67 @@ func (db *DB) sortedParallelSearch(ctx context.Context, search index.Request, re
 					defer it.Close()
 
 					for it.Seek([]byte(key)); it.ValidForPrefix([]byte(key)); it.Next() {
-						select {
-						case <-ctx.Done():
-							results <- index.CdxResponse{Error: ctx.Err()}
-							return
-						default:
-						}
-
 						k := it.Item().KeyCopy(nil)
 
 						// filter from/to
 						inDateRange, _ := search.DateRange().ContainsStr(cdxKey(k).ts())
 						if inDateRange {
-							items <- k
+							keys <- k
 						}
 					}
 				}()
 			}
-			wg.Wait()
-			close(items)
-			<-done
 
-			return sorter.Walk(txn, func(item *badger.Item) (stopIteration bool) {
-				if err := perItemFn(item); err != nil {
-					return true
+			// wait for all iterators to finish
+			wg.Wait()
+			// close items channel
+			close(keys)
+			// wait for sorter to finish
+			<-done
+			// sort
+			sorter.Sort()
+
+			// process each item in sorted order
+			for _, value := range sorter.Values {
+				var cdxResponse index.CdxResponse
+				abort := false
+
+				item, err := txn.Get(value.k)
+				if errors.Is(err, badger.ErrKeyNotFound) {
+					continue
+				} else if err != nil {
+					cdxResponse.Error = err
+					abort = true
+				} else {
+					cdxResponse = perItemFn(item)
 				}
-				return false
-			})
+
+				// skip if empty response
+				if cdxResponse == (index.CdxResponse{}) {
+					continue
+				}
+				// send result
+				select {
+				case <-ctx.Done():
+					results <- index.CdxResponse{Error: ctx.Err()}
+					return nil
+				case results <- cdxResponse:
+					if cdxResponse.Error == nil {
+						count++
+					}
+				}
+				// stop iteration if limit is reached
+				if search.Limit() > 0 && count >= search.Limit() {
+					break
+				}
+				// stop iteration if critical error
+				if abort {
+					break
+				}
+			}
+			return nil
 		})
+
 	}()
 	return nil
 }
