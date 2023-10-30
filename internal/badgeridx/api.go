@@ -384,7 +384,7 @@ func (db *DB) unsortedSerialSearch(ctx context.Context, search index.Request, re
 					if err != nil {
 						log.Warn().Err(err).Msgf("Failed to parse timestamp for key: '%s'", string(item.Key()))
 
-						// timestamp is invalid, iterate to next and restart search
+						// timestamp is invalid, iterate to next item and restart search
 						iter.Next()
 						continue OUTER
 					}
