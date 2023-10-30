@@ -224,6 +224,8 @@ func (db *DB) write(rec index.Record) {
 	}
 }
 
+const tikvMaxKeySize = 8 * 1024
+
 func (db *DB) collectBatch() ([][]byte, [][]byte) {
 	var keys [][]byte
 	var values [][]byte
@@ -234,6 +236,11 @@ func (db *DB) collectBatch() ([][]byte, [][]byte) {
 			cdx, err := cdxKV(r)
 			if err != nil {
 				log.Error().Err(err).Msgf("failed to marshal record: %v", r)
+				continue
+			}
+			// check if key size exceeds tikv max key size
+			if len(cdx.K) > tikvMaxKeySize {
+				log.Warn().Str("key", string(id.K)).Msgf("Skipping: cdx key size exceeds tikv max key size (%d): %d", tikvMaxKeySize, len(cdx.K))
 				continue
 			}
 			keys = append(keys, id.K, cdx.K)
