@@ -95,8 +95,10 @@ func (db *DB) List(ctx context.Context, limit int, results chan<- index.CdxRespo
 }
 
 // Closest returns the closest cdx values in the database.
-func (db *DB) Closest(_ context.Context, request index.Request, results chan<- index.CdxResponse) error {
+func (db *DB) Closest(ctx context.Context, request index.Request, results chan<- index.CdxResponse) error {
 	go func() {
+		count := 0
+
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
 			defer close(results)
 
@@ -117,18 +119,6 @@ func (db *DB) Closest(_ context.Context, request index.Request, results chan<- i
 			forward := txn.NewIterator(opts)
 			defer forward.Close()
 			forward.Seek(fk)
-
-			// check if we got a literal match on forward seek key (fast path)
-			if forward.ValidForPrefix(fk) {
-				cdx, err := cdxFromItem(forward.Item())
-				if err == nil {
-					results <- index.CdxResponse{Cdx: cdx}
-					return nil
-				}
-				// report error and move iterator forward
-				results <- index.CdxResponse{Error: err}
-				forward.Next()
-			}
 
 			opts.Reverse = true
 			backward := txn.NewIterator(opts)
@@ -169,17 +159,35 @@ func (db *DB) Closest(_ context.Context, request index.Request, results chan<- i
 					iter = backward
 				} else {
 					// found nothing
+					results <- index.CdxResponse{}
 					return nil
 				}
+				var cdxResponse index.CdxResponse
 				cdx, err := cdxFromItem(iter.Item())
-				if err == nil {
-					results <- index.CdxResponse{Cdx: cdx}
-					return nil
+				if err != nil {
+					cdxResponse = index.CdxResponse{Error: err}
+				} else if request.Filter().Eval(cdx) {
+					cdxResponse = index.CdxResponse{Cdx: cdx}
 				}
-				// report error and move iterator forward
-				results <- index.CdxResponse{Error: err}
+				if cdxResponse == (index.CdxResponse{}) {
+					iter.Next()
+					continue
+				}
+				select {
+				case <-ctx.Done():
+					results <- index.CdxResponse{Error: ctx.Err()}
+					return nil
+				case results <- cdxResponse:
+					if cdxResponse.Error == nil {
+						count++
+					}
+				}
+				if request.Limit() > 0 && count >= request.Limit() {
+					break
+				}
 				iter.Next()
 			}
+			return nil
 		})
 	}()
 	return nil
