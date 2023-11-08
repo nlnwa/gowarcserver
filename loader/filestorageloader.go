@@ -65,24 +65,24 @@ func (f FileStorageLoader) Load(ctx context.Context, storageRef string) (record 
 func (f FileStorageLoader) parseStorageRef(storageRef string) (filename string, offset int64, err error) {
 	n := strings.IndexRune(storageRef, ':')
 	if n == -1 {
-		err = fmt.Errorf("invalid storage ref, missing scheme delimiter ':'")
+		err = fmt.Errorf("invalid storage ref '%s', missing scheme delimiter ':'", storageRef)
 		return
 	}
 	scheme := storageRef[:n]
 	if scheme != "warcfile" {
-		err = fmt.Errorf("invalid storage ref, scheme must be \"warcfile\", was: %s", scheme)
+		err = fmt.Errorf("invalid storage ref '%s', scheme must be \"warcfile\", was: %s", storageRef, scheme)
 		return
 	}
 	storageRef = storageRef[n+1:]
 	n = strings.IndexRune(storageRef, '#')
 	if n == -1 {
-		err = fmt.Errorf("invalid storage ref, missing offset delimiter '#'")
+		err = fmt.Errorf("invalid storage ref '%s', missing offset delimiter '#'", storageRef)
 		return
 	}
 	filename = storageRef[:n]
 	offset, err = strconv.ParseInt(storageRef[n+1:], 0, 64)
 	if err != nil {
-		err = fmt.Errorf("invalid storage ref, invalid offset: %w", err)
+		err = fmt.Errorf("invalid storage ref '%s', failed to parse offset: %w", storageRef, err)
 	}
 	if f.FilePathResolver != nil {
 		filename, err = f.FilePathResolver.ResolvePath(filename)
