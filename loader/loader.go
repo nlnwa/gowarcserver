@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/nlnwa/gowarc"
 	"github.com/rs/zerolog/log"
 )
@@ -55,6 +56,14 @@ func (e ErrResolveRevisit) Error() string {
 
 func (e ErrResolveRevisit) String() string {
 	return fmt.Sprintf("Warc-Refers-To-Date: %s, Warc-Refers-To-Target-URI: %s, Warc-Profile: %s", e.Date, e.TargetURI, e.Profile)
+}
+
+type ErrWarcRefersToNotFound struct {
+	WarcRefersTo string
+}
+
+func (e ErrWarcRefersToNotFound) Error() string {
+	return fmt.Sprintf("record referred via WARC-Refers-To not found: %s", e.WarcRefersTo)
 }
 
 func (l *Loader) LoadById(ctx context.Context, warcId string) (gowarc.WarcRecord, error) {
@@ -104,7 +113,10 @@ func (l *Loader) LoadByStorageRef(ctx context.Context, storageRef string) (gowar
 		var revisitOf gowarc.WarcRecord
 		storageRef, err = l.Resolve(ctx, warcRefersTo)
 		if err != nil {
-			return nil, fmt.Errorf("unable to resolve referred Warc-Record-ID [%s]: %w", warcRefersTo, err)
+			return nil, fmt.Errorf("failed to resolve WARC-Refers-To [%s]: %w", warcRefersTo, err)
+		}
+		if storageRef == "" {
+			return nil, ErrWarcRefersToNotFound{WarcRefersTo: warcRefersTo}
 		}
 		revisitOf, err = l.RecordLoader.Load(ctx, storageRef)
 		if err != nil {
