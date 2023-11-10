@@ -14,7 +14,7 @@ require (
 	github.com/nlnwa/whatwg-url v0.4.0
 	github.com/rs/zerolog v1.31.0
 	github.com/segmentio/kafka-go v0.4.44
-	github.com/spf13/cobra v1.7.0
+	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.17.0
 	github.com/tikv/client-go/v2 v2.0.8-0.20231030120815-1362f1e87566
 	google.golang.org/protobuf v1.31.0
