@@ -233,6 +233,9 @@ func (db *DB) Resolve(ctx context.Context, warcId string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if val == nil {
+		return "", nil
+	}
 	return string(val), nil
 }
 
