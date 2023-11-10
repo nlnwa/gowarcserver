@@ -52,6 +52,9 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for res := range response {
+		if errors.Is(res.Error, context.Canceled) {
+			return
+		}
 		if res.Error != nil {
 			log.Warn().Err(res.Error).Msg("failed result")
 			continue
@@ -77,6 +80,7 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// resolveRevisit resolves a revisit record by looking up the closest matching target URI and date
 func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest string) (string, error) {
 	uri, err := url.Parse(targetURI)
 	if err != nil {
@@ -137,6 +141,9 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	var res index.CdxResponse
 	for res = range response {
+		if errors.Is(res.Error, context.Canceled) {
+			return
+		}
 		if res.Error != nil {
 			log.Warn().Err(err).Msg("Failed cdx response")
 			continue
@@ -165,6 +172,12 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 				ref, err = h.resolveRevisit(ctx, errResolveRevisit.TargetURI, date)
 			}
 			retry = false
+		}
+		var errWarcRefersToNotFound loader.ErrWarcRefersToNotFound
+		if errors.As(err, &errWarcRefersToNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			log.Error().Err(err).Msgf("Failed to load record")
+			return
 		}
 		if err != nil {
 			if warcRecord != nil {
@@ -210,7 +223,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	locUrl, err := url.Parse(location)
-	if urlErrors.Code(err) == urlErrors.FailRelativeUrlWithNoBase {
+	if urlErrors.Type(err) == urlErrors.MissingSchemeNonRelativeURL {
 		locUrl, err = url.ParseRef(coreApi.Urls[0].String(), location)
 		if err != nil {
 			err = fmt.Errorf("failed to parse relative location header as URL: %s: %s: %w", warcRecord, location, err)

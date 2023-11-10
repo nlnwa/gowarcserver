@@ -43,7 +43,7 @@ func SurtU(u *url.Url, includeScheme bool) (string, error) {
 }
 
 func SurtS(u string, includeScheme bool) (string, error) {
-	u2, err := url.Parse(u)
+	u2, err := parser.Parse(u)
 	if err != nil {
 		return "", err
 	}

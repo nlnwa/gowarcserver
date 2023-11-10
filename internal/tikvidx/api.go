@@ -38,19 +38,35 @@ func (db *DB) Closest(ctx context.Context, req index.Request, res chan<- index.C
 	go func() {
 		defer close(res)
 
+		if len(values) == 0 {
+			res <- index.CdxResponse{}
+			return
+		}
+
+		count := 0
+
 		for _, v := range values {
 			var cdxResponse index.CdxResponse
 			cdx := new(schema.Cdx)
 			err := proto.Unmarshal(v, cdx)
 			if err != nil {
 				cdxResponse = index.CdxResponse{Error: err}
-			} else {
+			} else if req.Filter().Eval(cdx) {
 				cdxResponse = index.CdxResponse{Cdx: cdx}
+			} else {
+				continue
 			}
 			select {
 			case <-ctx.Done():
+				res <- index.CdxResponse{Error: ctx.Err()}
 				return
 			case res <- cdxResponse:
+				if cdxResponse.Error == nil {
+					count++
+				}
+			}
+			if req.Limit() > 0 && count >= req.Limit() {
+				break
 			}
 		}
 	}()
@@ -74,33 +90,40 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 
 		count := 0
 
-		for it.Valid() && (req.Limit() == 0 || count < req.Limit()) {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			func() {
+		for it.Valid() {
+			cdxResponse := func() index.CdxResponse {
 				inDateRange, err := req.DateRange().ContainsStr(cdxKey(it.Key()).ts())
 				if err != nil {
-					res <- index.CdxResponse{Error: err}
-					return
+					return index.CdxResponse{Error: err}
 				}
 				if !inDateRange {
-					return
+					return index.CdxResponse{}
 				}
 				cdx := new(schema.Cdx)
 				if err := proto.Unmarshal(it.Value(), cdx); err != nil {
-					res <- index.CdxResponse{Error: err}
-					return
+					return index.CdxResponse{Error: err}
+				} else if req.Filter().Eval(cdx) {
+					return index.CdxResponse{Cdx: cdx}
 				}
-				if req.Filter().Eval(cdx) {
-					res <- index.CdxResponse{Cdx: cdx}
-					count++
-				}
+				return index.CdxResponse{}
 			}()
-			if err := it.Next(); err != nil {
+			if cdxResponse == (index.CdxResponse{}) {
+				// skip
+			} else {
+				select {
+				case <-ctx.Done():
+					res <- index.CdxResponse{Error: ctx.Err()}
+					return
+				case res <- cdxResponse:
+					if cdxResponse.Error == nil {
+						count++
+					}
+				}
+			}
+			if req.Limit() > 0 && count >= req.Limit() {
+				break
+			}
+			if err = it.Next(); err != nil {
 				res <- index.CdxResponse{Error: err}
 				break
 			}
@@ -110,7 +133,7 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 }
 
 func (db *DB) List(ctx context.Context, limit int, res chan<- index.CdxResponse) error {
-	if limit > rawkv.MaxRawKVScanLimit {
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
 	_, values, err := db.client.Scan(ctx, []byte(cdxPrefix), []byte(cdxPrefix+"\xff"), limit)
@@ -144,7 +167,7 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo,
 }
 
 func (db *DB) ListFileInfo(ctx context.Context, limit int, res chan<- index.FileInfoResponse) error {
-	if limit > rawkv.MaxRawKVScanLimit {
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
 	_, values, err := db.client.Scan(ctx, []byte(filePrefix), []byte(filePrefix+"\xff"), limit)
@@ -179,7 +202,7 @@ func (db *DB) GetStorageRef(ctx context.Context, id string) (string, error) {
 }
 
 func (db *DB) ListStorageRef(ctx context.Context, limit int, res chan<- index.IdResponse) error {
-	if limit > rawkv.MaxRawKVScanLimit {
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
 	keys, values, err := db.client.Scan(ctx, []byte(idPrefix), []byte(idPrefix+"\xff"), limit)
@@ -209,6 +232,9 @@ func (db *DB) Resolve(ctx context.Context, warcId string) (string, error) {
 	val, err := db.client.Get(ctx, []byte(idPrefix+warcId))
 	if err != nil {
 		return "", err
+	}
+	if val == nil {
+		return "", nil
 	}
 	return string(val), nil
 }

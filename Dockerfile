@@ -1,4 +1,4 @@
-FROM golang:1.19 as build
+FROM golang:1.21 as build
 
 WORKDIR /build
 
@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags "-s -w -X github.com/nlnwa/gowarcserver/cmd/version.Version=${VERSION}"
 
 
-FROM gcr.io/distroless/base-debian11
+FROM gcr.io/distroless/base-debian12:latest
 COPY --from=build /build/gowarcserver /
 EXPOSE 9999
 

@@ -43,15 +43,19 @@ func (f FileStorageLoader) Load(ctx context.Context, storageRef string) (record 
 
 	wf, err := gowarc.NewWarcFileReader(filePath, offset,
 		gowarc.WithSyntaxErrorPolicy(gowarc.ErrIgnore),
-		gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore),
-	)
+		gowarc.WithSpecViolationPolicy(gowarc.ErrIgnore))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize warc reader: %s#%d, %w", filePath, offset, err)
 	}
-	defer wf.Close()
+
+	go func() {
+		<-ctx.Done()
+		_ = wf.Close()
+	}()
 
 	record, offset, _, err = wf.Next()
 	if err != nil {
+		log.Error().Msgf("%s, offset %v\n", err, offset)
 		return nil, fmt.Errorf("failed to read record: %s#%d: %w", filePath, offset, err)
 	}
 	return
@@ -61,24 +65,24 @@ func (f FileStorageLoader) Load(ctx context.Context, storageRef string) (record 
 func (f FileStorageLoader) parseStorageRef(storageRef string) (filename string, offset int64, err error) {
 	n := strings.IndexRune(storageRef, ':')
 	if n == -1 {
-		err = fmt.Errorf("invalid storage ref, missing scheme delimiter ':'")
+		err = fmt.Errorf("invalid storage ref '%s', missing scheme delimiter ':'", storageRef)
 		return
 	}
 	scheme := storageRef[:n]
 	if scheme != "warcfile" {
-		err = fmt.Errorf("invalid storage ref, scheme must be \"warcfile\", was: %s", scheme)
+		err = fmt.Errorf("invalid storage ref '%s', scheme must be \"warcfile\", was: %s", storageRef, scheme)
 		return
 	}
 	storageRef = storageRef[n+1:]
 	n = strings.IndexRune(storageRef, '#')
 	if n == -1 {
-		err = fmt.Errorf("invalid storage ref, missing offset delimiter '#'")
+		err = fmt.Errorf("invalid storage ref '%s', missing offset delimiter '#'", storageRef)
 		return
 	}
 	filename = storageRef[:n]
 	offset, err = strconv.ParseInt(storageRef[n+1:], 0, 64)
 	if err != nil {
-		err = fmt.Errorf("invalid storage ref, invalid offset: %w", err)
+		err = fmt.Errorf("invalid storage ref '%s', failed to parse offset: %w", storageRef, err)
 	}
 	if f.FilePathResolver != nil {
 		filename, err = f.FilePathResolver.ResolvePath(filename)
