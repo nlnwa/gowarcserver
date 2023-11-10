@@ -173,6 +173,12 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 			}
 			retry = false
 		}
+		var errWarcRefersToNotFound loader.ErrWarcRefersToNotFound
+		if errors.As(err, &errWarcRefersToNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			log.Error().Err(err).Msgf("Failed to load record")
+			return
+		}
 		if err != nil {
 			if warcRecord != nil {
 				_ = warcRecord.Close()
