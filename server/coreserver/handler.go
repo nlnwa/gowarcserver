@@ -275,6 +275,10 @@ func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Msg("")
 		return
 	}
+	if record == nil {
+		http.NotFound(w, r)
+		return
+	}
 	_, err = handlers.RenderRecord(w, record)
 	if err != nil {
 		log.Warn().Err(err).Msgf("Failed to write record '%s': %v", warcId, record)
