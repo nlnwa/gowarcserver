@@ -18,6 +18,7 @@ package badgeridx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -288,6 +289,9 @@ func (db *DB) Index(path string) error {
 func (db *DB) Resolve(_ context.Context, warcId string) (storageRef string, err error) {
 	err = db.IdIndex.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(warcId))
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
