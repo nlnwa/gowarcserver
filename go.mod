@@ -13,7 +13,7 @@ require (
 	github.com/nlnwa/gowarc v1.1.1
 	github.com/nlnwa/whatwg-url v0.4.0
 	github.com/rs/zerolog v1.31.0
-	github.com/segmentio/kafka-go v0.4.46
+	github.com/segmentio/kafka-go v0.4.47
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.1
 	github.com/tikv/client-go/v2 v2.0.8-0.20231030120815-1362f1e87566
