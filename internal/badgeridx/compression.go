@@ -23,7 +23,7 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 
-	"github.com/dgraph-io/badger/v3/options"
+	"github.com/dgraph-io/badger/v4/options"
 )
 
 const (

@@ -17,7 +17,7 @@
 package badgeridx
 
 import (
-	badgerOptions "github.com/dgraph-io/badger/v3/options"
+	badgerOptions "github.com/dgraph-io/badger/v4/options"
 	"github.com/nlnwa/gowarcserver/index"
 	"time"
 )

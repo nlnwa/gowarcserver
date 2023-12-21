@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/timestamp"
