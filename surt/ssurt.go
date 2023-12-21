@@ -86,10 +86,12 @@ func writeScheme(sb *strings.Builder, u *url.Url) {
 	if u.Username() != "" {
 		sb.WriteByte('@')
 		sb.WriteString(u.Username())
+
+		if u.Password() != "" {
+			sb.WriteByte(':')
+			sb.WriteString(u.Password())
+		}
 	}
-	if u.Password() != "" {
-		sb.WriteByte(':')
-		sb.WriteString(u.Password())
-	}
+
 	sb.WriteByte(':')
 }
