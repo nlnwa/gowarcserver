@@ -28,8 +28,8 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/nlnwa/gowarcserver/index"
+	"github.com/nlnwa/gowarcserver/internal/keyvalue"
 	"github.com/nlnwa/gowarcserver/schema"
-	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -238,13 +238,22 @@ func (db *DB) flushBatch() {
 	}
 
 	// update id index
-	if err := db.IdIndex.Update(set(records, marshalIdKey)); err != nil {
+
+	if err := db.IdIndex.Update(set(records, marshalId)); err != nil {
 		log.Error().Err(err).Msgf("Failed to update id index")
 	}
 	// update cdx index
-	if err := db.CdxIndex.Update(set(records, marshalCdxKey)); err != nil {
+	if err := db.CdxIndex.Update(set(records, marshalCdx)); err != nil {
 		log.Error().Err(err).Msgf("Failed to update cdx index")
 	}
+}
+
+func marshalId(r index.Record) ([]byte, []byte, error) {
+	return keyvalue.MarshalId(r, "")
+}
+
+func marshalCdx(r index.Record) ([]byte, []byte, error) {
+	return keyvalue.MarshalCdx(r, "")
 }
 
 func set(records []index.Record, m func(index.Record) ([]byte, []byte, error)) func(*badger.Txn) error {
@@ -261,19 +270,6 @@ func set(records []index.Record, m func(index.Record) ([]byte, []byte, error)) f
 		}
 		return nil
 	}
-}
-
-// marshalIdKey takes a record and returns a key-value pair for the id index.
-func marshalIdKey(r index.Record) ([]byte, []byte, error) {
-	return []byte(r.GetRid()), []byte(r.GetRef()), nil
-}
-
-// marshalCdxKey takes a record and returns a key-value pair for the cdx index.
-func marshalCdxKey(r index.Record) ([]byte, []byte, error) {
-	ts := timestamp.TimeTo14(r.GetSts().AsTime())
-	key := []byte(r.GetSsu() + " " + ts + " " + r.GetSrt())
-	value, err := r.Marshal()
-	return key, value, err
 }
 
 func (db *DB) Write(rec index.Record) error {

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/nlnwa/gowarcserver/index"
+	"github.com/nlnwa/gowarcserver/internal/keyvalue"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/rs/zerolog/log"
@@ -177,13 +178,13 @@ func (db *DB) updateFilePath(filePath string) error {
 func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	k := []byte(filePrefix + fi.Name)
-	v, err := proto.Marshal(fi)
+
+	key, value, err := keyvalue.MarshalFileInfo(fi, filePrefix)
 	if err != nil {
-		log.Error().Err(err).Msg("")
+		log.Error().Err(err).Msg("Failed to marshal file info")
 		return err
 	}
-	err = db.client.Put(ctx, k, v)
+	err = db.client.Put(ctx, key, value)
 	if err != nil {
 		log.Error().Err(err).Msgf("Failed to put file info: %s", fi.Name)
 		return err
@@ -232,19 +233,19 @@ func (db *DB) collectBatch() ([][]byte, [][]byte) {
 	for {
 		select {
 		case r := <-db.batch:
-			id := idKV(r)
-			cdx, err := cdxKV(r)
+			idKey, idValue, _ := marshalId(r)
+			cdxKey, cdxValue, err := marshalCdx(r)
 			if err != nil {
 				log.Error().Err(err).Msgf("failed to marshal record: %v", r)
 				continue
 			}
 			// check if key size exceeds tikv max key size
-			if len(cdx.K) > tikvMaxKeySize {
-				log.Warn().Str("key", string(id.K)).Msgf("Skipping: cdx key size exceeds tikv max key size (%d): %d", tikvMaxKeySize, len(cdx.K))
+			if len(cdxKey) > tikvMaxKeySize {
+				log.Warn().Str("key", string(cdxKey)).Msgf("Skipping: cdx key size exceeds tikv max key size (%d): %d", tikvMaxKeySize, len(cdxKey))
 				continue
 			}
-			keys = append(keys, id.K, cdx.K)
-			values = append(values, id.V, cdx.V)
+			keys = append(keys, idKey, cdxKey)
+			values = append(values, idValue, cdxValue)
 		default:
 			return keys, values
 		}
@@ -268,22 +269,13 @@ func (db *DB) flushBatch() {
 }
 
 // idKV takes a record and returns a key-value pair for the id index.
-func idKV(r index.Record) KV {
-	return KV{
-		K: []byte(idPrefix + r.GetRid()),
-		V: []byte(r.GetRef()),
-	}
+func marshalId(r index.Record) ([]byte,[]byte, error) {
+	return keyvalue.MarshalId(r, idPrefix)
 }
 
-// cdxKV takes a record and returns a key-value pair for the cdx index.
-func cdxKV(r index.Record) (KV, error) {
-	ts := timestamp.TimeTo14(r.GetSts().AsTime())
-	k := []byte(cdxPrefix + r.GetSsu() + " " + ts + " " + r.GetSrt())
-	v, err := r.Marshal()
-	if err != nil {
-		return KV{}, err
-	}
-	return KV{K: k, V: v}, nil
+// marshalCdx takes a record and returns a key-value pair for the cdx index.
+func marshalCdx(r index.Record) ([]byte, []byte, error) {
+	return keyvalue.MarshalCdx(r, cdxPrefix)
 }
 
 func (db *DB) Write(rec index.Record) error {
