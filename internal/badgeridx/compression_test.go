@@ -19,7 +19,7 @@ package badgeridx
 import (
 	"testing"
 
-	"github.com/dgraph-io/badger/v3/options"
+	"github.com/dgraph-io/badger/v4/options"
 )
 
 func TestParseCompression(t *testing.T) {

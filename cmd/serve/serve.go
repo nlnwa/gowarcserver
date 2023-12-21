@@ -28,7 +28,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dgraph-io/badger/v3/options"
+	"github.com/dgraph-io/badger/v4/options"
 	"github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/index"
