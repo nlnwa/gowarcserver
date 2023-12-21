@@ -19,7 +19,6 @@ package index
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/signal"
 	"regexp"
 	"runtime"
@@ -165,16 +164,8 @@ func indexCmd(_ *cobra.Command, _ []string) error {
 	)
 	defer queue.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-
-	go func() {
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-		sig := <-sigs
-		log.Info().Msgf("Received %s signal, shutting down...", sig)
-		cancel()
-	}()
 
 	var runner index.Runner
 
