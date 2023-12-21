@@ -22,29 +22,22 @@ import (
 
 type WorkQueue struct {
 	queue chan string
-	done  chan struct{}
 	wg    sync.WaitGroup
 }
 
 type Worker func(string)
 
-func NewWorkQueue(execute Worker, nrOfWorkers int) *WorkQueue {
+func NewWorkQueue(execute Worker, concurrency int) *WorkQueue {
 	iw := &WorkQueue{
-		queue: make(chan string, nrOfWorkers),
-		done:  make(chan struct{}),
+		queue: make(chan string, concurrency),
 	}
 
-	for i := 0; i < nrOfWorkers; i++ {
+	for i := 0; i < concurrency; i++ {
 		iw.wg.Add(1)
 		go func() {
 			defer iw.wg.Done()
-			for {
-				select {
-				case job := <-iw.queue:
-					execute(job)
-				case <-iw.done:
-					return
-				}
+			for job := range iw.queue {
+				execute(job)
 			}
 		}()
 	}
@@ -53,9 +46,9 @@ func NewWorkQueue(execute Worker, nrOfWorkers int) *WorkQueue {
 }
 
 func (iw *WorkQueue) Close() {
-	// stop workers
-	close(iw.done)
-	// and wait for them to complete
+	// close the queue
+	close(iw.queue)
+	// and wait for it to drain
 	iw.wg.Wait()
 }
 
