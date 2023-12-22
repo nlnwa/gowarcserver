@@ -2,6 +2,8 @@ package keyvalue
 
 import (
 	"bytes"
+	"time"
+
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/timestamp"
@@ -30,3 +32,18 @@ func MarshalFileInfo(fileInfo *schema.Fileinfo, prefix string) (key []byte, valu
 	return
 }
 
+// CdxByteTs is a wrapper around a key that provides methods for the time part.
+type CdxKeyTs []byte
+
+var spaceCharacter = []byte{32}
+
+func (bk CdxKeyTs) Time() (time.Time, error) {
+	b := bytes.Split(bk, spaceCharacter)[1]
+	return timestamp.Parse(string(b))
+}
+
+// Unix returns the time part of the key as unix time.
+func (bk CdxKeyTs) Unix() int64 {
+	ts, _ := bk.Time()
+	return ts.Unix()
+}

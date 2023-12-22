@@ -24,6 +24,7 @@ import (
 	"github.com/tikv/client-go/v2/rawkv"
 
 	"github.com/nlnwa/gowarcserver/index"
+	"github.com/nlnwa/gowarcserver/internal/keyvalue"
 	"github.com/nlnwa/gowarcserver/schema"
 	"google.golang.org/protobuf/proto"
 )
@@ -92,11 +93,8 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 
 		for it.Valid() {
 			cdxResponse := func() index.CdxResponse {
-				inDateRange, err := req.DateRange().ContainsStr(cdxKey(it.Key()).ts())
-				if err != nil {
-					return index.CdxResponse{Error: err}
-				}
-				if !inDateRange {
+				ts := keyvalue.CdxKeyTs(it.Key()).Unix()
+				if !req.DateRange().Contains(ts) {
 					return index.CdxResponse{}
 				}
 				cdx := new(schema.Cdx)

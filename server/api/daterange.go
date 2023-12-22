@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/nlnwa/gowarcserver/timestamp"
 )
 
 type DateRange struct {
@@ -27,19 +29,17 @@ type DateRange struct {
 	to   int64 // unix time
 }
 
-const timeLayout = "20060102150405"
-
 func NewDateRange(fromstr string, tostr string) (*DateRange, error) {
 	if fromstr == "" && tostr == "" {
 		return nil, nil
 	}
 
-	from, err := From(fromstr)
+	from, err := from(fromstr)
 	if err != nil {
 		return nil, err
 	}
 
-	to, err := To(tostr)
+	to, err := to(tostr)
 	if err != nil {
 		return nil, err
 	}
@@ -48,86 +48,53 @@ func NewDateRange(fromstr string, tostr string) (*DateRange, error) {
 }
 
 func (d *DateRange) Contains(ts int64) bool {
+	if d == nil {
+		return true
+	}
 	return ts >= d.from && ts <= d.to
 }
 
-// ContainsStr returns true if the timestamp ts contained by the bounds defined by the DateRange d.
-// input 'ts' is 'trusted' and does not have the same parsing complexity as a From or To string
-func (d *DateRange) ContainsStr(ts string) (bool, error) {
-	if d == nil {
-		return true, nil
-	}
-	timestamp, err := time.Parse(timeLayout, ts)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse ts: %w", err)
-	}
-	unixTs := timestamp.Unix()
-	return unixTs >= d.from && unixTs <= d.to, nil
-}
-
-// ContainsTime returns true if time.Time t is contained by the bounds defined by the DateRange d.
-func (d *DateRange) ContainsTime(t time.Time) (bool, error) {
-	if d == nil {
-		return true, nil
-	}
-	unixTs := t.Unix()
-	return unixTs >= d.from && unixTs <= d.to, nil
-}
-
-// From parses string f to unix time according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
-func From(f string) (int64, error) {
-	fLen := len(f)
-	if fLen%2 != 0 {
-		return 0, fmt.Errorf("'from' string was an odd number, len: %d", fLen)
-	}
-	if fLen > 14 {
-		return 0, fmt.Errorf("expected 'from' string len less than 14, len: %d", fLen)
-	}
-
-	// No specified from date
-	if fLen < 4 {
+// from parses string f to unix time according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
+func from(f string) (int64, error) {
+	l := len(f)
+	if l == 0 {
 		return time.Time{}.Unix(), nil
 	}
-
-	from, err := time.Parse(timeLayout[:fLen], f)
+	t, err := timestamp.Parse(f)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse 'from' date %s, %w", f, err)
 	}
-
-	return from.Unix(), nil
+	return t.Unix(), nil
 }
 
-// To parses string t to unix time according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
-func To(t string) (int64, error) {
-	tLen := len(t)
-	if tLen%2 != 0 {
-		return 0, fmt.Errorf("'to' string was an odd number, len: %d", tLen)
-	}
-	if tLen > 14 {
-		return 0, fmt.Errorf("expected 'to' string len less than 14, len: %d", tLen)
-	}
-
-	// No specified from date
-	if tLen < 4 {
+// to parses string t to unix time according to https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html#from-to:
+func to(t string) (int64, error) {
+	l := len(t)
+	if l == 0 {
 		return math.MaxInt64, nil
 	}
 
-	to, err := time.Parse(timeLayout[:tLen], t)
+	to, err := timestamp.Parse(t)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse 'to' date %s, %w", t, err)
 	}
 
-	switch tLen {
+	switch l {
 	case 4:
+		// adjust to last second of year
 		to = to.AddDate(0, 12, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
 	case 6:
+		// adjust to last second of month
 		// add one month - one day, i.e: user supplies january, we add 29 - 1
 		to = to.AddDate(0, 1, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
 	case 8:
+		// adjust to last second of day
 		to = to.Add(time.Hour*23 + time.Minute*59 + time.Second*59)
 	case 10:
+		// adjust to last second of hour
 		to = to.Add(time.Minute*59 + time.Second*59)
 	case 12:
+		// adjust to last second of minute
 		to = to.Add(time.Second * 59)
 	}
 

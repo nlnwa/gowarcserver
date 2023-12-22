@@ -20,12 +20,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/nlnwa/gowarcserver/index"
+	"github.com/nlnwa/gowarcserver/internal/keyvalue"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/rs/zerolog/log"
@@ -33,13 +33,6 @@ import (
 )
 
 type PerCdxFunc func(cdx *schema.Cdx) error
-
-// cdxKey is a wrapper around a badger key that provides a timestamp method.
-type cdxKey string
-
-func (k cdxKey) ts() string {
-	return strings.Split(string(k), " ")[1]
-}
 
 // cdxFromItem unmarshals a badger item value into a schema.Cdx.
 func cdxFromItem(item *badger.Item) (cdx *schema.Cdx, err error) {
@@ -133,20 +126,18 @@ func (db *DB) Closest(ctx context.Context, request index.Request, results chan<-
 
 				// get forward ts
 				if forward.ValidForPrefix(prefix) {
-					t, _ = timestamp.Parse(cdxKey(forward.Item().Key()).ts())
-					ft = t.Unix()
+					ft = keyvalue.CdxKeyTs(forward.Item().Key()).Unix()
 				}
 				// get backward ts
 				if backward.ValidForPrefix(prefix) {
-					t, _ = timestamp.Parse(cdxKey(backward.Item().Key()).ts())
-					bt = t.Unix()
+					bt = keyvalue.CdxKeyTs(backward.Item().Key()).Unix()
 				}
 
 				var iter *badger.Iterator
 
 				if ft != 0 && bt != 0 {
 					// find closest of forward and backward
-					isForward := timestamp.AbsInt64(cl-ft) < timestamp.AbsInt64(cl-bt)
+					isForward := timestamp.CompareClosest(cl)(ft, bt)
 					if isForward {
 						iter = forward
 					} else {
@@ -278,7 +269,7 @@ func (db *DB) sortedParallelSearch(ctx context.Context, search index.Request, re
 						k := it.Item().KeyCopy(nil)
 
 						// filter from/to
-						inDateRange, _ := search.DateRange().ContainsStr(cdxKey(k).ts())
+						inDateRange := search.DateRange().Contains(keyvalue.CdxKeyTs(k).Unix())
 						if inDateRange {
 							keys <- k
 						}
@@ -362,8 +353,8 @@ func (db *DB) unsortedSerialSearch(ctx context.Context, search index.Request, re
 
 		OUTER:
 			for len(iterators) > 0 {
-				// set timestamp to approx max time.Time value
-				earliestTimestamp := time.Unix(1<<62, 1<<62)
+				// set earliest timestamp to approx max time.Time value
+				earliestTimestamp := time.Unix(1<<63-1, 0).Unix()
 				earliestIndex := -1
 				// find the earliest timestamp
 				for i, iter := range iterators {
@@ -378,23 +369,16 @@ func (db *DB) unsortedSerialSearch(ctx context.Context, search index.Request, re
 					}
 
 					item := iter.Item()
-					ts, err := time.Parse(timestamp.CDX, cdxKey(item.Key()).ts())
-					if err != nil {
-						log.Warn().Err(err).Msgf("Failed to parse timestamp for key: '%s'", string(item.Key()))
 
-						// timestamp is invalid, iterate to next item and restart search
-						iter.Next()
-						continue OUTER
-					}
-
-					inRange, _ := search.DateRange().ContainsTime(ts)
+					ts := keyvalue.CdxKeyTs(item.Key()).Unix()
+					inRange := search.DateRange().Contains(ts)
 					if !inRange {
 						// timestamp out of range, iterate to next item and restart search
 						iter.Next()
 						continue OUTER
 					}
 
-					if ts.Before(earliestTimestamp) {
+					if ts < earliestTimestamp {
 						earliestTimestamp = ts
 						earliestIndex = i
 					}
@@ -454,9 +438,7 @@ func (db *DB) closestUniSearch(ctx context.Context, search index.Request, result
 	opts.Prefix = prefix
 
 	closest := ts.Unix()
-	isClosest := func(a int64, b int64) bool {
-		return timestamp.AbsInt64(closest-a) <= timestamp.AbsInt64(closest-b)
-	}
+	isClosest := timestamp.CompareClosest(closest)
 
 	count := 0
 
@@ -496,16 +478,14 @@ func (db *DB) closestUniSearch(ctx context.Context, search index.Request, result
 				}
 
 				if f && forward.ValidForPrefix(prefix) {
-					t, _ := timestamp.Parse(cdxKey(forward.Item().Key()).ts())
-					ft = t.Unix()
+					ft = keyvalue.CdxKeyTs(forward.Item().Key()).Unix()
 				} else if f {
 					f = false
 					ft = 0
 				}
 
 				if b && backward.ValidForPrefix(prefix) {
-					t, _ := timestamp.Parse(cdxKey(backward.Item().Key()).ts())
-					bt = t.Unix()
+					bt = keyvalue.CdxKeyTs(backward.Item().Key()).Unix()
 				} else if b {
 					b = false
 					bt = 0
@@ -580,10 +560,8 @@ func (db *DB) uniSearch(ctx context.Context, search index.Request, results chan<
 
 			for it.Seek([]byte(seekKey)); it.ValidForPrefix(prefix); it.Next() {
 				cdxResponse := func() (cdxResponse index.CdxResponse) {
-					if contains, err := search.DateRange().ContainsStr(cdxKey(it.Item().Key()).ts()); err != nil {
-						cdxResponse.Error = err
-						return
-					} else if !contains {
+					ts := keyvalue.CdxKeyTs(it.Item().Key()).Unix()
+					if !search.DateRange().Contains(ts) {
 						return
 					}
 					if err := it.Item().Value(func(v []byte) error {

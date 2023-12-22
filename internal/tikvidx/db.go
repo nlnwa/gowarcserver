@@ -17,45 +17,21 @@
 package tikvidx
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/keyvalue"
 	"github.com/nlnwa/gowarcserver/schema"
-	"github.com/nlnwa/gowarcserver/timestamp"
 	"github.com/rs/zerolog/log"
 	"github.com/tikv/client-go/v2/rawkv"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-// KV represents a Key-Value pair.
-type KV struct {
-	K, V []byte
-}
-
-func (kv KV) String() string {
-	return fmt.Sprintf("%s => %s (%v)", kv.K, kv.V, kv.V)
-}
-
-func (kv KV) ts() int64 {
-	b := bytes.Split(kv.K, []byte{32})[1]
-	ts, _ := time.Parse(timestamp.CDX, string(b))
-	return ts.Unix()
-}
-
-type cdxKey string
-
-func (k cdxKey) ts() string {
-	return strings.Split(string(k), " ")[1]
-}
 
 var (
 	dbPrefix   = "d"
@@ -225,6 +201,7 @@ func (db *DB) write(rec index.Record) {
 	}
 }
 
+// see https://github.com/tikv/tikv/blob/a0e8a7a163302bc9a7be5fd5a903b6a156797eb8/src/storage/config.rs#L21
 const tikvMaxKeySize = 8 * 1024
 
 func (db *DB) collectBatch() ([][]byte, [][]byte) {
