@@ -86,38 +86,16 @@ func TestValidDateRangeContains(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			contains, err := tt.daterange.ContainsStr(tt.datestr)
+			ts, err := time.Parse("20060102150405", tt.datestr)
 			if err != nil {
-				t.Errorf("Testing %s; Unexpected error: %s", tt.name, err)
+				t.Fatalf("Testing %s; Unexpected error: %s", tt.name, err)
 			}
+			contains := tt.daterange.Contains(ts.Unix())
 			if contains != tt.expect {
 				t.Errorf("Testing %s; Expected %t, got %t", tt.name, tt.expect, contains)
 			}
 		})
 	}
-}
-
-func TestInvalidContainData(t *testing.T) {
-	test := dateRangeTestData{
-		"invalid date string value fails",
-		&DateRange{
-			from: 0,
-			to:   60,
-		},
-		"invalid",
-		false,
-	}
-
-	t.Run(test.name, func(t *testing.T) {
-		contains, err := test.daterange.ContainsStr(test.datestr)
-		if err == nil {
-			t.Errorf("Expected error, got %v", err)
-		}
-
-		if contains == true {
-			t.Error("Expected result to be false in event of error")
-		}
-	})
 }
 
 func TestFromAndToParsing(t *testing.T) {
@@ -202,14 +180,14 @@ func TestFromAndToParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			from, err := From(tt.fromAndTo)
+			from, err := from(tt.fromAndTo)
 			if err != nil && !tt.expectError {
 				t.Errorf("Unexpected 'from' error: %s", err)
 			}
 			if from != tt.expectedFrom {
 				t.Errorf("From expected %d, got %d", tt.expectedFrom, from)
 			}
-			to, err := To(tt.fromAndTo)
+			to, err := to(tt.fromAndTo)
 			if err != nil && !tt.expectError {
 				t.Errorf("Unexpected 'to' error: %s", err)
 			}

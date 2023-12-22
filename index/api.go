@@ -18,7 +18,6 @@ package index
 
 import (
 	"context"
-	"time"
 
 	"github.com/nlnwa/gowarcserver/schema"
 )
@@ -40,8 +39,6 @@ func (a indexError) Error() string {
 }
 
 type DateRange interface {
-	ContainsTime(time.Time) (bool, error)
-	ContainsStr(string) (bool, error)
 	Contains(int64) bool
 }
 

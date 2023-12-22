@@ -19,6 +19,7 @@ package badgeridx
 import (
 	"sort"
 
+	"github.com/nlnwa/gowarcserver/internal/keyvalue"
 	"github.com/nlnwa/gowarcserver/timestamp"
 )
 
@@ -42,9 +43,7 @@ func NewSorter(closest int64, reverse bool) Sorter {
 }
 
 func (s *Sorter) Add(k []byte) {
-	t, _ := timestamp.Parse(cdxKey(k).ts())
-	ts := t.Unix()
-
+	ts := keyvalue.CdxKeyTs(k).Unix()
 	s.Values = append(s.Values, value{ts, k})
 }
 
@@ -53,17 +52,11 @@ func (s *Sorter) Sort() {
 
 	// sort Closest, Reverse or forward
 	if s.Closest > 0 {
-		cmp = func(ts1 int64, ts2 int64) bool {
-			return timestamp.AbsInt64(s.Closest-ts1) < timestamp.AbsInt64(s.Closest-ts2)
-		}
+		cmp = timestamp.CompareClosest(s.Closest)
 	} else if s.Reverse {
-		cmp = func(ts1 int64, ts2 int64) bool {
-			return ts2 < ts1
-		}
+		cmp = timestamp.CompareDesc
 	} else {
-		cmp = func(ts1 int64, ts2 int64) bool {
-			return ts1 < ts2
-		}
+		cmp = timestamp.CompareAsc
 	}
 
 	sort.Slice(s.Values, func(i, j int) bool {
