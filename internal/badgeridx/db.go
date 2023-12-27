@@ -70,13 +70,13 @@ func NewDB(options ...Option) (db *DB, err error) {
 	batch := make(chan index.Record, opts.BatchMaxSize)
 	done := make(chan struct{})
 
-	if idIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "id-index"), opts.Compression, opts.ReadOnly); err != nil {
+	if idIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "id-index"), opts.Compression, opts.ReadOnly, opts.Silent); err != nil {
 		return
 	}
-	if fileIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "file-index"), opts.Compression, opts.ReadOnly); err != nil {
+	if fileIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "file-index"), opts.Compression, opts.ReadOnly, opts.Silent); err != nil {
 		return
 	}
-	if cdxIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "cdx-index"), opts.Compression, opts.ReadOnly); err != nil {
+	if cdxIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "cdx-index"), opts.Compression, opts.ReadOnly, opts.Silent); err != nil {
 		return
 	}
 
@@ -102,10 +102,10 @@ func NewDB(options ...Option) (db *DB, err error) {
 		for {
 			select {
 			case <-done:
-				db.flushBatch()
+				db.FlushBatch()
 				return
 			case <-ticker.C:
-				db.flushBatch()
+				db.FlushBatch()
 			}
 		}
 	}()
@@ -199,8 +199,7 @@ func (db *DB) updateFilePath(path string) error {
 	fileInfo.Size = stat.Size()
 	fileInfo.LastModified = timestamppb.New(stat.ModTime())
 
-	key := keyvalue.MarshalFileKey(fileInfo.Name, "")
-	value, err := proto.Marshal(fileInfo)
+	key, value, err := keyvalue.MarshalFileInfo(fileInfo, "")
 	if err != nil {
 		return err
 	}
@@ -219,7 +218,7 @@ func (db *DB) write(rec index.Record) {
 		// added record to batch
 	default:
 		// batch channel is full so flush it before adding record to batch
-		db.flushBatch()
+		db.FlushBatch()
 		db.batch <- rec
 	}
 }
@@ -236,8 +235,8 @@ func (db *DB) collectBatch() (records []index.Record) {
 	}
 }
 
-// flushBatch collects all records in the batch channel and updates the id and cdx indices.
-func (db *DB) flushBatch() {
+// FlushBatch collects all records in the batch channel and updates the id and cdx indices.
+func (db *DB) FlushBatch() {
 	records := db.collectBatch()
 	if len(records) == 0 {
 		return
@@ -259,7 +258,7 @@ func marshalId(r index.Record) ([]byte, []byte, error) {
 }
 
 func marshalCdx(r index.Record) ([]byte, []byte, error) {
-	return keyvalue.MarshalCdx(r, "")
+	return keyvalue.MarshalCdx(r)
 }
 
 func set(records []index.Record, m func(index.Record) ([]byte, []byte, error)) func(*badger.Txn) error {
@@ -289,8 +288,9 @@ func (db *DB) Index(path string) error {
 
 // Resolve looks up warcId in the id index of the database and returns corresponding storageRef, or an error if not found.
 func (db *DB) Resolve(_ context.Context, warcId string) (storageRef string, err error) {
+	key := keyvalue.Key(warcId)
 	err = db.IdIndex.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(warcId))
+		item, err := txn.Get(key)
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			return nil
 		}
@@ -312,7 +312,7 @@ func (db *DB) ResolvePath(filename string) (filePath string, err error) {
 }
 
 func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
-	key := keyvalue.MarshalFileKey(fileName, "")
+	key := keyvalue.Key(fileName)
 	val := new(schema.Fileinfo)
 	err := db.FileIndex.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
@@ -346,7 +346,7 @@ func (db *DB) listFileInfo(ctx context.Context, limit int, results chan<- index.
 				default:
 				}
 
-				if count >= limit {
+				if limit > 0 && count >= limit {
 					return nil
 				}
 				count++

@@ -35,8 +35,6 @@ func UrlToSsurtHostname(uri string) (string, error) {
 
 func UrlToSsurt(u *url.Url) string {
 	// TODO normalize search params, e.g. remove session tokens
-	u.SearchParams().Sort()
-
 	sb := new(strings.Builder)
 
 	writeHostName(sb, u)

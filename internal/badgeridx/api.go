@@ -17,20 +17,15 @@
 package badgeridx
 
 import (
-	"bytes"
 	"context"
-	"errors"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/keyvalue"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/timestamp"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
 )
-
-type PerCdxFunc func(cdx *schema.Cdx) error
 
 // cdxFromItem unmarshals a badger item value into a schema.Cdx.
 func cdxFromItem(item *badger.Item) (cdx *schema.Cdx, err error) {
@@ -45,78 +40,39 @@ func cdxFromItem(item *badger.Item) (cdx *schema.Cdx, err error) {
 	return
 }
 
-// List returns all cdx values in the database up to the limit.
-func (db *DB) List(ctx context.Context, limit int, results chan<- index.CdxResponse) error {
+// closest returns the closest cdx values in the database.
+func (db *DB) closest(ctx context.Context, request index.Request, results chan<- index.CdxResponse) error {
+	count := 0
+	prefix, key := keyvalue.Closest(request)
+
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefix
+
+	ts, err := timestamp.Parse(request.Closest())
+	if err != nil {
+		return err
+	}
+	closest := ts.Unix()
+	isClosest := timestamp.CompareClosest(closest)
+	matchType := request.MatchType()
+	_, schemeAndUserInfo, _ := keyvalue.SplitSSURT(request.Ssurt())
+
 	go func() {
+		defer close(results)
+
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
 			opts := badger.DefaultIteratorOptions
-			opts.PrefetchSize = limit
-			iter := txn.NewIterator(opts)
-			defer iter.Close()
-			defer close(results)
-
-			count := 0
-
-			for iter.Seek(nil); iter.Valid(); iter.Next() {
-				var cdxResponse index.CdxResponse
-				cdx, err := cdxFromItem(iter.Item())
-				if err != nil {
-					cdxResponse.Error = err
-				} else {
-					cdxResponse.Cdx = cdx
-				}
-				select {
-				case <-ctx.Done():
-					results <- index.CdxResponse{Error: ctx.Err()}
-					return nil
-				case results <- cdxResponse:
-					if cdxResponse.Error == nil {
-						count++
-					}
-				}
-				if limit > 0 && count >= limit {
-					break
-				}
-			}
-			return nil
-		})
-	}()
-	return nil
-}
-
-// Closest returns the closest cdx values in the database.
-func (db *DB) Closest(ctx context.Context, request index.Request, results chan<- index.CdxResponse) error {
-	go func() {
-		count := 0
-
-		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
-			defer close(results)
-
-			key := request.Key()
-			closest := request.Closest()
-
-			// prefix
-			prefix := []byte(key)
-			// forward seek key
-			fk := []byte(key + closest)
-			// backward seek key
-			bk := []byte(key + closest + string(rune(0xff)))
-
-			opts := badger.DefaultIteratorOptions
-			opts.PrefetchSize = 1
+			opts.PrefetchSize = request.Limit()
 			opts.Prefix = prefix
 
 			forward := txn.NewIterator(opts)
 			defer forward.Close()
-			forward.Seek(fk)
+			forward.Seek(key)
 
 			opts.Reverse = true
 			backward := txn.NewIterator(opts)
 			defer backward.Close()
-			backward.Seek(bk)
-
-			t, _ := timestamp.Parse(closest)
-			cl := t.Unix()
+			backward.Seek(key)
 
 			for {
 				var ft int64
@@ -124,19 +80,18 @@ func (db *DB) Closest(ctx context.Context, request index.Request, results chan<-
 
 				// get forward ts
 				if forward.ValidForPrefix(prefix) {
-					ft = keyvalue.CdxKeyTs(forward.Item().Key()).Unix()
+					ft = keyvalue.CdxKey(forward.Item().Key()).Unix()
 				}
 				// get backward ts
 				if backward.ValidForPrefix(prefix) {
-					bt = keyvalue.CdxKeyTs(backward.Item().Key()).Unix()
+					bt = keyvalue.CdxKey(backward.Item().Key()).Unix()
 				}
 
 				var iter *badger.Iterator
 
 				if ft != 0 && bt != 0 {
 					// find closest of forward and backward
-					isForward := timestamp.CompareClosest(cl)(ft, bt)
-					if isForward {
+					if isClosest(ft, bt) {
 						iter = forward
 					} else {
 						iter = backward
@@ -150,6 +105,13 @@ func (db *DB) Closest(ctx context.Context, request index.Request, results chan<-
 					results <- index.CdxResponse{}
 					return nil
 				}
+				key := keyvalue.CdxKey(iter.Item().Key())
+				if matchType == index.MatchTypeVerbatim {
+					if key.SchemeAndUserInfo() != schemeAndUserInfo {
+						iter.Next()
+						continue
+					}
+				}
 				var cdxResponse index.CdxResponse
 				cdx, err := cdxFromItem(iter.Item())
 				if err != nil {
@@ -161,6 +123,7 @@ func (db *DB) Closest(ctx context.Context, request index.Request, results chan<-
 					iter.Next()
 					continue
 				}
+
 				select {
 				case <-ctx.Done():
 					results <- index.CdxResponse{Error: ctx.Err()}
@@ -183,136 +146,30 @@ func (db *DB) Closest(ctx context.Context, request index.Request, results chan<-
 
 // Search searches the index database
 func (db *DB) Search(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
-	key := search.Key()
-
-	if key == "" {
-		return errors.New("search request is missing keys")
-	}
 	if search.Sort() == index.SortClosest {
-		return db.searchClosest(ctx, search, results)
+		return db.closest(ctx, search, results)
 	}
 	return db.search(ctx, search, results)
 }
 
-func (db *DB) searchClosest(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
-	// key len is guaranteed to be 1 at this point
-	key := search.Key()
-	seek := key + search.Closest()
-	ts, err := timestamp.Parse(search.Closest())
-	if err != nil {
-		return err
+// search the index database.
+func (db *DB) search(ctx context.Context, req index.Request, results chan<- index.CdxResponse) error {
+	_, schemeAndUserInfo, _ := keyvalue.SplitSSURT(req.Ssurt())
+	reverse := req.Sort() == index.SortDesc
+	prefix := keyvalue.SearchKey(req)
+
+	// see https://dgraph.io/docs/badger/faq/#reverse-iteration-doesnt-give-me-the-right-results
+	key := prefix
+	if reverse {
+		key = append(key, 0xff)
 	}
-	// narrow down search to prefix
-	prefix := []byte(key)
-	opts := badger.DefaultIteratorOptions
-	opts.Prefix = prefix
-
-	closest := ts.Unix()
-	isClosest := timestamp.CompareClosest(closest)
-
-	count := 0
+	dateRange := req.DateRange()
+	filter := req.Filter()
+	matchType := req.MatchType()
 
 	go func() {
-		defer close(results)
-
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
-			forward := txn.NewIterator(opts)
-			defer forward.Close()
-
-			opts.Reverse = true
-			backward := txn.NewIterator(opts)
-			defer backward.Close()
-
-			fk := []byte(seek)
-			forward.Seek(fk)
-
-			bk := []byte(seek + string(rune(0xff)))
-			backward.Seek(bk)
-			if forward.ValidForPrefix(prefix) && backward.ValidForPrefix(prefix) && bytes.Equal(forward.Item().Key(), backward.Item().Key()) {
-				// if forward and backward iterator point to same item we advance the backward iterator
-				backward.Next()
-			}
-
-			var ft int64
-			var bt int64
-
-			f := true
-			b := true
-
-			for {
-				select {
-				case <-ctx.Done():
-					results <- index.CdxResponse{Error: ctx.Err()}
-					return nil
-				default:
-				}
-
-				if f && forward.ValidForPrefix(prefix) {
-					ft = keyvalue.CdxKeyTs(forward.Item().Key()).Unix()
-				} else if f {
-					f = false
-					ft = 0
-				}
-
-				if b && backward.ValidForPrefix(prefix) {
-					bt = keyvalue.CdxKeyTs(backward.Item().Key()).Unix()
-				} else if b {
-					b = false
-					bt = 0
-				}
-
-				var it *badger.Iterator
-				if f && isClosest(ft, bt) {
-					it = forward
-				} else if b {
-					it = backward
-				} else {
-					return nil
-				}
-
-				var cdxResponse index.CdxResponse
-				if cdx, err := cdxFromItem(it.Item()); err != nil {
-					cdxResponse.Error = err
-				} else if search.Filter().Eval(cdx) {
-					cdxResponse.Cdx = cdx
-				}
-				// skip if empty response
-				if cdxResponse == (index.CdxResponse{}) {
-					// but still advance iterator
-					it.Next()
-					continue
-				}
-				// send result
-				select {
-				case <-ctx.Done():
-					results <- index.CdxResponse{Error: ctx.Err()}
-					return nil
-				case results <- cdxResponse:
-					if cdxResponse.Error == nil {
-						count++
-					}
-				}
-				// stop iteration if limit is reached
-				if search.Limit() > 0 && count >= search.Limit() {
-					break
-				}
-				// advance iterator
-				it.Next()
-			}
-			return nil
-		})
-	}()
-	return nil
-}
-
-// search the index database and render each item with the provided renderFunc.
-func (db *DB) search(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
-	go func() {
-		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
-			reverse := search.Sort() == index.SortAsc
-			key := search.Key()
 			count := 0
-			prefix := []byte(key)
 			opts := badger.DefaultIteratorOptions
 			opts.PrefetchValues = false
 			opts.Prefix = prefix
@@ -322,29 +179,31 @@ func (db *DB) search(ctx context.Context, search index.Request, results chan<- i
 			defer it.Close()
 			defer close(results)
 
-			// see https://github.com/dgraph-io/badger/issues/436 for details regarding reverse seeking
-			seekKey := key
-			if reverse {
-				seekKey += string(rune(0xff))
-			}
-
-			for it.Seek([]byte(seekKey)); it.ValidForPrefix(prefix); it.Next() {
+			for it.Seek(key); it.ValidForPrefix(prefix); it.Next() {
 				cdxResponse := func() (cdxResponse index.CdxResponse) {
-					ts := keyvalue.CdxKeyTs(it.Item().Key()).Unix()
-					if !search.DateRange().Contains(ts) {
+					key := keyvalue.CdxKey(it.Item().Key())
+					if !dateRange.Contains(key.Unix()) {
 						return
 					}
-					if err := it.Item().Value(func(v []byte) error {
+					if matchType == index.MatchTypeVerbatim {
+						if key.SchemeAndUserInfo() != schemeAndUserInfo {
+							return
+						}
+					}
+					err := it.Item().Value(func(v []byte) error {
 						result := new(schema.Cdx)
 						if err := proto.Unmarshal(v, result); err != nil {
-							cdxResponse.Error = err
-						} else if search.Filter().Eval(result) {
+							return err
+						}
+						if filter.Eval(result) {
 							cdxResponse.Cdx = result
 						}
 						return nil
-					}); err != nil {
+					})
+					if err != nil {
 						cdxResponse.Error = err
 					}
+
 					return
 				}()
 				// skip if empty response
@@ -362,7 +221,7 @@ func (db *DB) search(ctx context.Context, search index.Request, results chan<- i
 					}
 				}
 				// stop iteration if limit is reached
-				if search.Limit() > 0 && count >= search.Limit() {
+				if req.Limit() > 0 && count >= req.Limit() {
 					break
 				}
 			}
@@ -370,25 +229,6 @@ func (db *DB) search(ctx context.Context, search index.Request, results chan<- i
 		})
 	}()
 	return nil
-}
-
-func (db *DB) ListRecords(fn func(warcId string, cdx *schema.Cdx) (stopIteration bool)) error {
-	opts := badger.DefaultIteratorOptions
-	return walk(db.CdxIndex, opts, func(item *badger.Item) (stopIteration bool) {
-		err := item.Value(func(val []byte) error {
-			cdx := new(schema.Cdx)
-			err := proto.Unmarshal(val, cdx)
-			if err != nil {
-				return err
-			}
-			stopIteration = fn(string(item.Key()), cdx)
-			return nil
-		})
-		if err != nil {
-			log.Error().Err(err).Msgf("failed get value for key: %s", string(item.Key()))
-		}
-		return stopIteration || err != nil
-	})
 }
 
 func (db *DB) GetStorageRef(ctx context.Context, warcId string) (string, error) {
@@ -412,8 +252,9 @@ func (db *DB) GetStorageRef(ctx context.Context, warcId string) (string, error) 
 	return storageRef, err
 }
 
-func (db *DB) ListStorageRef(ctx context.Context, limit int, results chan<- index.IdResponse) error {
+func (db *DB) ListStorageRef(ctx context.Context, req index.Request, results chan<- index.IdResponse) error {
 	go func() {
+		limit := req.Limit()
 		_ = db.IdIndex.View(func(txn *badger.Txn) error {
 			opts := badger.DefaultIteratorOptions
 			opts.PrefetchSize = limit
@@ -425,7 +266,7 @@ func (db *DB) ListStorageRef(ctx context.Context, limit int, results chan<- inde
 			var cdxResponse index.IdResponse
 
 			for iter.Seek(nil); iter.Valid(); iter.Next() {
-				if count >= limit {
+				if limit > 0 && count >= limit {
 					return nil
 				}
 				count++
@@ -456,8 +297,8 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo,
 	return db.getFileInfo(filename)
 }
 
-func (db *DB) ListFileInfo(ctx context.Context, limit int, results chan<- index.FileInfoResponse) error {
-	return db.listFileInfo(ctx, limit, results)
+func (db *DB) ListFileInfo(ctx context.Context, req index.Request, results chan<- index.FileInfoResponse) error {
+	return db.listFileInfo(ctx, req.Limit(), results)
 }
 
 // Delete removes all data from the database.

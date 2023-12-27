@@ -39,11 +39,11 @@ import (
 var lf = []byte("\n")
 
 type Handler struct {
-	index.CdxAPI
-	index.FileAPI
-	index.IdAPI
-	loader.StorageRefResolver
-	loader.WarcLoader
+	CdxAPI             index.CdxAPI
+	FileAPI            index.FileAPI
+	IdAPI              index.IdAPI
+	StorageRefResolver loader.StorageRefResolver
+	WarcLoader         loader.WarcLoader
 }
 
 func (h Handler) search(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 
 	response := make(chan index.CdxResponse)
 
-	if err = h.CdxAPI.Search(ctx, api.SearchAPI{CoreAPI: coreAPI}, response); err != nil {
+	if err = h.CdxAPI.Search(ctx, api.Request(coreAPI), response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msgf("Search failed: %+v", coreAPI)
 		return
@@ -97,13 +97,17 @@ type storageRef struct {
 }
 
 func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
-	limit := parseLimit(r)
+	coreAPI, err := api.Parse(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	response := make(chan index.IdResponse)
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	if err := h.IdAPI.ListStorageRef(ctx, limit, response); err != nil {
+	if err := h.IdAPI.ListStorageRef(ctx, api.Request(coreAPI), response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to list ids")
 		return
@@ -162,13 +166,18 @@ func (h Handler) getStorageRefByURN(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
+	coreAPI, err := api.Parse(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	limit := parseLimit(r)
 	responses := make(chan index.FileInfoResponse)
 
-	if err := h.FileAPI.ListFileInfo(ctx, limit, responses); err != nil {
+	if err := h.FileAPI.ListFileInfo(ctx, api.Request(coreAPI), responses); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to list files")
 		return
@@ -221,12 +230,15 @@ func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
-	limit := parseLimit(r)
+	coreAPI, err := api.Parse(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	responses := make(chan index.CdxResponse)
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-
-	if err := h.CdxAPI.List(ctx, limit, responses); err != nil {
+	if err := h.CdxAPI.Search(ctx, api.Request(coreAPI), responses); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to list cdx records")
 		return

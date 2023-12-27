@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 National Library of Norway.
+ * Copyright 2023 National Library of Norway.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,33 @@
  * limitations under the License.
  */
 
-package coreserver
+package keyvalue
 
 import (
-	"net/http"
-	"strconv"
+	"strings"
 )
 
-func parseLimit(r *http.Request) int {
-	l := r.URL.Query().Get("limit")
-	limit, err := strconv.Atoi(l)
-	if err != nil {
-		limit = 100
+func SplitSSURT(ssurt string) (surtHost string, schemeAndUserinfo string, path string) {
+	i := strings.Index(ssurt, "//")
+	if i == -1 {
+		return ssurt, "", ""
 	}
-	return limit
+	surtHost = ssurt[:i]
+
+	if len(ssurt) < i+2 {
+		return surtHost, "", ""
+	}
+	if len(ssurt) == i+2 {
+		return surtHost, "", "/"
+	}
+
+	j := strings.Index(ssurt[i+2:], "/")
+	if j == -1 {
+		return surtHost, ssurt[i+2:], ""
+	}
+	schemeAndUserinfo = ssurt[i+2 : i+2+j]
+
+	path = ssurt[i+2+j:]
+
+	return
 }

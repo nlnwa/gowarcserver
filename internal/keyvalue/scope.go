@@ -14,27 +14,32 @@
  * limitations under the License.
  */
 
-package api
+package keyvalue
 
 import (
 	"strings"
+
+	"github.com/nlnwa/gowarcserver/index"
 )
 
-func MatchType(ssurt string, matchType string) string {
+func scope(ssurt string, matchType index.MatchType) string {
+	if ssurt == "" {
+		return ""
+	}
 	switch matchType {
-	case MatchTypeExact:
+	case index.MatchTypeExact, index.MatchTypeVerbatim:
 		return ssurt + " "
-	case MatchTypePrefix:
+	case index.MatchTypePrefix:
 		i := strings.IndexAny(ssurt, "?#")
 		if i > 0 {
 			return ssurt[:i]
 		}
-	case MatchTypeHost:
+	case index.MatchTypeHost:
 		i := strings.Index(ssurt, "//")
 		if i > 0 {
 			return ssurt[:i+2]
 		}
-	case MatchTypeDomain:
+	case index.MatchTypeDomain:
 		i := strings.Index(ssurt, "//")
 		if i > 0 {
 			return ssurt[:i]

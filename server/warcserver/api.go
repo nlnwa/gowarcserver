@@ -48,8 +48,8 @@ func cdxToPywbJson(cdx *schema.Cdx) *pywbJson {
 	}
 }
 
-func searchApi(coreAPI *api.CoreAPI) *api.SearchAPI {
-	return &api.SearchAPI{
+func searchApi(coreAPI *api.CoreAPI) *api.SearchRequest {
+	return &api.SearchRequest{
 		CoreAPI: coreAPI,
 		FilterMap: map[string]string{
 			"status": "hsc",

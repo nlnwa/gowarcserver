@@ -20,6 +20,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/nlnwa/gowarcserver/timestamp"
 )
 
 type dateRangeTestData struct {
@@ -86,7 +88,7 @@ func TestValidDateRangeContains(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ts, err := time.Parse("20060102150405", tt.datestr)
+			ts, err := timestamp.Parse(tt.datestr)
 			if err != nil {
 				t.Fatalf("Testing %s; Unexpected error: %s", tt.name, err)
 			}

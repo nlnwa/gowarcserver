@@ -37,13 +37,20 @@ const (
 var sorts = []string{SortClosest, SortReverse}
 
 const (
-	MatchTypeExact  = "exact"
-	MatchTypePrefix = "prefix"
-	MatchTypeHost   = "host"
-	MatchTypeDomain = "domain"
+	MatchTypeVerbatim = "verbatim"
+	MatchTypeExact    = "exact"
+	MatchTypePrefix   = "prefix"
+	MatchTypeHost     = "host"
+	MatchTypeDomain   = "domain"
 )
 
-var matchTypes = []string{MatchTypeDomain, MatchTypePrefix, MatchTypeHost, MatchTypeExact}
+var matchTypes = []string{
+	MatchTypeDomain,
+	MatchTypePrefix,
+	MatchTypeHost,
+	MatchTypeExact,
+	MatchTypeVerbatim,
+}
 
 const (
 	OutputCdxj = "cdxj"
@@ -61,7 +68,7 @@ var outputs = []string{OutputCdxj, OutputJson}
 type CoreAPI struct {
 	Collection string
 	Url        *url.Url
-	FromTo     *DateRange
+	DateRange  *DateRange
 	MatchType  string
 	Limit      int
 	Sort       string
@@ -75,30 +82,50 @@ func (capi *CoreAPI) Uri() *url.Url {
 	return capi.Url
 }
 
-func ClosestAPI(closest string, u *url.Url) *CoreAPI {
-	return &CoreAPI{
-		Url:       u,
-		Sort:      SortClosest,
-		Closest:   closest,
-		MatchType: MatchTypeExact,
-		Limit:     10,
+func ClosestAPI(closest string, u *url.Url) SearchRequest {
+	return SearchRequest{
+		CoreAPI: &CoreAPI{
+			Url:       u,
+			Sort:      SortClosest,
+			Closest:   closest,
+			MatchType: MatchTypeExact,
+			Limit:     10,
+		},
 	}
 }
 
-type SearchAPI struct {
+func Request(coreAPI *CoreAPI) SearchRequest {
+	return SearchRequest{
+		CoreAPI: coreAPI,
+	}
+}
+
+type SearchRequest struct {
 	*CoreAPI
 	FilterMap map[string]string
 }
 
-func (c SearchAPI) Closest() string {
+func (c SearchRequest) Closest() string {
+	if c.CoreAPI == nil {
+		return ""
+	}
 	return c.CoreAPI.Closest
 }
 
-func (c SearchAPI) Key() string {
-	return MatchType(surt.UrlToSsurt(c.CoreAPI.Url), c.CoreAPI.MatchType)
+func (c SearchRequest) Ssurt() string {
+	if c.CoreAPI == nil {
+		return ""
+	}
+	if c.CoreAPI.Url == nil {
+		return ""
+	}
+	return surt.UrlToSsurt(c.CoreAPI.Url)
 }
 
-func (c SearchAPI) Sort() index.Sort {
+func (c SearchRequest) Sort() index.Sort {
+	if c.CoreAPI == nil {
+		return index.SortNone
+	}
 	switch c.CoreAPI.Sort {
 	case SortReverse:
 		return index.SortDesc
@@ -109,20 +136,45 @@ func (c SearchAPI) Sort() index.Sort {
 	}
 }
 
-func (c SearchAPI) DateRange() index.DateRange {
-	return c.CoreAPI.FromTo
+func (c SearchRequest) DateRange() index.DateRange {
+	if c.CoreAPI == nil {
+		return &DateRange{}
+	}
+	return c.CoreAPI.DateRange
 }
 
-func (c SearchAPI) Filter() index.Filter {
+func (c SearchRequest) Filter() index.Filter {
+	if c.CoreAPI == nil {
+		return Filter{}
+	}
 	return ParseFilter(c.CoreAPI.Filter, c.FilterMap)
 }
 
-func (c SearchAPI) Limit() int {
+func (c SearchRequest) Limit() int {
+	if c.CoreAPI == nil {
+		return 0
+	}
 	return c.CoreAPI.Limit
 }
 
-func (c SearchAPI) MatchType() string {
-	return c.CoreAPI.MatchType
+func (c SearchRequest) MatchType() index.MatchType {
+	if c.CoreAPI == nil {
+		return index.MatchTypeExact
+	}
+	switch c.CoreAPI.MatchType {
+	case MatchTypeExact:
+		return index.MatchTypeExact
+	case MatchTypePrefix:
+		return index.MatchTypePrefix
+	case MatchTypeHost:
+		return index.MatchTypeHost
+	case MatchTypeDomain:
+		return index.MatchTypeDomain
+	case MatchTypeVerbatim:
+		return index.MatchTypeVerbatim
+	default:
+		return index.MatchTypeExact
+	}
 }
 
 // contains returns true if string e is contained in string slice s.
@@ -145,7 +197,7 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 	coreApi := new(CoreAPI)
 
 	// currently the "cdx" does not accept collection as a query or param
-	coreApi.Collection = "all"
+	// coreApi.Collection = "all"
 
 	matchType := query.Get("matchType")
 	if matchType != "" {
@@ -153,24 +205,21 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 			return nil, fmt.Errorf("matchType must be one of %v, was: %s", matchTypes, matchType)
 		}
 		coreApi.MatchType = matchType
-	} else {
-		// Default to exact
-		coreApi.MatchType = MatchTypeExact
 	}
 
 	urlStr := query.Get("url")
-	if urlStr != "" && (coreApi.MatchType == MatchTypeExact || coreApi.MatchType == MatchTypePrefix) {
+	if urlStr != "" {
 		if !schemeRegExp.MatchString(urlStr) {
 			urlStr = "http://" + urlStr
 		}
+		u, err := url.Parse(urlStr)
+		if err != nil {
+			return nil, err
+		}
+		coreApi.Url = u
 	}
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		return nil, err
-	}
-	coreApi.Url = u
 
-	if coreApi.FromTo, err = NewDateRange(query.Get("from"), query.Get("to")); err != nil {
+	if coreApi.DateRange, err = NewDateRange(query.Get("from"), query.Get("to")); err != nil {
 		return nil, err
 	}
 
