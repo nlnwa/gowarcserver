@@ -45,9 +45,13 @@ type Options struct {
 
 type Option func(opts *Options)
 
-func WithCompression(c badgerOptions.CompressionType) Option {
+func WithCompression(c string) Option {
 	return func(opts *Options) {
-		opts.Compression = c
+		compression, err := parseCompression(c)
+		if err != nil {
+			panic(err)
+		}
+		opts.Compression = compression
 	}
 }
 
