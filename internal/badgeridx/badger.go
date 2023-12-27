@@ -24,34 +24,38 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// logger is a log adapter that implements badger.Logger
-type logger struct {
+// badgerLogger is a log adapter that implements badger.Logger
+type badgerLogger struct {
 	prefix string
 }
 
-func (l logger) Errorf(fmt string, args ...interface{}) {
+func (l badgerLogger) Errorf(fmt string, args ...interface{}) {
 	log.Error().Msgf(l.prefix+fmt, args...)
 }
 
-func (l logger) Warningf(fmt string, args ...interface{}) {
+func (l badgerLogger) Warningf(fmt string, args ...interface{}) {
 	log.Warn().Msgf(l.prefix+fmt, args...)
 }
 
-func (l logger) Infof(fmt string, args ...interface{}) {
+func (l badgerLogger) Infof(fmt string, args ...interface{}) {
 	log.Trace().Msgf(l.prefix+fmt, args...)
 }
 
-func (l logger) Debugf(fmt string, args ...interface{}) {
+func (l badgerLogger) Debugf(fmt string, args ...interface{}) {
 	log.Trace().Msgf(l.prefix+fmt, args...)
 }
 
-func newBadgerDB(dir string, compression options.CompressionType, readOnly bool) (*badger.DB, error) {
+func newBadgerDB(dir string, compression options.CompressionType, readOnly bool, silent bool) (*badger.DB, error) {
 	// create database directory if not exists
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
+	var logger badger.Logger
+	if !silent {
+		logger = badgerLogger{prefix: "Badger: "}
+	}
 	opts := badger.DefaultOptions(dir).
-		WithLogger(logger{prefix: "Badger: "}).
+		WithLogger(logger).
 		WithCompression(compression).
 		WithReadOnly(readOnly)
 
@@ -60,63 +64,4 @@ func newBadgerDB(dir string, compression options.CompressionType, readOnly bool)
 	}
 
 	return badger.Open(opts)
-}
-
-type PerItemFunc func(*badger.Item) (stopIteration bool)
-type AfterIterFunc func(txn *badger.Txn) error
-
-// walk iterates db using iterator opts and processes items with fn.
-func walk(db *badger.DB, opts badger.IteratorOptions, fn PerItemFunc) error {
-	return db.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		it.Rewind()
-		for it.Rewind(); it.Valid(); it.Next() {
-			item := it.Item()
-			if fn(item) {
-				break
-			}
-		}
-		return nil
-	})
-}
-
-// Get value stored at key from db.
-func Get(db *badger.DB, key []byte) (value []byte, err error) {
-	err = db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
-		if err != nil {
-			return err
-		}
-		value, err = item.ValueCopy(nil)
-		return err
-	})
-	return
-}
-
-// Search iterates over keys in db prefixed with key and applies PerItemFunc f to each item value.
-func Search(db *badger.DB, key string, reverse bool, f PerItemFunc, a AfterIterFunc) error {
-	return db.View(func(txn *badger.Txn) error {
-		prefix := []byte(key)
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		opts.Prefix = prefix
-		opts.Reverse = reverse
-
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		// see https://github.com/dgraph-io/badger/issues/436 for details regarding reverse seeking
-		seekKey := key
-		if reverse {
-			seekKey += string(rune(0xff))
-		}
-
-		for it.Seek([]byte(seekKey)); it.ValidForPrefix(prefix); it.Next() {
-			if f(it.Item()) {
-				break
-			}
-		}
-		return a(txn)
-	})
 }

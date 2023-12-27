@@ -26,154 +26,23 @@ import (
 	"github.com/nlnwa/gowarcserver/timestamp"
 )
 
-// iterator mimics tikv's internal iterator interface
-type iterator interface {
-	Next() error
-	Key() []byte
-	Value() []byte
-	Valid() bool
-	Close()
-}
-
-type closestScanner struct {
-	fKeys, fValues [][]byte
-	bKeys, bValues [][]byte
-	fIndex, bIndex int
-	cmp            func(int64, int64) bool
-}
-
-const startDate = "19700101000000"
-const endbyte = "\xff"
-
-func scanClosest(client *rawkv.Client, ctx context.Context, key string, closest string, limit int, options ...rawkv.RawOption) ([][]byte, [][]byte, error) {
-	ic := new(closestScanner)
-	if t, err := timestamp.Parse(closest); err != nil {
-		return nil, nil, err
-	} else {
-		ic.cmp = timestamp.CompareClosest(t.Unix())
-	}
-	startKey := []byte(cdxPrefix + key + closest)
-
-	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
-		limit = rawkv.MaxRawKVScanLimit
-	}
-
-	var err error
-
-	ic.fKeys, ic.fValues, err = client.Scan(ctx, startKey, []byte(cdxPrefix+key+endbyte), limit, options...)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// scan backward
-	ic.bKeys, ic.bValues, err = client.ReverseScan(ctx, startKey, []byte(cdxPrefix+key+startDate), limit, options...)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var keys [][]byte
-	var values [][]byte
-	for count := 0; count < limit; count++ {
-		k, v, valid := ic.next()
-		if !valid {
-			break
-		}
-		keys = append(keys, k)
-		values = append(values, v)
-	}
-	return keys, values, nil
-}
-
-func (cs *closestScanner) next() ([]byte, []byte, bool) {
-	var ft int64
-	var bt int64
-
-	// get forward ts
-	if len(cs.fKeys) > cs.fIndex {
-		// We trust ts from DB, so no need to check error
-		ft = keyvalue.CdxKeyTs(cs.fKeys[cs.fIndex]).Unix()
-	}
-	// get backward ts
-	if len(cs.bKeys) > cs.bIndex {
-		// We trust ts from DB, so no need to check error
-		bt = keyvalue.CdxKeyTs(cs.bKeys[cs.bIndex]).Unix()
-	}
-
-	var isForward bool
-	if ft != 0 && bt != 0 {
-		// find closest of forward and backward
-		isForward = cs.cmp(ft, bt)
-	} else if ft != 0 {
-		isForward = true
-	} else if bt != 0 {
-		isForward = false
-	} else {
-		return nil, nil, false
-	}
-	if isForward {
-		defer func() { cs.fIndex++ }()
-		return cs.fKeys[cs.fIndex], cs.fValues[cs.fIndex], true
-	} else {
-		defer func() { cs.bIndex++ }()
-		return cs.bKeys[cs.bIndex], cs.bValues[cs.bIndex], true
-	}
-}
-
 type maybeKV struct {
-	key   []byte
-	value []byte
+	k     []byte
+	v     []byte
 	error error
 }
 
-type scanner func([]byte) ([][]byte, [][]byte, error)
+type scanner func([]byte, []byte) ([][]byte, [][]byte, error)
 
-type iter struct {
-	key   []byte
-	value []byte
-	valid bool
-	next  <-chan maybeKV
-}
-
-func newIter(ctx context.Context, client *rawkv.Client, req index.Request) (iterator, error) {
-	limit := req.Limit()
-	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
-		limit = rawkv.MaxRawKVScanLimit
-	}
-
-	scan := func() scanner {
-		switch req.Sort() {
-		case index.SortDesc:
-			return func(key []byte) ([][]byte, [][]byte, error) {
-				return client.ReverseScan(ctx, append(key, 0xff), key, limit)
-			}
-		case index.SortClosest:
-			return func(key []byte) ([][]byte, [][]byte, error) {
-				return scanClosest(client, ctx, req.Key(), req.Closest(), limit)
-			}
-		case index.SortAsc:
-			fallthrough
-		case index.SortNone:
-			fallthrough
-		default:
-			return func(key []byte) ([][]byte, [][]byte, error) {
-				return client.Scan(ctx, key, append(key, 0xff), limit)
-			}
-		}
-	}()
-
-	result := make(chan maybeKV)
-
-	k := req.Key()
-	key := []byte(cdxPrefix + k)
-
-	go func(scan scanner, key []byte, ch chan<- maybeKV, done <-chan struct{}) {
-		defer close(ch)
-		keys, values, err := scan(key)
+func repeatScan(scan scanner, key, endKey []byte, result chan<- maybeKV, done <-chan struct{}) {
+	defer close(result)
+	for {
+		keys, values, err := scan(key, endKey)
 		if err != nil {
 			select {
 			case <-done:
 				return
-			case ch <- maybeKV{error: err}:
+			case result <- maybeKV{error: err}:
 				return
 			}
 		}
@@ -181,13 +50,173 @@ func newIter(ctx context.Context, client *rawkv.Client, req index.Request) (iter
 			select {
 			case <-done:
 				return
-			case ch <- maybeKV{key: k, value: values[j]}:
+			case result <- maybeKV{k: k, v: values[j]}:
 			}
 		}
-	}(scan, key, result, ctx.Done())
+		select {
+		case <-done:
+			return
+		default:
+		}
+		if len(keys) < rawkv.MaxRawKVScanLimit {
+			return
+		}
+		key = append(keys[len(keys)-1], 0x0)
+	}
+}
+
+var startDate = []byte("19700101000000")
+var endDate = []byte("99991231235959")
+
+type closestIter struct {
+	forward, backward chan maybeKV
+	a, b              *maybeKV
+	kv                *maybeKV
+	valid             bool
+	cmp               func(int64, int64) bool
+	done              chan struct{}
+	limit             int
+}
+
+func newClosestIter(ctx context.Context, client *rawkv.Client, req index.Request) (iterator, error) {
+	t, err := timestamp.Parse(req.Closest())
+	if err != nil {
+		return nil, err
+	}
+
+	prefix, startKey := keyvalue.ClosestWithPrefix(req, cdxPrefix)
+	forwardEndKey := append(prefix, endDate...)
+	backwardEndKey := append(prefix, startDate...)
+
+	limit := req.Limit()
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
+		limit = rawkv.MaxRawKVScanLimit
+	}
+
+	var fScanner scanner = func(key, endKey []byte) ([][]byte, [][]byte, error) {
+		return client.Scan(ctx, key, endKey, limit)
+	}
+	var bScanner scanner = func(key, endKey []byte) ([][]byte, [][]byte, error) {
+		return client.ReverseScan(ctx, key, endKey, limit)
+	}
+
+	forwardChannel := make(chan maybeKV)
+	backwardChannel := make(chan maybeKV)
+
+	done := make(chan struct{})
+	go repeatScan(fScanner, startKey, forwardEndKey, forwardChannel, done)
+	go repeatScan(bScanner, startKey, backwardEndKey, backwardChannel, done)
+
+	iter := &closestIter{
+		cmp:      timestamp.CompareClosest(t.Unix()),
+		forward:  forwardChannel,
+		backward: backwardChannel,
+		done:     done,
+		limit:    req.Limit(),
+	}
+
+	return iter, iter.Next()
+}
+
+func (ci *closestIter) Key() []byte {
+	return ci.kv.k
+}
+
+func (ci *closestIter) Value() []byte {
+	return ci.kv.v
+}
+
+func (ci *closestIter) Valid() bool {
+	return ci.valid
+}
+
+func (ci *closestIter) Close() {
+	close(ci.done)
+}
+
+func (ci *closestIter) Next() error {
+	var ft int64
+	var bt int64
+	ci.valid = true
+
+	if ci.a == nil {
+		f, ok := <-ci.forward
+		if ok {
+			ci.a = &f
+		}
+	}
+	if ci.b == nil {
+		b, ok := <-ci.backward
+		if ok {
+			ci.b = &b
+		}
+	}
+	if ci.a != nil {
+		ft = keyvalue.CdxKey(ci.a.k).Unix()
+	}
+	if ci.b != nil {
+		bt = keyvalue.CdxKey(ci.b.k).Unix()
+	}
+
+	var isForward bool
+	if ft != 0 && bt != 0 {
+		// find closest of forward and backward
+		if ci.cmp(ft, bt) {
+			isForward = true
+		}
+	} else if ft != 0 {
+		isForward = true
+	} else if bt != 0 {
+		// pass
+	} else {
+		ci.valid = false
+		ci.kv = nil
+		return nil
+	}
+	if isForward {
+		ci.kv = ci.a
+		ci.a = nil
+	} else {
+		ci.kv = ci.b
+		ci.b = nil
+	}
+	return nil
+}
+
+type iter struct {
+	key   []byte
+	value []byte
+	valid bool
+	next  <-chan maybeKV
+	done  chan<- struct{}
+	limit int
+}
+
+func newIter(ctx context.Context, key []byte, client *rawkv.Client, req index.Request) (iterator, error) {
+	limit := req.Limit()
+	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
+		limit = rawkv.MaxRawKVScanLimit
+	}
+	endKey := append(key, 0xff)
+	var scan scanner
+	if req.Sort() == index.SortDesc {
+		scan = func(key []byte, endKey []byte) ([][]byte, [][]byte, error) {
+			return client.ReverseScan(ctx, endKey, key, limit)
+		}
+	} else {
+		scan = func(key []byte, endKey []byte) ([][]byte, [][]byte, error) {
+			return client.Scan(ctx, key, endKey, limit)
+		}
+	}
+	result := make(chan maybeKV)
+	done := make(chan struct{})
+
+	go repeatScan(scan, key, endKey, result, done)
 
 	is := &iter{
-		next: result,
+		next:  result,
+		done:  done,
+		limit: req.Limit(),
 	}
 
 	return is, is.Next()
@@ -205,8 +234,8 @@ func (is *iter) Next() error {
 	if mkv.error != nil {
 		return mkv.error
 	}
-	is.key = mkv.key
-	is.value = mkv.value
+	is.key = mkv.k
+	is.value = mkv.v
 
 	return nil
 }
@@ -224,5 +253,5 @@ func (is *iter) Valid() bool {
 }
 
 func (is *iter) Close() {
-	// noop
+	close(is.done)
 }

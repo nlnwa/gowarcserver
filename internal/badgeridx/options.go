@@ -17,9 +17,10 @@
 package badgeridx
 
 import (
+	"time"
+
 	badgerOptions "github.com/dgraph-io/badger/v4/options"
 	"github.com/nlnwa/gowarcserver/index"
-	"time"
 )
 
 func defaultDbOptions() *Options {
@@ -41,6 +42,7 @@ type Options struct {
 	ReadOnly     bool
 	Database     string
 	Index        index.Indexer
+	Silent       bool
 }
 
 type Option func(opts *Options)
@@ -94,5 +96,11 @@ func WithReadOnly(readOnly bool) Option {
 func WithIndexer(indexer index.Indexer) Option {
 	return func(opts *Options) {
 		opts.Index = indexer
+	}
+}
+
+func WithoutBadgerLogging() Option {
+	return func(opts *Options) {
+		opts.Silent = true
 	}
 }

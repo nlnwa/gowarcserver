@@ -34,11 +34,12 @@ import (
 )
 
 var (
-	dbPrefix   = "d"
 	idPrefix   = "i"
 	filePrefix = "f"
 	cdxPrefix  = "c"
 )
+
+const delimiter = "_"
 
 type DB struct {
 	client *rawkv.Client
@@ -52,12 +53,14 @@ func NewDB(options ...Option) (db *DB, err error) {
 	for _, opt := range options {
 		opt(opts)
 	}
-	dbName := dbPrefix + opts.Database
-
+	dbName := delimiter
+	if opts.Database != "" {
+		dbName += opts.Database
+	}
 	// prefix all keys with name of database
-	idPrefix = dbName + idPrefix
-	filePrefix = dbName + filePrefix
-	cdxPrefix = dbName + cdxPrefix
+	idPrefix = dbName + delimiter + idPrefix + delimiter
+	filePrefix = dbName + delimiter + filePrefix + delimiter
+	cdxPrefix = dbName + delimiter + cdxPrefix + delimiter
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -89,10 +92,10 @@ func NewDB(options ...Option) (db *DB, err error) {
 		for {
 			select {
 			case <-done:
-				db.flushBatch()
+				db.FlushBatch()
 				return
 			case <-ticker.C:
-				db.flushBatch()
+				db.FlushBatch()
 			}
 		}
 	}()
@@ -171,7 +174,7 @@ func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
 func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	key := keyvalue.MarshalFileKey(fileName, filePrefix)
+	key := keyvalue.KeyWithPrefix(fileName, filePrefix)
 	val, err := db.client.Get(ctx, key)
 	if err != nil {
 		return nil, err
@@ -196,7 +199,7 @@ func (db *DB) write(rec index.Record) {
 		// added record to batch
 	default:
 		// batch channel is full so flush batch channel before adding record to batch
-		db.flushBatch()
+		db.FlushBatch()
 		db.batch <- rec
 	}
 }
@@ -217,6 +220,7 @@ func (db *DB) collectBatch() ([][]byte, [][]byte) {
 				continue
 			}
 			// check if key size exceeds tikv max key size
+			// TODO: store big keys in separate db
 			if len(cdxKey) > tikvMaxKeySize {
 				log.Warn().Str("key", string(cdxKey)).Msgf("Skipping: cdx key size exceeds tikv max key size (%d): %d", tikvMaxKeySize, len(cdxKey))
 				continue
@@ -229,8 +233,8 @@ func (db *DB) collectBatch() ([][]byte, [][]byte) {
 	}
 }
 
-// flushBatch collects all records in the batch channel and updates the id and cdx indices.
-func (db *DB) flushBatch() {
+// FlushBatch collects all records in the batch channel and updates the id and cdx indices.
+func (db *DB) FlushBatch() {
 	keys, values := db.collectBatch()
 	if len(keys) == 0 {
 		return
@@ -246,13 +250,13 @@ func (db *DB) flushBatch() {
 }
 
 // idKV takes a record and returns a key-value pair for the id index.
-func marshalId(r index.Record) ([]byte,[]byte, error) {
+func marshalId(r index.Record) ([]byte, []byte, error) {
 	return keyvalue.MarshalId(r, idPrefix)
 }
 
 // marshalCdx takes a record and returns a key-value pair for the cdx index.
 func marshalCdx(r index.Record) ([]byte, []byte, error) {
-	return keyvalue.MarshalCdx(r, cdxPrefix)
+	return keyvalue.MarshalCdxWithPrefix(r, cdxPrefix)
 }
 
 func (db *DB) Write(rec index.Record) error {

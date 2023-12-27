@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/nlnwa/gowarcserver/schema"
+	"github.com/nlnwa/whatwg-url/url"
 )
 
 type Deleter interface {
@@ -49,36 +50,45 @@ type Filter interface {
 type Sort int
 
 const (
-	SortNone Sort = iota
-	SortDesc
-	SortAsc
-	SortClosest
+	SortNone    Sort = iota
+	SortDesc         // largest to smallest alphabetically
+	SortAsc          // smallest to largest alphabetically
+	SortClosest      // closest in time
+)
+
+type MatchType int
+
+const (
+	MatchTypeExact MatchType = iota
+	MatchTypePrefix
+	MatchTypeHost
+	MatchTypeDomain
+	MatchTypeVerbatim
 )
 
 type Request interface {
-	Key() string
+	Uri() *url.Url
+	Ssurt() string
 	Sort() Sort
 	DateRange() DateRange
 	Filter() Filter
 	Limit() int
 	Closest() string
-	MatchType() string
+	MatchType() MatchType
 }
 
 type FileAPI interface {
 	GetFileInfo(ctx context.Context, filename string) (*schema.Fileinfo, error)
-	ListFileInfo(context.Context, int, chan<- FileInfoResponse) error
+	ListFileInfo(context.Context, Request, chan<- FileInfoResponse) error
 }
 
 type IdAPI interface {
 	GetStorageRef(ctx context.Context, warcId string) (string, error)
-	ListStorageRef(context.Context, int, chan<- IdResponse) error
+	ListStorageRef(context.Context, Request, chan<- IdResponse) error
 }
 
 type CdxAPI interface {
-	List(context.Context, int, chan<- CdxResponse) error
 	Search(context.Context, Request, chan<- CdxResponse) error
-	Closest(context.Context, Request, chan<- CdxResponse) error
 }
 
 type FileInfoResponse struct {

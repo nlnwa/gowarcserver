@@ -19,6 +19,16 @@ go version 1.19 or newer
 
     go test ./...
 
+### Test TIKV
+
+Download `tiup` by following instructions at  https://github.com/pingcap/tiup.
+
+    # Start TiKV
+    tiup playground --mode=tikv-slim --without-monitor
+
+    # Run test including TiKV tests
+    go test ./... -tags tikv
+
 ### Lint
 
 The GitHub Actions test workflow uses [golangci-lint](https://golangci-lint.run) for linting.
