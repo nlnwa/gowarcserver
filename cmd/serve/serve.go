@@ -29,15 +29,16 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
+	"github.com/rs/zerolog/log"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/badgeridx"
 	"github.com/nlnwa/gowarcserver/internal/tikvidx"
 	"github.com/nlnwa/gowarcserver/loader"
 	"github.com/nlnwa/gowarcserver/server/coreserver"
 	"github.com/nlnwa/gowarcserver/server/warcserver"
-	"github.com/rs/zerolog/log"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func NewCommand() *cobra.Command {

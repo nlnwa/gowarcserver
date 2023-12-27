@@ -24,12 +24,13 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/nlnwa/gowarcserver/index"
-	"github.com/nlnwa/gowarcserver/internal/badgeridx"
-	"github.com/nlnwa/gowarcserver/internal/tikvidx"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/nlnwa/gowarcserver/index"
+	"github.com/nlnwa/gowarcserver/internal/badgeridx"
+	"github.com/nlnwa/gowarcserver/internal/tikvidx"
 )
 
 func NewCommand() *cobra.Command {
