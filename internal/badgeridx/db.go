@@ -23,6 +23,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -53,6 +54,10 @@ type DB struct {
 }
 
 func NewDB(options ...Option) (db *DB, err error) {
+	// Increase GOMAXPROCS as recommended by badger
+	// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
+	runtime.GOMAXPROCS(128)
+
 	opts := defaultDbOptions()
 	for _, opt := range options {
 		opt(opts)
