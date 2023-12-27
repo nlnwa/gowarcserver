@@ -60,7 +60,7 @@ var outputs = []string{OutputCdxj, OutputJson}
 // CoreAPI implements a subset of https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html.
 type CoreAPI struct {
 	Collection string
-	Urls       []*url.Url
+	Url        *url.Url
 	FromTo     *DateRange
 	MatchType  string
 	Limit      int
@@ -71,16 +71,13 @@ type CoreAPI struct {
 	Fields     []string
 }
 
-func (capi *CoreAPI) Url() *url.Url {
-	if len(capi.Urls) < 1 {
-		return nil
-	}
-	return capi.Urls[0]
+func (capi *CoreAPI) Uri() *url.Url {
+	return capi.Url
 }
 
 func ClosestAPI(closest string, u *url.Url) *CoreAPI {
 	return &CoreAPI{
-		Urls:      []*url.Url{u},
+		Url:       u,
 		Sort:      SortClosest,
 		Closest:   closest,
 		MatchType: MatchTypeExact,
@@ -98,15 +95,7 @@ func (c SearchAPI) Closest() string {
 }
 
 func (c SearchAPI) Key() string {
-	return MatchType(surt.UrlToSsurt(c.CoreAPI.Urls[0]), c.CoreAPI.MatchType)
-}
-
-func (c SearchAPI) Keys() []string {
-	keys := make([]string, len(c.Urls))
-	for i, u := range c.CoreAPI.Urls {
-		keys[i] = MatchType(surt.UrlToSsurt(u), c.CoreAPI.MatchType)
-	}
-	return keys
+	return MatchType(surt.UrlToSsurt(c.CoreAPI.Url), c.CoreAPI.MatchType)
 }
 
 func (c SearchAPI) Sort() index.Sort {
@@ -169,25 +158,17 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 		coreApi.MatchType = MatchTypeExact
 	}
 
-	urls := query["url"]
-	if len(urls) == 1 && (coreApi.MatchType == MatchTypeExact || coreApi.MatchType == MatchTypePrefix) {
-		u := urls[0]
-
-		matches := schemeRegExp.FindStringSubmatch(u)
-		if matches == nil {
-			urls = []string{"http://" + u, "https://" + u}
-		} else {
-			rest := matches[1]
-			urls = []string{"http" + rest, "https" + rest}
+	urlStr := query.Get("url")
+	if urlStr != "" && (coreApi.MatchType == MatchTypeExact || coreApi.MatchType == MatchTypePrefix) {
+		if !schemeRegExp.MatchString(urlStr) {
+			urlStr = "http://" + urlStr
 		}
 	}
-	for _, urlStr := range urls {
-		u, err := url.Parse(urlStr)
-		if err != nil {
-			return nil, err
-		}
-		coreApi.Urls = append(coreApi.Urls, u)
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, err
 	}
+	coreApi.Url = u
 
 	if coreApi.FromTo, err = NewDateRange(query.Get("from"), query.Get("to")); err != nil {
 		return nil, err
@@ -217,7 +198,7 @@ func Parse(r *http.Request) (*CoreAPI, error) {
 			return nil, fmt.Errorf("sort must be one of %v, was: %s", sorts, sort)
 		} else if sort == SortClosest && closest == "" {
 			sort = ""
-		} else if sort == SortClosest && len(coreApi.Urls) == 0 {
+		} else if sort == SortClosest && coreApi.Url == nil {
 			return nil, fmt.Errorf("sort=closest is not valid without urls")
 		}
 		coreApi.Sort = sort

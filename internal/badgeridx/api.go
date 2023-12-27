@@ -20,8 +20,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"sync"
-	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/nlnwa/gowarcserver/index"
@@ -185,248 +183,20 @@ func (db *DB) Closest(ctx context.Context, request index.Request, results chan<-
 
 // Search searches the index database
 func (db *DB) Search(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
-	keyLen := len(search.Keys())
+	key := search.Key()
 
-	if keyLen == 0 {
+	if key == "" {
 		return errors.New("search request is missing keys")
-	} else if keyLen == 1 {
-		if search.Sort() == index.SortClosest {
-			return db.closestUniSearch(ctx, search, results)
-		}
-		return db.uniSearch(ctx, search, results)
-	} else {
-		if search.Sort() == index.SortNone {
-			return db.unsortedSerialSearch(ctx, search, results)
-		}
-		return db.sortedParallelSearch(ctx, search, results)
 	}
+	if search.Sort() == index.SortClosest {
+		return db.searchClosest(ctx, search, results)
+	}
+	return db.search(ctx, search, results)
 }
 
-// sortedParallelSearch searches the index database, sorts the results and processes each result with perCdxFunc.
-func (db *DB) sortedParallelSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
-	count := 0
-
-	perItemFn := func(item *badger.Item) (cdxResponse index.CdxResponse) {
-		err := item.Value(func(val []byte) error {
-			cdx := new(schema.Cdx)
-			err := proto.Unmarshal(val, cdx)
-			if err != nil {
-				return err
-			} else if search.Filter().Eval(cdx) {
-				cdxResponse.Cdx = cdx
-			}
-			return nil
-		})
-		if err != nil {
-			cdxResponse.Error = err
-		}
-		return
-	}
-
-	var closest int64
-	if search.Closest() != "" {
-		ts, err := timestamp.Parse(search.Closest())
-		if err != nil {
-			return err
-		}
-		closest = ts.Unix()
-	}
-	sorter := NewSorter(closest, search.Sort() == index.SortAsc)
-	keys := make(chan []byte, len(search.Keys()))
-	done := make(chan struct{})
-
-	// add keys to sorter in separate goroutine
-	// to safely add items to sorter concurrently
-	go func() {
-		for key := range keys {
-			sorter.Add(key)
-		}
-		done <- struct{}{}
-	}()
-
-	go func() {
-		defer close(results)
-
-		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
-
-			// wg is used to synchronize multiple transaction iterators operating simultaneously.
-			var wg sync.WaitGroup
-
-			for _, key := range search.Keys() {
-				wg.Add(1)
-				key := key
-
-				go func() {
-					defer wg.Done()
-					opts := badger.DefaultIteratorOptions
-					opts.PrefetchValues = false
-					opts.Prefix = []byte(key)
-
-					it := txn.NewIterator(opts)
-					defer it.Close()
-
-					for it.Seek([]byte(key)); it.ValidForPrefix([]byte(key)); it.Next() {
-						k := it.Item().KeyCopy(nil)
-
-						// filter from/to
-						inDateRange := search.DateRange().Contains(keyvalue.CdxKeyTs(k).Unix())
-						if inDateRange {
-							keys <- k
-						}
-					}
-				}()
-			}
-
-			// wait for all iterators to finish
-			wg.Wait()
-			// close items channel
-			close(keys)
-			// wait for sorter to finish
-			<-done
-			// sort
-			sorter.Sort()
-
-			// process each item in sorted order
-			for _, value := range sorter.Values {
-				var cdxResponse index.CdxResponse
-				abort := false
-
-				item, err := txn.Get(value.k)
-				if errors.Is(err, badger.ErrKeyNotFound) {
-					continue
-				} else if err != nil {
-					cdxResponse.Error = err
-					abort = true
-				} else {
-					cdxResponse = perItemFn(item)
-				}
-
-				// skip if empty response
-				if cdxResponse == (index.CdxResponse{}) {
-					continue
-				}
-				// send result
-				select {
-				case <-ctx.Done():
-					results <- index.CdxResponse{Error: ctx.Err()}
-					return nil
-				case results <- cdxResponse:
-					if cdxResponse.Error == nil {
-						count++
-					}
-				}
-				// stop iteration if limit is reached
-				if search.Limit() > 0 && count >= search.Limit() {
-					break
-				}
-				// stop iteration if critical error
-				if abort {
-					break
-				}
-			}
-			return nil
-		})
-
-	}()
-	return nil
-}
-
-func (db *DB) unsortedSerialSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
-	go func() {
-		defer close(results)
-		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
-			count := 0
-			// initialize badger iterators
-			keyLen := len(search.Keys())
-			iterators := make([]*badger.Iterator, keyLen)
-			prefixes := make([][]byte, keyLen)
-			for i, key := range search.Keys() {
-				prefixes[i] = []byte(key)
-				opts := badger.DefaultIteratorOptions
-				opts.Prefix = prefixes[i]
-
-				iterators[i] = txn.NewIterator(opts)
-				defer iterators[i].Close()
-
-				iterators[i].Seek(prefixes[i])
-			}
-
-		OUTER:
-			for len(iterators) > 0 {
-				// set earliest timestamp to approx max time.Time value
-				earliestTimestamp := time.Unix(1<<63-1, 0).Unix()
-				earliestIndex := -1
-				// find the earliest timestamp
-				for i, iter := range iterators {
-					// if iter is no longer valid, close it, remove it from slice and restart search
-					if !iter.ValidForPrefix(prefixes[i]) {
-						iteratorsLen := len(iterators)
-						iterators[i].Close()
-						// remove iterator from list
-						iterators[i] = iterators[iteratorsLen-1]
-						iterators = iterators[0 : iteratorsLen-1]
-						continue OUTER
-					}
-
-					item := iter.Item()
-
-					ts := keyvalue.CdxKeyTs(item.Key()).Unix()
-					inRange := search.DateRange().Contains(ts)
-					if !inRange {
-						// timestamp out of range, iterate to next item and restart search
-						iter.Next()
-						continue OUTER
-					}
-
-					if ts < earliestTimestamp {
-						earliestTimestamp = ts
-						earliestIndex = i
-					}
-				}
-				if earliestIndex == -1 {
-					break
-				}
-				// use iterator with earliest timestamp
-				iter := iterators[earliestIndex]
-
-				var cdxResponse index.CdxResponse
-				cdx, err := cdxFromItem(iter.Item())
-				if err != nil {
-					cdxResponse.Error = err
-				} else if search.Filter().Eval(cdx) {
-					cdxResponse.Cdx = cdx
-				}
-				// skip if empty response
-				if cdxResponse == (index.CdxResponse{}) {
-					iter.Next()
-					continue
-				}
-				// send result
-				select {
-				case <-ctx.Done():
-					results <- index.CdxResponse{Error: ctx.Err()}
-					return nil
-				case results <- cdxResponse:
-					if cdxResponse.Error == nil {
-						count++
-					}
-				}
-				// stop iteration if limit is reached
-				if search.Limit() > 0 && count >= search.Limit() {
-					break
-				}
-				// advance iterator
-				iter.Next()
-			}
-			return nil
-		})
-	}()
-	return nil
-}
-
-func (db *DB) closestUniSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
+func (db *DB) searchClosest(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	// key len is guaranteed to be 1 at this point
-	key := search.Keys()[0]
+	key := search.Key()
 	seek := key + search.Closest()
 	ts, err := timestamp.Parse(search.Closest())
 	if err != nil {
@@ -535,12 +305,12 @@ func (db *DB) closestUniSearch(ctx context.Context, search index.Request, result
 	return nil
 }
 
-// uniSearch the index database and render each item with the provided renderFunc.
-func (db *DB) uniSearch(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
+// search the index database and render each item with the provided renderFunc.
+func (db *DB) search(ctx context.Context, search index.Request, results chan<- index.CdxResponse) error {
 	go func() {
 		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
 			reverse := search.Sort() == index.SortAsc
-			key := search.Keys()[0]
+			key := search.Key()
 			count := 0
 			prefix := []byte(key)
 			opts := badger.DefaultIteratorOptions

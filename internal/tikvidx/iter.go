@@ -125,38 +125,7 @@ type maybeKV struct {
 	error error
 }
 
-func getComparator(req index.Request) (comparator, error) {
-	switch req.Sort() {
-	case index.SortDesc:
-		return func(a []byte, b []byte) bool {
-			tsa := keyvalue.CdxKeyTs(a).Unix()
-			tsb := keyvalue.CdxKeyTs(b).Unix()
-			return timestamp.CompareDesc(tsa, tsb)
-		}, nil
-	case index.SortClosest:
-		if t, err := timestamp.Parse(req.Closest()); err != nil {
-			return nil, err
-		} else {
-			return func(a []byte, b []byte) bool {
-				tsa := keyvalue.CdxKeyTs(a).Unix()
-				tsb := keyvalue.CdxKeyTs(b).Unix()
-				return timestamp.CompareClosest(t.Unix())(tsa, tsb)
-			}, nil
-		}
-	case index.SortAsc:
-		fallthrough
-	case index.SortNone:
-		fallthrough
-	default:
-		return func(a []byte, b []byte) bool {
-			tsa := keyvalue.CdxKeyTs(a).Unix()
-			tsb := keyvalue.CdxKeyTs(b).Unix()
-			return timestamp.CompareAsc(tsa, tsb)
-		}, nil
-	}
-}
-
-type scan func([]byte) ([][]byte, [][]byte, error)
+type scanner func([]byte) ([][]byte, [][]byte, error)
 
 type iter struct {
 	key   []byte
@@ -171,20 +140,15 @@ func newIter(ctx context.Context, client *rawkv.Client, req index.Request) (iter
 		limit = rawkv.MaxRawKVScanLimit
 	}
 
-	cmp, err := getComparator(req)
-	if err != nil {
-		return nil, err
-	}
-
-	getScanner := func(sort index.Sort, i int) scan {
-		switch sort {
+	scan := func() scanner {
+		switch req.Sort() {
 		case index.SortDesc:
 			return func(key []byte) ([][]byte, [][]byte, error) {
 				return client.ReverseScan(ctx, append(key, 0xff), key, limit)
 			}
 		case index.SortClosest:
 			return func(key []byte) ([][]byte, [][]byte, error) {
-				return scanClosest(client, ctx, req.Keys()[i], req.Closest(), limit)
+				return scanClosest(client, ctx, req.Key(), req.Closest(), limit)
 			}
 		case index.SortAsc:
 			fallthrough
@@ -195,35 +159,36 @@ func newIter(ctx context.Context, client *rawkv.Client, req index.Request) (iter
 				return client.Scan(ctx, key, append(key, 0xff), limit)
 			}
 		}
-	}
+	}()
 
-	var results []chan *maybeKV
-	for i, key := range req.Keys() {
-		results = append(results, make(chan *maybeKV))
+	result := make(chan maybeKV)
 
-		go func(scan scan, key []byte, ch chan<- *maybeKV, done <-chan struct{}) {
-			defer close(ch)
-			keys, values, err := scan(key)
-			if err != nil {
-				select {
-				case <-done:
-					return
-				case ch <- &maybeKV{error: err}:
-					return
-				}
+	k := req.Key()
+	key := []byte(cdxPrefix + k)
+
+	go func(scan scanner, key []byte, ch chan<- maybeKV, done <-chan struct{}) {
+		defer close(ch)
+		keys, values, err := scan(key)
+		if err != nil {
+			select {
+			case <-done:
+				return
+			case ch <- maybeKV{error: err}:
+				return
 			}
-			for j, k := range keys {
-				select {
-				case <-done:
-					return
-				case ch <- &maybeKV{key: k, value: values[j]}:
-				}
+		}
+		for j, k := range keys {
+			select {
+			case <-done:
+				return
+			case ch <- maybeKV{key: k, value: values[j]}:
 			}
-		}(getScanner(req.Sort(), i), []byte(cdxPrefix+key), results[i], ctx.Done())
-	}
+		}
+	}(scan, key, result, ctx.Done())
 
-	is := new(iter)
-	is.next = mergeIter(ctx.Done(), cmp, results...)
+	is := &iter{
+		next: result,
+	}
 
 	return is, is.Next()
 }
@@ -260,64 +225,4 @@ func (is *iter) Valid() bool {
 
 func (is *iter) Close() {
 	// noop
-}
-
-type comparator func([]byte, []byte) bool
-
-// mergeIter merges sorted input channels into a sorted output channel.
-// The input channels must be sorted in ascending order.
-func mergeIter(done <-chan struct{}, cmp comparator, in ...chan *maybeKV) <-chan maybeKV {
-	out := make(chan maybeKV)
-	cords := make([]*maybeKV, len(in))
-	go func() {
-		defer close(out)
-		var zombie []int
-		for {
-			curr := -1
-			for i, cord := range cords {
-				if cord == nil {
-					select {
-					case cord = <-in[i]:
-						cords[i] = cord
-					case <-done:
-						return
-					}
-					// closed channel becomes zombie
-					if cord == nil {
-						zombie = append(zombie, i)
-						continue
-					}
-				}
-				if cord.error != nil {
-					// prioritize errors
-					curr = i
-					break
-				}
-				if curr == -1 || cmp(cord.key, cords[curr].value) {
-					curr = i
-				}
-			}
-			if curr == -1 {
-				return
-			}
-			select {
-			case <-done:
-				return
-			case out <- *cords[curr]:
-				cords[curr] = nil
-			}
-			// if zombie, then kill
-			if len(zombie) > 0 {
-				for _, z := range zombie {
-					cords[z] = cords[len(cords)-1]
-					cords = cords[:len(cords)-1]
-					in[z] = in[len(in)-1]
-					in = in[:len(in)-1]
-				}
-				zombie = nil
-			}
-		}
-	}()
-
-	return out
 }
