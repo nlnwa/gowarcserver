@@ -25,9 +25,13 @@ func MarshalId(r index.Record, prefix string) (key []byte, value []byte, err err
 	return
 }
 
+func MarshalFileKey(filename string, prefix string) []byte {
+	return []byte(prefix + filename)
+}
+
 // MarshalFileInfo takes a fileinfo and returns a key-value pair for the file index.
 func MarshalFileInfo(fileInfo *schema.Fileinfo, prefix string) (key []byte, value []byte, err error) {
-	key = []byte(prefix + fileInfo.Name)
+	key = MarshalFileKey(fileInfo.Name, prefix)
 	value, err = proto.Marshal(fileInfo)
 	return
 }

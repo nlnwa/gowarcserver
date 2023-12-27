@@ -199,13 +199,14 @@ func (db *DB) updateFilePath(path string) error {
 	fileInfo.Size = stat.Size()
 	fileInfo.LastModified = timestamppb.New(stat.ModTime())
 
+	key := keyvalue.MarshalFileKey(fileInfo.Name, "")
 	value, err := proto.Marshal(fileInfo)
 	if err != nil {
 		return err
 	}
 
 	return db.FileIndex.Update(func(txn *badger.Txn) error {
-		return txn.Set([]byte(fileInfo.Name), value)
+		return txn.Set(key, value)
 	})
 }
 
@@ -311,9 +312,10 @@ func (db *DB) ResolvePath(filename string) (filePath string, err error) {
 }
 
 func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
+	key := keyvalue.MarshalFileKey(fileName, "")
 	val := new(schema.Fileinfo)
 	err := db.FileIndex.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(fileName))
+		item, err := txn.Get(key)
 		if err != nil {
 			return err
 		}
