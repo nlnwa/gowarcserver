@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/bits-and-blooms/bloom/v3"
-	"github.com/dgraph-io/badger/v4/options"
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/badgeridx"
 	"github.com/nlnwa/gowarcserver/internal/tikvidx"
@@ -74,7 +73,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().String("badger-database", "", "name of badger database")
 	cmd.Flags().Int("badger-batch-max-size", 1000, "max transaction batch size in badger")
 	cmd.Flags().Duration("badger-batch-max-wait", 5*time.Second, "max wait time before flushing batched records")
-	cmd.Flags().String("badger-compression", "snappy", "compression algorithm")
+	cmd.Flags().String("badger-compression", badgeridx.SnappyCompression, "compression algorithm")
 	cmd.Flags().Bool("badger-read-only", false, "run badger in read-only mode")
 
 	// tikv options
@@ -108,12 +107,8 @@ func indexCmd(_ *cobra.Command, _ []string) error {
 		defer db.Close()
 		w = db
 	case "badger":
-		var c options.CompressionType
-		if err := viper.UnmarshalKey("badger-compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
-			return err
-		}
 		db, err := badgeridx.NewDB(
-			badgeridx.WithCompression(c),
+			badgeridx.WithCompression(viper.GetString("badger-compression")),
 			badgeridx.WithDir(viper.GetString("badger-dir")),
 			badgeridx.WithBatchMaxSize(viper.GetInt("badger-batch-max-size")),
 			badgeridx.WithBatchMaxWait(viper.GetDuration("badger-batch-max-wait")),
