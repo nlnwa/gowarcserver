@@ -171,7 +171,7 @@ func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
 func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	key := []byte(filePrefix + fileName)
+	key := keyvalue.MarshalFileKey(fileName, filePrefix)
 	val, err := db.client.Get(ctx, key)
 	if err != nil {
 		return nil, err
