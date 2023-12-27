@@ -224,7 +224,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	locUrl, err := url.Parse(location)
 	if urlErrors.Type(err) == urlErrors.MissingSchemeNonRelativeURL {
-		locUrl, err = url.ParseRef(coreApi.Urls[0].String(), location)
+		locUrl, err = url.ParseRef(coreApi.Url.String(), location)
 		if err != nil {
 			err = fmt.Errorf("failed to parse relative location header as URL: %s: %s: %w", warcRecord, location, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)

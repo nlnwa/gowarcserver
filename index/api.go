@@ -57,7 +57,6 @@ const (
 
 type Request interface {
 	Key() string
-	Keys() []string
 	Sort() Sort
 	DateRange() DateRange
 	Filter() Filter
