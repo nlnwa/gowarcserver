@@ -79,8 +79,8 @@ func writeHostName(sb *strings.Builder, u *url.Url) {
 func writeScheme(sb *strings.Builder, u *url.Url) {
 	if u.Port() != "" {
 		sb.WriteString(u.Port())
-		sb.WriteByte(':')
 	}
+	sb.WriteByte(':')
 	scheme := u.Scheme()
 	sb.WriteString(scheme)
 	if u.Username() != "" {
