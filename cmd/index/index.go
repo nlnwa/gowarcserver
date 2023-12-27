@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os/signal"
 	"regexp"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -109,10 +108,6 @@ func indexCmd(_ *cobra.Command, _ []string) error {
 		defer db.Close()
 		w = db
 	case "badger":
-		// Increase GOMAXPROCS as recommended by badger
-		// https://github.com/dgraph-io/badger#are-there-any-go-specific-settings-that-i-should-use
-		runtime.GOMAXPROCS(128)
-
 		var c options.CompressionType
 		if err := viper.UnmarshalKey("badger-compression", &c, viper.DecodeHook(badgeridx.CompressionDecodeHookFunc())); err != nil {
 			return err
