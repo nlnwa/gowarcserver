@@ -29,6 +29,13 @@ type DateRange struct {
 	to   int64 // unix time
 }
 
+func (d *DateRange) String() string {
+	if d == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s-%s", time.Unix(d.from, 0), time.Unix(d.to, 0))
+}
+
 func NewDateRange(fromstr string, tostr string) (*DateRange, error) {
 	if fromstr == "" && tostr == "" {
 		return nil, nil
