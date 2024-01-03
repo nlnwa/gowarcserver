@@ -59,7 +59,7 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 		log.Debug().Str("request", fmt.Sprintf("%+v", coreAPI)).Msgf("Found %d items in %s", count, time.Since(start))
 	}()
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
 	response := make(chan index.CdxResponse)
@@ -104,7 +104,7 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := make(chan index.IdResponse)
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
 	if err := h.IdAPI.ListStorageRef(ctx, api.Request(coreAPI), response); err != nil {
@@ -172,7 +172,7 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
 	responses := make(chan index.FileInfoResponse)
@@ -214,7 +214,7 @@ func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
 	params := httprouter.ParamsFromContext(r.Context())
 	filename := params.ByName("filename")
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
 	fileInfo, err := h.FileAPI.GetFileInfo(ctx, filename)
@@ -235,9 +235,11 @@ func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	responses := make(chan index.CdxResponse)
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+
+	responses := make(chan index.CdxResponse)
+
 	if err := h.CdxAPI.Search(ctx, api.Request(coreAPI), responses); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to list cdx records")
@@ -274,10 +276,7 @@ func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
 	params := httprouter.ParamsFromContext(r.Context())
 	warcId := params.ByName("urn")
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	record, err := h.WarcLoader.LoadById(ctx, warcId)
+	record, err := h.WarcLoader.LoadById(r.Context(), warcId)
 	if record != nil {
 		defer record.Close()
 	}
