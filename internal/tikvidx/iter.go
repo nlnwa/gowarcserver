@@ -84,10 +84,6 @@ func newClosestIter(ctx context.Context, client *rawkv.Client, req index.Request
 		return nil, err
 	}
 
-	prefix, startKey := keyvalue.ClosestWithPrefix(req, cdxPrefix)
-	forwardEndKey := append(prefix, endDate...)
-	backwardEndKey := append(prefix, startDate...)
-
 	limit := req.Limit()
 	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
@@ -103,9 +99,24 @@ func newClosestIter(ctx context.Context, client *rawkv.Client, req index.Request
 	forwardChannel := make(chan maybeKV)
 	backwardChannel := make(chan maybeKV)
 
+	prefix, startKey := keyvalue.ClosestWithPrefix(req, cdxPrefix)
+
+	pf := make([]byte, len(prefix))
+	copy(pf, prefix)
+	forwardEndKey := append(pf, endDate...)
+
+	pb := make([]byte, len(prefix))
+	copy(pb, prefix)
+	backwardEndKey := append(pb, startDate...)
+
+	forwardStartKey := make([]byte, len(startKey))
+	copy(forwardStartKey, startKey)
+	backwardStartKey := make([]byte, len(startKey))
+	copy(backwardStartKey, startKey)
+
 	done := make(chan struct{})
-	go repeatScan(fScanner, startKey, forwardEndKey, forwardChannel, done)
-	go repeatScan(bScanner, startKey, backwardEndKey, backwardChannel, done)
+	go repeatScan(fScanner, forwardStartKey, forwardEndKey, forwardChannel, done)
+	go repeatScan(bScanner, backwardStartKey, backwardEndKey, backwardChannel, done)
 
 	iter := &closestIter{
 		cmp:      timestamp.CompareClosest(t.Unix()),
@@ -197,7 +208,10 @@ func newIter(ctx context.Context, key []byte, client *rawkv.Client, req index.Re
 	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
 	}
-	endKey := append(key, 0xff)
+	endKey := make([]byte, len(key))
+	copy(endKey, key)
+	endKey = append(endKey, 0xff)
+
 	var scan scanner
 	if req.Sort() == index.SortDesc {
 		scan = func(key []byte, endKey []byte) ([][]byte, [][]byte, error) {
