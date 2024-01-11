@@ -91,18 +91,18 @@ type CdxAPI interface {
 	Search(context.Context, Request, chan<- CdxResponse) error
 }
 
-type FileInfoResponse struct {
-	*schema.FileInfo
-	Error error
+type FileInfoResponse interface {
+	GetFileInfo() *schema.FileInfo
+	GetError() error
 }
 
-type CdxResponse struct {
-	*schema.Cdx
-	Error error
+type CdxResponse interface {
+	GetCdx() *schema.Cdx
+	GetError() error
 }
 
-type IdResponse struct {
-	Key   string
-	Value string
-	Error error
+type IdResponse interface {
+	GetId() string
+	GetValue() string
+	GetError() error
 }

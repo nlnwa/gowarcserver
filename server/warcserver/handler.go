@@ -52,14 +52,16 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for res := range response {
-		if errors.Is(res.Error, context.Canceled) {
+		err := res.GetError()
+		if errors.Is(err, context.Canceled) {
 			return
 		}
-		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
+		if err != nil {
+			log.Warn().Err(err).Msg("failed result")
 			continue
 		}
-		cdxj, err := json.Marshal(cdxToPywbJson(res.Cdx))
+		cdx := res.GetCdx()
+		cdxj, err := json.Marshal(cdxToPywbJson(cdx))
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to marshal result")
 			continue
@@ -68,8 +70,8 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 		case api.OutputJson:
 			_, err = fmt.Fprintln(w, cdxj)
 		default:
-			ssu := res.GetSsu()
-			sts := timestamp.TimeTo14(res.GetSts().AsTime())
+			ssu := cdx.GetSsu()
+			sts := timestamp.TimeTo14(cdx.GetSts().AsTime())
 			_, err = fmt.Fprintf(w, "%s %s %s\n", ssu, sts, cdxj)
 		}
 		if err != nil {
@@ -97,11 +99,11 @@ func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest s
 	var ref string
 
 	for res := range response {
-		if res.Error != nil {
+		if res.GetError() != nil {
 			log.Warn().Err(err).Msgf("error when iterating response of closest search: %s %s", targetURI, closest)
 			continue
 		}
-		ref = res.GetRef()
+		ref = res.GetCdx().GetRef()
 		break
 	}
 
@@ -141,14 +143,15 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	var res index.CdxResponse
 	for res = range response {
-		if errors.Is(res.Error, context.Canceled) {
+		err := res.GetError()
+		if errors.Is(err, context.Canceled) {
 			return
 		}
-		if res.Error != nil {
+		if err != nil {
 			log.Warn().Err(err).Msg("Failed cdx response")
 			continue
 		}
-		if res.Cdx == nil {
+		if res.GetCdx() == nil {
 			http.NotFound(w, r)
 			return
 		}
@@ -158,7 +161,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	ref := res.GetRef()
+	ref := res.GetCdx().GetRef()
 
 	// load warc record by storage ref
 	var warcRecord gowarc.WarcRecord
@@ -252,12 +255,13 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	var loc string
 
 	for res := range response {
-		if res.Error != nil {
+		if res.GetError() != nil {
 			log.Warn().Err(err).Msg("failed result")
 			continue
 		}
-		sts = timestamp.TimeTo14(res.GetSts().AsTime())
-		loc = res.GetUri()
+		cdx := res.GetCdx()
+		sts = timestamp.TimeTo14(cdx.GetSts().AsTime())
+		loc = cdx.GetUri()
 	}
 	if loc == "" {
 		http.NotFound(w, r)

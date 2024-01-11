@@ -71,11 +71,11 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for res := range response {
-		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
+		if res.GetError() != nil {
+			log.Warn().Err(res.GetError()).Msg("failed result")
 			continue
 		}
-		v, err := protojson.Marshal(res)
+		v, err := protojson.Marshal(res.GetCdx())
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to marshal result")
 			continue
@@ -119,17 +119,17 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for res := range response {
-		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
+		if res.GetError() != nil {
+			log.Warn().Err(res.GetError()).Msg("failed result")
 			continue
 		}
-		filename, offset, err := parseStorageRef(res.Value)
+		filename, offset, err := parseStorageRef(res.GetValue())
 		if err != nil {
-			log.Warn().Err(err).Msgf("failed to parse storage ref: %s", res.Value)
+			log.Warn().Err(err).Msgf("failed to parse storage ref: %s", res.GetValue())
 			continue
 		}
 		ref := &storageRef{
-			Id:       res.Key,
+			Id:       res.GetId(),
 			Filename: filename,
 			Offset:   offset,
 		}
@@ -190,11 +190,11 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	for res := range responses {
-		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
+		if res.GetError() != nil {
+			log.Warn().Err(res.GetError()).Msg("failed result")
 			continue
 		}
-		v, err := protojson.Marshal(res.FileInfo)
+		v, err := protojson.Marshal(res.GetFileInfo())
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to marshal file info")
 			continue

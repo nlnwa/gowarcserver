@@ -247,7 +247,7 @@ func runIntegrationTest(t *testing.T, cdxAPI index.CdxAPI) {
 
 			j := 0
 			for r := range responses {
-				if r == (index.CdxResponse{}) {
+				if r == nil {
 					continue
 				}
 				t.Logf("[%d.%d] %+v", i, j, r)
@@ -256,12 +256,13 @@ func runIntegrationTest(t *testing.T, cdxAPI index.CdxAPI) {
 					t.Errorf("[%d]: got more results than we want (%d)", i, len(test.want))
 					break
 				}
-				if r.Error != nil && r.Error == nil {
-					t.Errorf("unexpected error: %v", r.Error)
+				if r.GetError() != nil && r.GetError() == nil {
+					t.Errorf("unexpected error: %v", r.GetError())
 					continue
 				}
-				if r.Cdx.GetRid() != test.want[j] {
-					t.Errorf("[%d.%d]: got %s, want %s", i, j, r.Cdx.GetRid(), test.want[j])
+				cdx := r.GetCdx()
+				if cdx.GetRid() != test.want[j] {
+					t.Errorf("[%d.%d]: got %s, want %s", i, j, cdx.GetRid(), test.want[j])
 				}
 				j++ // count results
 			}
