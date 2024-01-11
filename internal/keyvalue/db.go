@@ -71,6 +71,12 @@ func MarshalFileInfo(fileInfo *schema.FileInfo, prefix string) (key []byte, valu
 type CdxKey []byte
 
 var spaceCharacter = []byte{32}
+var colon = []byte{58}
+
+func (ck CdxKey) Host() string {
+	b := bytes.Split(ck, spaceCharacter)[0]
+	return string(b)
+}
 
 func (ck CdxKey) Time() (time.Time, error) {
 	b := bytes.Split(ck, spaceCharacter)[1]
@@ -86,6 +92,21 @@ func (ck CdxKey) Unix() int64 {
 func (ck CdxKey) SchemeAndUserInfo() string {
 	b := bytes.Split(ck, spaceCharacter)[2]
 	return string(b)
+}
+
+func (ck CdxKey) Port() string {
+	b := bytes.Split(ck, spaceCharacter)[2]
+	return string(bytes.Split(b, colon)[0])
+}
+
+func (ck CdxKey) Scheme() string {
+	b := bytes.Split(ck, spaceCharacter)[2]
+	return string(bytes.Split(b, colon)[1])
+}
+
+func (ck CdxKey) UserInfo() string {
+	b := bytes.Split(ck, spaceCharacter)[2]
+	return string(bytes.Split(b, colon)[2])
 }
 
 type IdResponse struct {
