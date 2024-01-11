@@ -45,16 +45,6 @@ func RenderRecord(w http.ResponseWriter, rec gowarc.WarcRecord) (int64, error) {
 	return written, err
 }
 
-// RenderContent renders the HTTP payload.
-func RenderContent(w http.ResponseWriter, r gowarc.HttpResponseBlock) error {
-	p, err := r.PayloadBytes()
-	if err != nil {
-		return fmt.Errorf("failed to retrieve payload bytes: %w", err)
-	}
-
-	return Render(w, *r.HttpHeader(), r.HttpStatusCode(), p)
-}
-
 func RenderRedirect(w http.ResponseWriter, location string) {
 	w.Header().Set("Location", location)
 	w.Header().Set("Content-Length", "0")
