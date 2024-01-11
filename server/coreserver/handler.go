@@ -194,7 +194,7 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 			log.Warn().Err(res.Error).Msg("failed result")
 			continue
 		}
-		v, err := protojson.Marshal(res.Fileinfo)
+		v, err := protojson.Marshal(res.FileInfo)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to marshal file info")
 			continue

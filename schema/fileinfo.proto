@@ -1,12 +1,12 @@
 syntax = "proto3";
 
-package gowarcserver;
+package gowarcserver.schema;
 
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/nlnwa/gowarcserver/schema";
 
-message Fileinfo {
+message FileInfo {
     // Filename
     string name = 1;
     // Full path

@@ -135,7 +135,7 @@ func (db *DB) addFile(filePath string) error {
 
 func (db *DB) updateFilePath(filePath string) error {
 	var err error
-	fileInfo := new(schema.Fileinfo)
+	fileInfo := new(schema.FileInfo)
 
 	fileInfo.Path, err = filepath.Abs(filePath)
 	if err != nil {
@@ -154,7 +154,7 @@ func (db *DB) updateFilePath(filePath string) error {
 	return db.putFileInfo(fileInfo)
 }
 
-func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
+func (db *DB) putFileInfo(fi *schema.FileInfo) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -171,7 +171,7 @@ func (db *DB) putFileInfo(fi *schema.Fileinfo) error {
 	return nil
 }
 
-func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
+func (db *DB) getFileInfo(fileName string) (*schema.FileInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	key := keyvalue.KeyWithPrefix(fileName, filePrefix)
@@ -182,7 +182,7 @@ func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
 	if val == nil {
 		return nil, nil
 	}
-	fi := new(schema.Fileinfo)
+	fi := new(schema.FileInfo)
 	err = proto.Unmarshal(val, fi)
 	if err != nil {
 		return nil, err
