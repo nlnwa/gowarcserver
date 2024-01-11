@@ -229,49 +229,6 @@ func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h Handler) listCdxs(w http.ResponseWriter, r *http.Request) {
-	coreAPI, err := api.Parse(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-
-	responses := make(chan index.CdxResponse)
-
-	if err := h.CdxAPI.Search(ctx, api.Request(coreAPI), responses); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Error().Err(err).Msg("Failed to list cdx records")
-		return
-	}
-
-	start := time.Now()
-	count := 0
-	defer func() {
-		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
-	}()
-
-	for res := range responses {
-		if res.Error != nil {
-			log.Warn().Err(res.Error).Msg("failed result")
-			continue
-		}
-		v, err := protojson.Marshal(res.Cdx)
-		if err != nil {
-			log.Warn().Err(err).Msg("failed to marshal cdx to json")
-			continue
-		}
-		_, err = io.Copy(w, bytes.NewReader(v))
-		if err != nil {
-			log.Warn().Err(err).Msg("failed to write cdx record")
-			return
-		}
-		_, _ = w.Write(lf)
-		count++
-	}
-}
-
 func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
 	params := httprouter.ParamsFromContext(r.Context())
 	warcId := params.ByName("urn")
