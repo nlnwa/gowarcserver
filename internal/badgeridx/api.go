@@ -293,7 +293,7 @@ func (db *DB) ListStorageRef(ctx context.Context, req index.Request, results cha
 	return nil
 }
 
-func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo, error) {
+func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.FileInfo, error) {
 	return db.getFileInfo(filename)
 }
 

@@ -78,7 +78,7 @@ type Request interface {
 }
 
 type FileAPI interface {
-	GetFileInfo(ctx context.Context, filename string) (*schema.Fileinfo, error)
+	GetFileInfo(ctx context.Context, filename string) (*schema.FileInfo, error)
 	ListFileInfo(context.Context, Request, chan<- FileInfoResponse) error
 }
 
@@ -92,7 +92,7 @@ type CdxAPI interface {
 }
 
 type FileInfoResponse struct {
-	*schema.Fileinfo
+	*schema.FileInfo
 	Error error
 }
 

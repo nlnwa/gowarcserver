@@ -108,7 +108,7 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 	return nil
 }
 
-func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.Fileinfo, error) {
+func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.FileInfo, error) {
 	return db.getFileInfo(filename)
 }
 
@@ -130,12 +130,12 @@ func (db *DB) ListFileInfo(ctx context.Context, req index.Request, res chan<- in
 
 		for it.Valid() {
 			var response index.FileInfoResponse
-			fileInfo := new(schema.Fileinfo)
+			fileInfo := new(schema.FileInfo)
 			err := proto.Unmarshal(it.Value(), fileInfo)
 			if err != nil {
 				response.Error = err
 			} else {
-				response.Fileinfo = fileInfo
+				response.FileInfo = fileInfo
 			}
 			select {
 			case <-ctx.Done():

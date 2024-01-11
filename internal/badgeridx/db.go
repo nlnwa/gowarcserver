@@ -183,7 +183,7 @@ func (db *DB) addFile(path string) error {
 
 func (db *DB) updateFilePath(path string) error {
 	var err error
-	fileInfo := &schema.Fileinfo{}
+	fileInfo := &schema.FileInfo{}
 
 	fileInfo.Path, err = filepath.Abs(path)
 	if err != nil {
@@ -311,9 +311,9 @@ func (db *DB) ResolvePath(filename string) (filePath string, err error) {
 	return fileInfo.Path, err
 }
 
-func (db *DB) getFileInfo(fileName string) (*schema.Fileinfo, error) {
+func (db *DB) getFileInfo(fileName string) (*schema.FileInfo, error) {
 	key := keyvalue.Key(fileName)
-	val := new(schema.Fileinfo)
+	val := new(schema.FileInfo)
 	err := db.FileIndex.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(key)
 		if err != nil {
@@ -352,12 +352,12 @@ func (db *DB) listFileInfo(ctx context.Context, limit int, results chan<- index.
 				count++
 
 				err := iter.Item().Value(func(value []byte) error {
-					fileInfo := new(schema.Fileinfo)
+					fileInfo := new(schema.FileInfo)
 					err := proto.Unmarshal(value, fileInfo)
 					if err != nil {
 						return err
 					}
-					results <- index.FileInfoResponse{Fileinfo: fileInfo, Error: nil}
+					results <- index.FileInfoResponse{FileInfo: fileInfo, Error: nil}
 					return nil
 				})
 				if err != nil {
