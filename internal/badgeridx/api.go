@@ -101,8 +101,6 @@ func (db *DB) closest(ctx context.Context, request index.Request, results chan<-
 				} else if bt != 0 {
 					iter = backward
 				} else {
-					// found nothing
-					results <- index.CdxResponse{}
 					return nil
 				}
 				key := keyvalue.CdxKey(iter.Item().Key())
@@ -112,24 +110,23 @@ func (db *DB) closest(ctx context.Context, request index.Request, results chan<-
 						continue
 					}
 				}
-				var cdxResponse index.CdxResponse
+				var cdxResponse keyvalue.CdxResponse
 				cdx, err := cdxFromItem(iter.Item())
 				if err != nil {
-					cdxResponse = index.CdxResponse{Error: err}
+					cdxResponse = keyvalue.CdxResponse{Error: err}
 				} else if request.Filter().Eval(cdx) {
-					cdxResponse = index.CdxResponse{Cdx: cdx}
-				}
-				if cdxResponse == (index.CdxResponse{}) {
+					cdxResponse = keyvalue.CdxResponse{Cdx: cdx}
+				} else {
 					iter.Next()
 					continue
 				}
 
 				select {
 				case <-ctx.Done():
-					results <- index.CdxResponse{Error: ctx.Err()}
+					results <- keyvalue.CdxResponse{Error: ctx.Err()}
 					return nil
 				case results <- cdxResponse:
-					if cdxResponse.Error == nil {
+					if cdxResponse.GetError() == nil {
 						count++
 					}
 				}
@@ -180,14 +177,14 @@ func (db *DB) search(ctx context.Context, req index.Request, results chan<- inde
 			defer close(results)
 
 			for it.Seek(key); it.ValidForPrefix(prefix); it.Next() {
-				cdxResponse := func() (cdxResponse index.CdxResponse) {
+				cdxResponse := func() (cdxResponse *keyvalue.CdxResponse) {
 					key := keyvalue.CdxKey(it.Item().Key())
 					if !dateRange.Contains(key.Unix()) {
-						return
+						return nil
 					}
 					if matchType == index.MatchTypeVerbatim {
 						if key.SchemeAndUserInfo() != schemeAndUserInfo {
-							return
+							return nil
 						}
 					}
 					err := it.Item().Value(func(v []byte) error {
@@ -196,27 +193,30 @@ func (db *DB) search(ctx context.Context, req index.Request, results chan<- inde
 							return err
 						}
 						if filter.Eval(result) {
-							cdxResponse.Cdx = result
+							cdxResponse = &keyvalue.CdxResponse{
+								Key: key,
+								Cdx: result,
+							}
 						}
 						return nil
 					})
 					if err != nil {
-						cdxResponse.Error = err
+						return &keyvalue.CdxResponse{Error: err}
 					}
 
-					return
+					return cdxResponse
 				}()
 				// skip if empty response
-				if cdxResponse == (index.CdxResponse{}) {
+				if cdxResponse == nil {
 					continue
 				}
 				// send result
 				select {
 				case <-ctx.Done():
-					results <- index.CdxResponse{Error: ctx.Err()}
+					results <- keyvalue.CdxResponse{Error: ctx.Err()}
 					return nil
 				case results <- cdxResponse:
-					if cdxResponse.Error == nil {
+					if cdxResponse.GetError() == nil {
 						count++
 					}
 				}
@@ -263,7 +263,7 @@ func (db *DB) ListStorageRef(ctx context.Context, req index.Request, results cha
 			defer close(results)
 
 			count := 0
-			var cdxResponse index.IdResponse
+			var idResponse keyvalue.IdResponse
 
 			for iter.Seek(nil); iter.Valid(); iter.Next() {
 				if limit > 0 && count >= limit {
@@ -273,17 +273,17 @@ func (db *DB) ListStorageRef(ctx context.Context, req index.Request, results cha
 
 				key := iter.Item().KeyCopy(nil)
 				err := iter.Item().Value(func(value []byte) error {
-					cdxResponse = index.IdResponse{Key: string(key), Value: string(value)}
+					idResponse = keyvalue.IdResponse{Key: string(key), Value: string(value)}
 					return nil
 				})
 				if err != nil {
-					cdxResponse = index.IdResponse{Error: err}
+					idResponse = keyvalue.IdResponse{Error: err}
 				}
 				select {
 				case <-ctx.Done():
-					results <- index.IdResponse{Error: ctx.Err()}
+					results <- keyvalue.IdResponse{Error: ctx.Err()}
 					return nil
-				case results <- cdxResponse:
+				case results <- idResponse:
 				}
 
 			}

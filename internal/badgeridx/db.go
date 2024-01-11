@@ -341,7 +341,7 @@ func (db *DB) listFileInfo(ctx context.Context, limit int, results chan<- index.
 			for iter.Seek(nil); iter.Valid(); iter.Next() {
 				select {
 				case <-ctx.Done():
-					results <- index.FileInfoResponse{Error: ctx.Err()}
+					results <- keyvalue.FileInfoResponse{Error: ctx.Err()}
 					return nil
 				default:
 				}
@@ -357,11 +357,11 @@ func (db *DB) listFileInfo(ctx context.Context, limit int, results chan<- index.
 					if err != nil {
 						return err
 					}
-					results <- index.FileInfoResponse{FileInfo: fileInfo, Error: nil}
+					results <- keyvalue.FileInfoResponse{FileInfo: fileInfo, Error: nil}
 					return nil
 				})
 				if err != nil {
-					results <- index.FileInfoResponse{Error: err}
+					results <- keyvalue.FileInfoResponse{Error: err}
 					return nil
 				}
 			}

@@ -62,37 +62,40 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 		count := 0
 
 		for it.Valid() {
-			cdxResponse := func() (cdxResponse index.CdxResponse) {
-				key := keyvalue.CdxKey(it.Key())
-				if !req.DateRange().Contains(key.Unix()) {
-					return
+			cdxResponse := func() *keyvalue.CdxResponse {
+				cdxKey := keyvalue.CdxKey(it.Key())
+				if !req.DateRange().Contains(cdxKey.Unix()) {
+					return nil
 				}
 				if matchType == index.MatchTypeVerbatim {
-					if key.SchemeAndUserInfo() != schemeAndUserInfo {
-						return
+					if cdxKey.SchemeAndUserInfo() != schemeAndUserInfo {
+						return nil
 					}
 				}
 				cdx := new(schema.Cdx)
 				if err := proto.Unmarshal(it.Value(), cdx); err != nil {
-					cdxResponse.Error = err
+					return &keyvalue.CdxResponse{Error: err}
 				} else if req.Filter().Eval(cdx) {
-					cdxResponse.Cdx = cdx
+					return &keyvalue.CdxResponse{
+						Key: cdxKey,
+						Cdx: cdx,
+					}
 				}
-				return
+				return nil
 			}()
-			if cdxResponse == (index.CdxResponse{}) {
+			if cdxResponse == nil {
 				if err = it.Next(); err != nil {
-					res <- index.CdxResponse{Error: err}
+					res <- keyvalue.CdxResponse{Error: err}
 					break
 				}
 				continue
 			}
 			select {
 			case <-ctx.Done():
-				res <- index.CdxResponse{Error: ctx.Err()}
+				res <- keyvalue.CdxResponse{Error: ctx.Err()}
 				return
 			case res <- cdxResponse:
-				if cdxResponse.Error == nil {
+				if cdxResponse.GetError() == nil {
 					count++
 				}
 			}
@@ -100,7 +103,7 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 				break
 			}
 			if err = it.Next(); err != nil {
-				res <- index.CdxResponse{Error: err}
+				res <- keyvalue.CdxResponse{Error: err}
 				break
 			}
 		}
@@ -129,7 +132,7 @@ func (db *DB) ListFileInfo(ctx context.Context, req index.Request, res chan<- in
 		count := 0
 
 		for it.Valid() {
-			var response index.FileInfoResponse
+			var response keyvalue.FileInfoResponse
 			fileInfo := new(schema.FileInfo)
 			err := proto.Unmarshal(it.Value(), fileInfo)
 			if err != nil {
@@ -149,7 +152,7 @@ func (db *DB) ListFileInfo(ctx context.Context, req index.Request, res chan<- in
 				return
 			}
 			if err = it.Next(); err != nil {
-				res <- index.FileInfoResponse{Error: err}
+				res <- keyvalue.FileInfoResponse{Error: err}
 				return
 			}
 		}
@@ -181,7 +184,7 @@ func (db *DB) ListStorageRef(ctx context.Context, req index.Request, res chan<- 
 		count := 0
 
 		for it.Valid() {
-			var response index.IdResponse
+			var response keyvalue.IdResponse
 
 			response.Key = strings.TrimPrefix(string(it.Key()), idPrefix)
 			response.Value = string(it.Value())
@@ -196,7 +199,7 @@ func (db *DB) ListStorageRef(ctx context.Context, req index.Request, res chan<- 
 				return
 			}
 			if err = it.Next(); err != nil {
-				res <- index.IdResponse{Error: err}
+				res <- keyvalue.IdResponse{Error: err}
 				return
 			}
 		}

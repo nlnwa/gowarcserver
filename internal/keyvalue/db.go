@@ -87,3 +87,48 @@ func (ck CdxKey) SchemeAndUserInfo() string {
 	b := bytes.Split(ck, spaceCharacter)[2]
 	return string(b)
 }
+
+type IdResponse struct {
+	Key   string
+	Value string
+	Error error
+}
+
+func (ir IdResponse) GetId() string {
+	return ir.Key
+}
+
+func (ir IdResponse) GetValue() string {
+	return ir.Value
+}
+
+func (ir IdResponse) GetError() error {
+	return ir.Error
+}
+
+type CdxResponse struct {
+	Key   []byte
+	Cdx   *schema.Cdx
+	Error error
+}
+
+func (cr CdxResponse) GetCdx() *schema.Cdx {
+	return cr.Cdx
+}
+
+func (cr CdxResponse) GetError() error {
+	return cr.Error
+}
+
+type FileInfoResponse struct {
+	FileInfo *schema.FileInfo
+	Error    error
+}
+
+func (fir FileInfoResponse) GetFileInfo() *schema.FileInfo {
+	return fir.FileInfo
+}
+
+func (fir FileInfoResponse) GetError() error {
+	return fir.Error
+}
