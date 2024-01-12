@@ -30,7 +30,8 @@ func TestBadger(t *testing.T) {
 	}
 
 	res := make(chan index.CdxResponse)
-	err = db.Search(context.Background(), api.SearchRequest{}, res)
+	req := new(api.SearchRequest)
+	err = db.Search(context.Background(), req, res)
 	if err != nil {
 		t.Error(err)
 	}

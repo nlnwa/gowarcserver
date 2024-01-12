@@ -67,26 +67,51 @@ func MarshalFileInfo(fileInfo *schema.FileInfo, prefix string) (key []byte, valu
 	return
 }
 
+// MarshalReport takes a report and returns a key-value pair for the report index.
+func MarshalReport(report *schema.Report, prefix string) (key []byte, value []byte, err error) {
+	key = KeyWithPrefix(report.Id, prefix)
+	value, err = proto.Marshal(report)
+	return
+}
+
 // CdxKey is a wrapper around the key used in the cdx index
 type CdxKey []byte
 
 var spaceCharacter = []byte{32}
-var colon = []byte{58}
+var colonCharacter = []byte{58}
+var slashCharacter = []byte{47}
 
-func (ck CdxKey) Host() string {
-	b := bytes.Split(ck, spaceCharacter)[0]
-	return string(b)
+func (ck CdxKey) String() string {
+	return string(ck)
 }
 
-func (ck CdxKey) Time() (time.Time, error) {
+func (ck CdxKey) DomainAndPath() []byte {
+	return bytes.Split(ck, spaceCharacter)[0]
+}
+
+func (ck CdxKey) Path() string {
+	b := ck.DomainAndPath()
+	i := bytes.Index(b, slashCharacter)
+	if i == -1 {
+		return ""
+	}
+	return string(b[i:])
+}
+
+func (ck CdxKey) Domain() string {
+	b := ck.DomainAndPath()
+	return string(bytes.Split(b, slashCharacter)[0])
+}
+
+func (ck CdxKey) Time() time.Time {
 	b := bytes.Split(ck, spaceCharacter)[1]
-	return timestamp.Parse(string(b))
+	t, _ := timestamp.Parse(string(b))
+	return t
 }
 
 // Unix returns the time part of the key as unix time.
 func (ck CdxKey) Unix() int64 {
-	ts, _ := ck.Time()
-	return ts.Unix()
+	return ck.Time().Unix()
 }
 
 func (ck CdxKey) SchemeAndUserInfo() string {
@@ -96,60 +121,15 @@ func (ck CdxKey) SchemeAndUserInfo() string {
 
 func (ck CdxKey) Port() string {
 	b := bytes.Split(ck, spaceCharacter)[2]
-	return string(bytes.Split(b, colon)[0])
+	return string(bytes.Split(b, colonCharacter)[0])
 }
 
 func (ck CdxKey) Scheme() string {
 	b := bytes.Split(ck, spaceCharacter)[2]
-	return string(bytes.Split(b, colon)[1])
+	return string(bytes.Split(b, colonCharacter)[1])
 }
 
 func (ck CdxKey) UserInfo() string {
 	b := bytes.Split(ck, spaceCharacter)[2]
-	return string(bytes.Split(b, colon)[2])
-}
-
-type IdResponse struct {
-	Key   string
-	Value string
-	Error error
-}
-
-func (ir IdResponse) GetId() string {
-	return ir.Key
-}
-
-func (ir IdResponse) GetValue() string {
-	return ir.Value
-}
-
-func (ir IdResponse) GetError() error {
-	return ir.Error
-}
-
-type CdxResponse struct {
-	Key   []byte
-	Cdx   *schema.Cdx
-	Error error
-}
-
-func (cr CdxResponse) GetCdx() *schema.Cdx {
-	return cr.Cdx
-}
-
-func (cr CdxResponse) GetError() error {
-	return cr.Error
-}
-
-type FileInfoResponse struct {
-	FileInfo *schema.FileInfo
-	Error    error
-}
-
-func (fir FileInfoResponse) GetFileInfo() *schema.FileInfo {
-	return fir.FileInfo
-}
-
-func (fir FileInfoResponse) GetError() error {
-	return fir.Error
+	return string(bytes.Split(b, colonCharacter)[2])
 }

@@ -118,6 +118,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 	var fileApi index.FileAPI
 	var cdxApi index.CdxAPI
 	var idApi index.IdAPI
+	var reportApi index.ReportAPI
 	var storageRefResolver loader.StorageRefResolver
 	var filePathResolver loader.FilePathResolver
 
@@ -142,6 +143,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 		cdxApi = db
 		fileApi = db
 		idApi = db
+		reportApi = db
 	case "tikv":
 		db, err := tikvidx.NewDB(
 			tikvidx.WithPDAddress(viper.GetStringSlice("tikv-pd-addr")),
@@ -160,12 +162,13 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 		cdxApi = db
 		fileApi = db
 		idApi = db
+		reportApi = db
 	default:
 		return fmt.Errorf("unknown index format: %s", indexFormat)
 	}
 
-	ctx, cancelIndexer := context.WithCancel(context.Background())
-	defer cancelIndexer()
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
 	indexSource := viper.GetString("index-source")
 	if indexSource != "" {
@@ -176,7 +179,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 		queue := index.NewWorkQueue(indexer,
 			viper.GetInt("index-workers"),
 		)
-		defer queue.Close()
+		defer queue.Wait()
 
 		var runner index.Runner
 		switch indexSource {
@@ -240,6 +243,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 		CdxAPI:             cdxApi,
 		FileAPI:            fileApi,
 		IdAPI:              idApi,
+		ReportAPI:          reportApi,
 		StorageRefResolver: storageRefResolver,
 		WarcLoader:         l,
 	}, handler, mw, pathPrefix)
@@ -251,12 +255,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 	}
 
 	go func() {
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-		sig := <-sigs
-		log.Info().Msgf("Received %s signal, shutting down...", sig)
-
-		cancelIndexer()
+		<-ctx.Done()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -270,8 +269,8 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 	log.Info().Msgf("Starting server at :%v", port)
 
 	err := httpServer.ListenAndServe()
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
 	}
-	return err
+	return nil
 }

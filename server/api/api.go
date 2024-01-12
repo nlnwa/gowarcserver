@@ -18,7 +18,7 @@ package api
 
 import (
 	"fmt"
-	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,7 +26,7 @@ import (
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/surt"
 	"github.com/nlnwa/gowarcserver/timestamp"
-	"github.com/nlnwa/whatwg-url/url"
+	whatwgUrl "github.com/nlnwa/whatwg-url/url"
 )
 
 const (
@@ -37,17 +37,17 @@ const (
 var sorts = []string{SortClosest, SortReverse}
 
 const (
-	MatchTypeVerbatim = "verbatim"
-	MatchTypeExact    = "exact"
-	MatchTypePrefix   = "prefix"
 	MatchTypeHost     = "host"
 	MatchTypeDomain   = "domain"
+	MatchTypePrefix   = "prefix"
+	MatchTypeExact    = "exact"
+	MatchTypeVerbatim = "verbatim"
 )
 
 var matchTypes = []string{
+	MatchTypeHost,
 	MatchTypeDomain,
 	MatchTypePrefix,
-	MatchTypeHost,
 	MatchTypeExact,
 	MatchTypeVerbatim,
 }
@@ -64,117 +64,74 @@ const (
 
 var outputs = []string{OutputCdxj, OutputJson}
 
-// CoreAPI implements a subset of https://pywb.readthedocs.io/en/latest/manual/cdxserver_api.html.
-type CoreAPI struct {
-	Collection string
-	Url        *url.Url
-	DateRange  *DateRange
-	MatchType  string
-	Limit      int
-	Sort       string
-	Closest    string
-	Output     string
-	Filter     []string
-	Fields     []string
-}
-
-func (capi *CoreAPI) Uri() *url.Url {
-	return capi.Url
-}
-
-func ClosestAPI(closest string, u *url.Url) SearchRequest {
-	return SearchRequest{
-		CoreAPI: &CoreAPI{
-			Url:       u,
-			Sort:      SortClosest,
-			Closest:   closest,
-			MatchType: MatchTypeExact,
-			Limit:     10,
-		},
-	}
-}
-
-func Request(coreAPI *CoreAPI) SearchRequest {
-	return SearchRequest{
-		CoreAPI: coreAPI,
-	}
-}
+const (
+	ParamMatchType = "matchType"
+	ParamUrl       = "url"
+	ParamFrom      = "from"
+	ParamTo        = "to"
+	ParamLimit     = "limit"
+	ParamSort      = "sort"
+	ParamClosest   = "closest"
+	ParamOutput    = "output"
+	ParamFilter    = "filter"
+	ParamFields    = "fields"
+)
 
 type SearchRequest struct {
-	*CoreAPI
 	FilterMap map[string]string
+
+	url.Values
+
+	whatwgUrl *whatwgUrl.Url
+	dateRange *DateRange
+	limit     int
+	filter    Filter
+	ssurt     string
+	matchType index.MatchType
+	sort      index.Sort
+	closest   string
+	output    string
+	fields    []string
 }
 
-func (c SearchRequest) Closest() string {
-	if c.CoreAPI == nil {
-		return ""
-	}
-	return c.CoreAPI.Closest
+func (c *SearchRequest) Url() *whatwgUrl.Url {
+	return c.whatwgUrl
 }
 
-func (c SearchRequest) Ssurt() string {
-	if c.CoreAPI == nil {
-		return ""
-	}
-	if c.CoreAPI.Url == nil {
-		return ""
-	}
-	return surt.UrlToSsurt(c.CoreAPI.Url)
+func (c *SearchRequest) Closest() string {
+	return c.closest
 }
 
-func (c SearchRequest) Sort() index.Sort {
-	if c.CoreAPI == nil {
-		return index.SortNone
-	}
-	switch c.CoreAPI.Sort {
-	case SortReverse:
-		return index.SortDesc
-	case SortClosest:
-		return index.SortClosest
-	default:
-		return index.SortAsc
-	}
+func (c *SearchRequest) Ssurt() string {
+	return c.ssurt
 }
 
-func (c SearchRequest) DateRange() index.DateRange {
-	if c.CoreAPI == nil {
-		return &DateRange{}
-	}
-	return c.CoreAPI.DateRange
+func (c *SearchRequest) Sort() index.Sort {
+	return c.sort
 }
 
-func (c SearchRequest) Filter() index.Filter {
-	if c.CoreAPI == nil {
-		return Filter{}
-	}
-	return ParseFilter(c.CoreAPI.Filter, c.FilterMap)
+func (c *SearchRequest) DateRange() index.DateRange {
+	return c.dateRange
 }
 
-func (c SearchRequest) Limit() int {
-	if c.CoreAPI == nil {
-		return 0
-	}
-	return c.CoreAPI.Limit
+func (c *SearchRequest) Filter() index.Filter {
+	return c.filter
 }
 
-func (c SearchRequest) MatchType() index.MatchType {
-	if c.CoreAPI == nil {
-		return index.MatchTypeExact
-	}
-	switch c.CoreAPI.MatchType {
-	case MatchTypeExact:
-		return index.MatchTypeExact
-	case MatchTypePrefix:
-		return index.MatchTypePrefix
-	case MatchTypeHost:
-		return index.MatchTypeHost
-	case MatchTypeDomain:
-		return index.MatchTypeDomain
-	case MatchTypeVerbatim:
-		return index.MatchTypeVerbatim
-	default:
-		return index.MatchTypeExact
-	}
+func (c *SearchRequest) Limit() int {
+	return c.limit
+}
+
+func (c *SearchRequest) MatchType() index.MatchType {
+	return c.matchType
+}
+
+func (c *SearchRequest) Output() string {
+	return c.output
+}
+
+func (c *SearchRequest) Fields() []string {
+	return c.fields
 }
 
 // contains returns true if string e is contained in string slice s.
@@ -189,87 +146,129 @@ func contains(s []string, e string) bool {
 
 var schemeRegExp = regexp.MustCompile(`^[a-z][a-z0-9+\-.]+(:.*)`)
 
-// Parse parses the request r into a *CoreAPI.
-func Parse(r *http.Request) (*CoreAPI, error) {
+func Parse(values url.Values) (req *SearchRequest, err error) {
+	req = new(SearchRequest)
+	err = req.Parse(values)
+	return
+}
+
+func (c *SearchRequest) Parse(values url.Values) error {
 	var err error
-	query := r.URL.Query()
 
-	coreApi := new(CoreAPI)
+	c.Values = values
 
-	// currently the "cdx" does not accept collection as a query or param
-	// coreApi.Collection = "all"
-
-	matchType := query.Get("matchType")
+	// Match type
+	matchType := values.Get(ParamMatchType)
 	if matchType != "" {
 		if !contains(matchTypes, matchType) {
-			return nil, fmt.Errorf("matchType must be one of %v, was: %s", matchTypes, matchType)
+			return fmt.Errorf("matchType must be one of %v, got: %s", matchTypes, matchType)
 		}
-		coreApi.MatchType = matchType
+		switch matchType {
+		case MatchTypeExact:
+			c.matchType = index.MatchTypeExact
+		case MatchTypePrefix:
+			c.matchType = index.MatchTypePrefix
+		case MatchTypeHost:
+			c.matchType = index.MatchTypeHost
+		case MatchTypeDomain:
+			c.matchType = index.MatchTypeDomain
+		case MatchTypeVerbatim:
+			c.matchType = index.MatchTypeVerbatim
+		default:
+			c.matchType = index.MatchTypeExact
+		}
 	}
 
-	urlStr := query.Get("url")
+	// URL
+	urlStr := values.Get(ParamUrl)
 	if urlStr != "" {
 		if !schemeRegExp.MatchString(urlStr) {
 			urlStr = "http://" + urlStr
 		}
-		u, err := url.Parse(urlStr)
+		u, err := whatwgUrl.Parse(urlStr)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("failed to parse url: %w", err)
 		}
-		coreApi.Url = u
+		c.whatwgUrl = u
+		c.ssurt = surt.UrlToSsurt(u)
 	}
 
-	if coreApi.DateRange, err = NewDateRange(query.Get("from"), query.Get("to")); err != nil {
-		return nil, err
+	// Date range
+	from := values.Get(ParamFrom)
+	to := values.Get(ParamTo)
+	dateRange, err := NewDateRange(from, to)
+	if err != nil {
+		return fmt.Errorf("failed to parse date range: %w", err)
 	}
+	c.dateRange = dateRange
 
-	limit := query.Get("limit")
+	// Limit
+	limit := values.Get(ParamLimit)
 	if limit != "" {
 		l, err := strconv.Atoi(limit)
 		if err != nil {
-			return nil, fmt.Errorf("limit must be a positive integer, was %s", limit)
+			return fmt.Errorf("limit must be a positive integer, was %s", limit)
 		}
-		coreApi.Limit = l
+		c.limit = l
 	}
 
-	closest := query.Get("closest")
+	// Closest
+	closest := values.Get(ParamClosest)
 	if closest != "" {
 		_, err := timestamp.Parse(closest)
 		if err != nil {
-			return nil, fmt.Errorf("closest failed to parse: %w", err)
+			return fmt.Errorf("failed to parse closest: %w", err)
 		}
-		coreApi.Closest = closest
+		c.closest = closest
 	}
 
-	sort := query.Get("sort")
+	// Sort
+	sort := values.Get(ParamSort)
 	if sort != "" {
 		if !contains(sorts, sort) {
-			return nil, fmt.Errorf("sort must be one of %v, was: %s", sorts, sort)
+			return fmt.Errorf("sort must be one of %v, was: %s", sorts, sort)
 		} else if sort == SortClosest && closest == "" {
 			sort = ""
-		} else if sort == SortClosest && coreApi.Url == nil {
-			return nil, fmt.Errorf("sort=closest is not valid without urls")
+		} else if sort == SortClosest && c.whatwgUrl == nil {
+			return fmt.Errorf("%s=%s is not valid without url", ParamSort, SortClosest)
 		}
-		coreApi.Sort = sort
+		switch sort {
+		case SortReverse:
+			c.sort = index.SortDesc
+		case SortClosest:
+			c.sort = index.SortClosest
+		default:
+			c.sort = index.SortAsc
+		}
 	}
 
-	output := query.Get("output")
+	output := values.Get(ParamOutput)
 	if output != "" {
 		if !contains(outputs, output) {
-			return nil, fmt.Errorf("output must be one of %v, was: %s", outputs, output)
+			return fmt.Errorf("output must be one of %v, was: %s", outputs, output)
 		}
-		coreApi.Output = output
+		c.output = output
 	}
 
-	filter, ok := query["filter"]
+	filter, ok := values[ParamFilter]
 	if ok {
-		coreApi.Filter = filter
+		c.filter = ParseFilter(filter, c.FilterMap)
 	}
 
-	fields := query.Get("fields")
+	fields := values.Get(ParamFields)
 	if fields != "" {
-		coreApi.Fields = strings.Split(fields, ",")
+		c.fields = strings.Split(fields, ",")
 	}
 
-	return coreApi, nil
+	return nil
+}
+
+func ClosestRequest(closest string, u *whatwgUrl.Url) *SearchRequest {
+	return &SearchRequest{
+		whatwgUrl: u,
+		limit:     10,
+		sort:      index.SortClosest,
+		closest:   closest,
+		matchType: index.MatchTypeExact,
+	}
 }

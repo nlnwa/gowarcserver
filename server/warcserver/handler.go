@@ -28,7 +28,7 @@ type Handler struct {
 }
 
 func (h Handler) index(w http.ResponseWriter, r *http.Request) {
-	coreAPI, err := api.Parse(r)
+	coreAPI, err := parseValues(r.URL.Query())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -45,7 +45,7 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 
 	response := make(chan index.CdxResponse)
 
-	if err = h.CdxAPI.Search(ctx, searchApi(coreAPI), response); err != nil {
+	if err = h.CdxAPI.Search(ctx, coreAPI, response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msgf("Search failed: %+v", coreAPI)
 		return
@@ -66,7 +66,7 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 			log.Warn().Err(err).Msg("failed to marshal result")
 			continue
 		}
-		switch coreAPI.Output {
+		switch coreAPI.Output() {
 		case api.OutputJson:
 			_, err = fmt.Fprintln(w, cdxj)
 		default:
@@ -84,15 +84,15 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 
 // resolveRevisit resolves a revisit record by looking up the closest matching target URI and date
 func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest string) (string, error) {
-	uri, err := url.Parse(targetURI)
+	closestReq, err := parseClosest(targetURI, closest)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve revisit record: failed to parse WARC-Refers-To-Target-URI: %s: %w", targetURI, err)
+		return "", fmt.Errorf("failed to parse WARC-Refers-To-Target-URI: %s: %w", targetURI, err)
 	}
 
 	response := make(chan index.CdxResponse)
-	err = h.CdxAPI.Search(ctx, api.ClosestAPI(closest, uri), response)
+	err = h.CdxAPI.Search(ctx, closestReq, response)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve revisit record: failed to get closest match: %s %s: %w", closest, uri, err)
+		return "", fmt.Errorf("failed to get closest match: %s %s: %w", targetURI, closest, err)
 	}
 
 	// we are looking for the record's storage ref
@@ -111,22 +111,19 @@ func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest s
 }
 
 func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
-	// parse API
 	closest, uri := parseResourceRequest(r)
-	u, err := url.Parse(uri)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to parse uri '%s': %v", uri, err), http.StatusBadRequest)
-		return
-	}
-	searchAPI := api.ClosestAPI(closest, u)
+
+	closestAPI, err := parseClosest(uri, closest)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	log := log.With().Str("closest", closest).Str("url", uri).Logger()
+
 	start := time.Now()
 	defer func() {
-		log.Debug().Str("request", fmt.Sprintf("%+v", searchAPI.CoreAPI)).Msgf("Fetched resource in %s", time.Since(start))
+		log.Debug().Dur("time", time.Since(start)).Msgf("Fetched resource")
 	}()
 
 	ctx, cancelQuery := context.WithTimeout(r.Context(), 10*time.Second)
@@ -134,10 +131,10 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	// query API
 	response := make(chan index.CdxResponse)
-	err = h.CdxAPI.Search(ctx, searchAPI, response)
+	err = h.CdxAPI.Search(ctx, closestAPI, response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Error().Err(err).Msgf("Failed search closest: %+v", searchAPI.CoreAPI)
+		log.Error().Err(err).Msgf("Failed to search closest")
 		return
 	}
 
@@ -227,7 +224,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	locUrl, err := url.Parse(location)
 	if urlErrors.Type(err) == urlErrors.MissingSchemeNonRelativeURL {
-		locUrl, err = url.ParseRef(searchAPI.Url.String(), location)
+		locUrl, err = closestAPI.Url().Parse(location)
 		if err != nil {
 			err = fmt.Errorf("failed to parse relative location header as URL: %s: %s: %w", warcRecord, location, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -243,7 +240,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response = make(chan index.CdxResponse)
-	err = h.CdxAPI.Search(ctx, api.ClosestAPI(closest, locUrl), response)
+	err = h.CdxAPI.Search(ctx, api.ClosestRequest(closest, locUrl), response)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to find closest redirect")
@@ -274,7 +271,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 	host := r.Host
-	u, err = url.Parse(scheme + "://" + host)
+	u, err := url.Parse(scheme + "://" + host)
 	if err != nil {
 		err := fmt.Errorf("failed to construct redirect location: %s: %w", loc, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

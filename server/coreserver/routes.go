@@ -29,4 +29,16 @@ func Register(h Handler, r *httprouter.Router, mw func(http.Handler) http.Handle
 	r.Handler("GET", pathPrefix+"/file/:filename", mw(http.HandlerFunc(h.getFileInfoByFilename)))
 	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(h.search)))
 	r.Handler("GET", pathPrefix+"/record/:urn", mw(http.HandlerFunc(h.loadRecordByUrn)))
+
+	// Create report
+	r.Handler("POST", pathPrefix+"/report", mw(http.HandlerFunc(h.createReport)))
+
+	// Delete report
+	r.Handler("DELETE", pathPrefix+"/report/:id", mw(http.HandlerFunc(h.deleteReport)))
+
+	// Get report
+	r.Handler("GET", pathPrefix+"/report/:id", mw(http.HandlerFunc(h.getReport)))
+
+	// List reports
+	r.Handler("GET", pathPrefix+"/report", mw(http.HandlerFunc(h.listReports)))
 }

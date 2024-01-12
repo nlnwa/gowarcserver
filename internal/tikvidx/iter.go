@@ -72,13 +72,13 @@ type closestIter struct {
 	forward, backward chan maybeKV
 	a, b              *maybeKV
 	kv                *maybeKV
+	prefix            string
 	valid             bool
 	cmp               func(int64, int64) bool
 	done              chan struct{}
-	limit             int
 }
 
-func newClosestIter(ctx context.Context, client *rawkv.Client, req index.Request) (iterator, error) {
+func newClosestIter(ctx context.Context, client *rawkv.Client, req index.Request, prefix string) (iterator, error) {
 	t, err := timestamp.Parse(req.Closest())
 	if err != nil {
 		return nil, err
@@ -99,14 +99,14 @@ func newClosestIter(ctx context.Context, client *rawkv.Client, req index.Request
 	forwardChannel := make(chan maybeKV)
 	backwardChannel := make(chan maybeKV)
 
-	prefix, startKey := keyvalue.ClosestWithPrefix(req, cdxPrefix)
+	keyPrefix, startKey := keyvalue.ClosestWithPrefix(req, cdxPrefix)
 
-	pf := make([]byte, len(prefix))
-	copy(pf, prefix)
+	pf := make([]byte, len(keyPrefix))
+	copy(pf, keyPrefix)
 	forwardEndKey := append(pf, endDate...)
 
-	pb := make([]byte, len(prefix))
-	copy(pb, prefix)
+	pb := make([]byte, len(keyPrefix))
+	copy(pb, keyPrefix)
 	backwardEndKey := append(pb, startDate...)
 
 	forwardStartKey := make([]byte, len(startKey))
@@ -123,14 +123,14 @@ func newClosestIter(ctx context.Context, client *rawkv.Client, req index.Request
 		forward:  forwardChannel,
 		backward: backwardChannel,
 		done:     done,
-		limit:    req.Limit(),
+		prefix:   prefix,
 	}
 
 	return iter, iter.Next()
 }
 
 func (ci *closestIter) Key() []byte {
-	return ci.kv.k
+	return ci.kv.k[len(ci.prefix):]
 }
 
 func (ci *closestIter) Value() []byte {
@@ -195,15 +195,15 @@ func (ci *closestIter) Next() error {
 }
 
 type iter struct {
-	key   []byte
-	value []byte
-	valid bool
-	next  <-chan maybeKV
-	done  chan<- struct{}
-	limit int
+	key    []byte
+	value  []byte
+	valid  bool
+	next   <-chan maybeKV
+	done   chan<- struct{}
+	prefix string
 }
 
-func newIter(ctx context.Context, key []byte, client *rawkv.Client, req index.Request) (iterator, error) {
+func newIter(ctx context.Context, key []byte, client *rawkv.Client, req index.Request, prefix string) (iterator, error) {
 	limit := req.Limit()
 	if limit == 0 || limit > rawkv.MaxRawKVScanLimit {
 		limit = rawkv.MaxRawKVScanLimit
@@ -228,9 +228,9 @@ func newIter(ctx context.Context, key []byte, client *rawkv.Client, req index.Re
 	go repeatScan(scan, key, endKey, result, done)
 
 	is := &iter{
-		next:  result,
-		done:  done,
-		limit: req.Limit(),
+		next:   result,
+		done:   done,
+		prefix: prefix,
 	}
 
 	return is, is.Next()
@@ -255,7 +255,7 @@ func (is *iter) Next() error {
 }
 
 func (is *iter) Key() []byte {
-	return is.key
+	return is.key[len(is.prefix):]
 }
 
 func (is *iter) Value() []byte {
