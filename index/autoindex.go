@@ -53,28 +53,33 @@ func WithExcludeDirs(res ...*regexp.Regexp) AutoIndexOption {
 
 type Queue interface {
 	Add(path string)
+	Close()
 }
 
 type AutoIndexer struct {
-	Queue
-	opts *AutoIndexOptions
+	queue Queue
+	opts  *AutoIndexOptions
+	done  <-chan struct{}
 }
 
-func NewAutoIndexer(s Queue, options ...AutoIndexOption) AutoIndexer {
+func NewAutoIndexer(queue Queue, options ...AutoIndexOption) AutoIndexer {
 	opts := new(AutoIndexOptions)
 	for _, apply := range options {
 		apply(opts)
 	}
 
 	return AutoIndexer{
-		Queue: s,
+		queue: queue,
 		opts:  opts,
 	}
 }
 
 func (a AutoIndexer) Run(ctx context.Context) error {
+	a.done = ctx.Done()
+	defer a.queue.Close()
+
 	for _, path := range a.opts.Paths {
-		err := a.index(ctx.Done(), path)
+		err := a.index(path)
 		if err != nil {
 			log.Warn().Msgf(`Error indexing "%s": %v`, path, err)
 		}
@@ -82,9 +87,18 @@ func (a AutoIndexer) Run(ctx context.Context) error {
 	return nil
 }
 
-func (a AutoIndexer) index(done <-chan struct{}, path string) error {
+func (a AutoIndexer) enqueue(path string) {
 	select {
-	case <-done:
+	case <-a.done:
+		return
+	default:
+		a.queue.Add(path)
+	}
+}
+
+func (a AutoIndexer) index(path string) error {
+	select {
+	case <-a.done:
 		return nil
 	default:
 	}
@@ -93,16 +107,22 @@ func (a AutoIndexer) index(done <-chan struct{}, path string) error {
 		return fmt.Errorf("failed to get file info: %w", err)
 	}
 	if info.IsDir() {
-		if err := a.walk(done, path, 0); err != nil {
+		if err := a.walk(path, 0); err != nil {
 			return err
 		}
-	} else {
-		a.Add(path)
+		return nil
 	}
+	a.enqueue(path)
+
 	return nil
 }
 
-func (a AutoIndexer) walk(done <-chan struct{}, dir string, currentDepth int) error {
+func (a AutoIndexer) walk(dir string, currentDepth int) error {
+	select {
+	case <-a.done:
+		return nil
+	default:
+	}
 	if a.opts.isExcluded(dir) {
 		return nil
 	}
@@ -112,15 +132,15 @@ func (a AutoIndexer) walk(done <-chan struct{}, dir string, currentDepth int) er
 	}
 	for _, entry := range entries {
 		select {
-		case <-done:
+		case <-a.done:
 			return nil
 		default:
 		}
 		path := filepath.Join(dir, entry.Name())
 		if !entry.IsDir() {
-			a.Queue.Add(path)
+			a.enqueue(path)
 		} else if currentDepth < a.opts.MaxDepth {
-			err = a.walk(done, path, currentDepth+1)
+			err = a.walk(path, currentDepth+1)
 			if err != nil {
 				return err
 			}

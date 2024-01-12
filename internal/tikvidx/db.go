@@ -34,9 +34,11 @@ import (
 )
 
 var (
-	idPrefix   = "i"
-	filePrefix = "f"
-	cdxPrefix  = "c"
+	idPrefix         = "i"
+	filePrefix       = "f"
+	cdxPrefix        = "c"
+	reportPrefix     = "r_"
+	reportDataPrefix = "rd"
 )
 
 const delimiter = "_"
@@ -46,6 +48,7 @@ type DB struct {
 	batch  chan index.Record
 	done   chan struct{}
 	wg     sync.WaitGroup
+	tasks  map[string]context.CancelFunc
 }
 
 func NewDB(options ...Option) (db *DB, err error) {
@@ -61,6 +64,7 @@ func NewDB(options ...Option) (db *DB, err error) {
 	idPrefix = dbName + delimiter + idPrefix + delimiter
 	filePrefix = dbName + delimiter + filePrefix + delimiter
 	cdxPrefix = dbName + delimiter + cdxPrefix + delimiter
+	reportPrefix = dbName + delimiter + reportPrefix + delimiter
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -75,6 +79,7 @@ func NewDB(options ...Option) (db *DB, err error) {
 	db = &DB{
 		client: client,
 		done:   done,
+		tasks:  make(map[string]context.CancelFunc),
 	}
 
 	if opts.ReadOnly {
@@ -105,6 +110,9 @@ func NewDB(options ...Option) (db *DB, err error) {
 
 // Close stops the batch workers and closes the index databases.
 func (db *DB) Close() {
+	for _, cancel := range db.tasks {
+		cancel()
+	}
 	close(db.done)
 	db.wg.Wait()
 	_ = db.client.Close()

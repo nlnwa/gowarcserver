@@ -65,10 +65,11 @@ func WithMaxWait(maxWait time.Duration) KafkaIndexOption {
 
 type KafkaIndexer struct {
 	kafka.ReaderConfig
-	Queue
+	queue Queue
 }
 
 func (k KafkaIndexer) Run(ctx context.Context) (err error) {
+	defer k.queue.Close()
 	defer func() {
 		r := recover()
 		switch v := r.(type) {
@@ -88,17 +89,17 @@ func (k KafkaIndexer) Run(ctx context.Context) (err error) {
 		if err != nil {
 			return err
 		}
-		k.Add(string(msg.Value))
+		k.queue.Add(string(msg.Value))
 	}
 }
 
-func NewKafkaIndexer(q Queue, options ...KafkaIndexOption) KafkaIndexer {
+func NewKafkaIndexer(queue Queue, options ...KafkaIndexOption) KafkaIndexer {
 	readerConfig := new(kafka.ReaderConfig)
 	for _, apply := range options {
 		apply(readerConfig)
 	}
 	return KafkaIndexer{
 		ReaderConfig: *readerConfig,
-		Queue:        q,
+		queue:        queue,
 	}
 }

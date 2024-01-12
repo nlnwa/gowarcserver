@@ -67,7 +67,7 @@ const (
 )
 
 type Request interface {
-	Uri() *url.Url
+	Url() *url.Url
 	Ssurt() string
 	Sort() Sort
 	DateRange() DateRange
@@ -105,4 +105,24 @@ type IdResponse interface {
 	GetId() string
 	GetValue() string
 	GetError() error
+}
+
+type ReportResponse interface {
+	GetReport() *schema.Report
+	GetError() error
+}
+
+type ReportAPI interface {
+	CreateReport(context.Context, Request) (*schema.Report, error)
+	ListReports(context.Context, Request, chan<- ReportResponse) error
+	GetReport(context.Context, string) (*schema.Report, error)
+	CancelReport(context.Context, string) error
+	DeleteReport(context.Context, string) error
+}
+
+type ReportGenerator interface {
+	CdxAPI
+	AddTask(string, context.CancelFunc)
+	DeleteTask(string)
+	SaveReport(context.Context, *schema.Report) error
 }

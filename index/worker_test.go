@@ -48,8 +48,8 @@ func TestWorkQueue(t *testing.T) {
 	for i := 0; i < jobs; i++ {
 		queue.Add(strconv.Itoa(i))
 	}
-
 	queue.Close()
+	queue.Wait()
 
 	queueLength := len(queue.queue)
 	if queueLength != 0 {

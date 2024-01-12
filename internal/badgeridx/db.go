@@ -46,11 +46,16 @@ type DB struct {
 	// CdxIndex maps cdx key to cdx record
 	CdxIndex *badger.DB
 
+	// ReportIndex maps report id to report
+	ReportIndex *badger.DB
+
 	batch chan index.Record
 
 	done chan struct{}
 
 	wg sync.WaitGroup
+
+	tasks map[string]context.CancelFunc
 }
 
 func NewDB(options ...Option) (db *DB, err error) {
@@ -66,6 +71,7 @@ func NewDB(options ...Option) (db *DB, err error) {
 	var idIndex *badger.DB
 	var fileIndex *badger.DB
 	var cdxIndex *badger.DB
+	var reportIndex *badger.DB
 
 	batch := make(chan index.Record, opts.BatchMaxSize)
 	done := make(chan struct{})
@@ -79,13 +85,18 @@ func NewDB(options ...Option) (db *DB, err error) {
 	if cdxIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "cdx-index"), opts.Compression, opts.ReadOnly, opts.Silent); err != nil {
 		return
 	}
+	if reportIndex, err = newBadgerDB(path.Join(opts.Path, opts.Database, "report-index"), opts.Compression, opts.ReadOnly, opts.Silent); err != nil {
+		return
+	}
 
 	db = &DB{
-		IdIndex:   idIndex,
-		FileIndex: fileIndex,
-		CdxIndex:  cdxIndex,
-		batch:     batch,
-		done:      done,
+		IdIndex:     idIndex,
+		FileIndex:   fileIndex,
+		CdxIndex:    cdxIndex,
+		ReportIndex: reportIndex,
+		batch:       batch,
+		done:        done,
+		tasks:       make(map[string]context.CancelFunc),
 	}
 
 	// We don't need to run batch and gc workers when operating in read-only mode.
@@ -151,11 +162,15 @@ func (db *DB) runValueLogGC(discardRatio float64) {
 
 // Close stops the gc and batch workers and closes the index databases.
 func (db *DB) Close() {
+	for _, cancel := range db.tasks {
+		cancel()
+	}
 	close(db.done)
 	db.wg.Wait()
 	_ = db.IdIndex.Close()
 	_ = db.FileIndex.Close()
 	_ = db.CdxIndex.Close()
+	_ = db.ReportIndex.Close()
 }
 
 // addFile checks if file is indexed or has not changed since indexing, and adds file to file index.

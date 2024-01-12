@@ -2,6 +2,7 @@ package it
 
 import (
 	"context"
+	"net/url"
 	"strconv"
 	"testing"
 	"time"
@@ -10,12 +11,11 @@ import (
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/server/api"
 	"github.com/nlnwa/gowarcserver/surt"
-	"github.com/nlnwa/whatwg-url/url"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type test struct {
-	req  index.Request
+	req  url.Values
 	want []string
 }
 
@@ -82,136 +82,99 @@ var samples = []struct {
 }
 
 func init() {
-	wwwExampleCom, err := url.Parse("http://www.example.com/")
-	if err != nil {
-		panic(err)
-	}
-	wwwExampleComPath, err := url.Parse("http://www.example.com/path")
-	if err != nil {
-		panic(err)
-	}
-	exampleCom, err := url.Parse("http://example.com/")
-	if err != nil {
-		panic(err)
-	}
-	exampleComPath, err := url.Parse("http://example.com/path")
-	if err != nil {
-		panic(err)
-	}
-	exampleComPathQuery, err := url.Parse("http://example.com/path?query=2#fragment")
-	if err != nil {
-		panic(err)
-	}
+	wwwExampleCom := "http://www.example.com/"
+	wwwExampleComPath := "http://www.example.com/path"
+	exampleCom := "http://example.com/"
+	exampleComPath := "http://example.com/path"
+	exampleComPathQuery := "http://example.com/path?query=2#fragment"
 	tests = []test{
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url:       wwwExampleCom,
-					MatchType: api.MatchTypeExact,
-				},
+			req: url.Values{
+				"matchType": {api.MatchTypeExact},
+				"url":       {wwwExampleCom},
 			},
 			want: []string{"e", "d", "c", "a", "b"},
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url:       wwwExampleCom,
-					MatchType: api.MatchTypeExact,
-					Sort:      api.SortReverse,
-				},
+			req: url.Values{
+				"matchType": {api.MatchTypeExact},
+				"url":       {wwwExampleCom},
+				"sort":      {api.SortReverse},
 			},
 			want: []string{"b", "a", "c", "d", "e"},
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url:       wwwExampleCom,
-					MatchType: api.MatchTypePrefix,
-				},
+			req: url.Values{
+				"matchType": {api.MatchTypePrefix},
+				"url":       {wwwExampleCom},
 			},
 			want: []string{"e", "d", "c", "a", "b", "f"},
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url:       wwwExampleCom,
-					Closest:   "202004012221",
-					Sort:      api.SortClosest,
-					MatchType: api.MatchTypeExact,
-				},
+			req: url.Values{
+				"matchType": {api.MatchTypeExact},
+				"url":       {wwwExampleCom},
+				"closest":   {"202004012221"},
+				"sort":      {api.SortClosest},
 			},
 			want: []string{"d", "e", "c", "a", "b"},
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url:       wwwExampleCom,
-					Closest:   "202004012221",
-					Sort:      api.SortClosest,
-					MatchType: api.MatchTypeVerbatim,
-				},
+			req: url.Values{
+				"matchType": {api.MatchTypeVerbatim},
+				"url":       {wwwExampleCom},
+				"closest":   {"202004012221"},
+				"sort":      {api.SortClosest},
 			},
 			want: []string{"d", "e", "a"},
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url:    wwwExampleCom,
-					Filter: []string{"!hsc:200"},
-				},
+			req: url.Values{
+				"matchType": {api.MatchTypeExact},
+				"url":       {wwwExampleCom},
+				"filter":    {"!hsc:200"},
 			},
 			want: nil,
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url: exampleCom,
-				},
+			req: url.Values{
+				"url": {exampleCom},
 			},
 			want: []string{"g", "h"},
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url:       exampleCom,
-					MatchType: api.MatchTypeDomain,
-				},
+			req: url.Values{
+				"matchType": {api.MatchTypeDomain},
+				"url":       {exampleCom},
 			},
 			want: []string{"g", "h", "j", "i", "e", "d", "c", "a", "b", "f"},
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url: wwwExampleComPath,
-				},
+			req: url.Values{
+				"url": {wwwExampleComPath},
 			},
 			want: []string{"f"},
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url:       exampleComPath,
-					MatchType: api.MatchTypePrefix,
-				},
+			req: url.Values{
+				"matchType": {api.MatchTypePrefix},
+				"url":       {exampleComPath},
 			},
 			want: []string{"j", "i"},
 		},
 		{
-			req: api.SearchRequest{
-				CoreAPI: &api.CoreAPI{
-					Url: exampleComPathQuery,
-				},
+			req: url.Values{
+				"url": {exampleComPathQuery},
 			},
 			want: []string{"i"},
 		},
 	}
 
 	for _, sample := range samples {
-		uri, err := url.Parse(sample.uri)
+		ssu, err := surt.StringToSsurt(sample.uri)
 		if err != nil {
 			panic(err)
 		}
-		ssu := surt.UrlToSsurt(uri)
 		record := index.Record{
 			Cdx: &schema.Cdx{
 				Rid: sample.id,
@@ -238,11 +201,14 @@ func writeRecords(recordWriter index.RecordWriter) error {
 func runIntegrationTest(t *testing.T, cdxAPI index.CdxAPI) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			responses := make(chan index.CdxResponse)
-			err := cdxAPI.Search(context.Background(), test.req, responses)
+			req, err := api.Parse(test.req)
 			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
+				t.Fatal(err)
+			}
+			responses := make(chan index.CdxResponse)
+			err = cdxAPI.Search(context.Background(), req, responses)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 
 			j := 0

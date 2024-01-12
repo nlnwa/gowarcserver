@@ -42,12 +42,13 @@ type Handler struct {
 	CdxAPI             index.CdxAPI
 	FileAPI            index.FileAPI
 	IdAPI              index.IdAPI
+	ReportAPI          index.ReportAPI
 	StorageRefResolver loader.StorageRefResolver
 	WarcLoader         loader.WarcLoader
 }
 
 func (h Handler) search(w http.ResponseWriter, r *http.Request) {
-	coreAPI, err := api.Parse(r)
+	coreAPI, err := api.Parse(r.URL.Query())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -64,7 +65,7 @@ func (h Handler) search(w http.ResponseWriter, r *http.Request) {
 
 	response := make(chan index.CdxResponse)
 
-	if err = h.CdxAPI.Search(ctx, api.Request(coreAPI), response); err != nil {
+	if err = h.CdxAPI.Search(ctx, coreAPI, response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msgf("Search failed: %+v", coreAPI)
 		return
@@ -97,7 +98,7 @@ type storageRef struct {
 }
 
 func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
-	coreAPI, err := api.Parse(r)
+	coreAPI, err := api.Parse(r.URL.Query())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -107,7 +108,7 @@ func (h Handler) listIds(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	if err := h.IdAPI.ListStorageRef(ctx, api.Request(coreAPI), response); err != nil {
+	if err := h.IdAPI.ListStorageRef(ctx, coreAPI, response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to list ids")
 		return
@@ -166,7 +167,7 @@ func (h Handler) getStorageRefByURN(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
-	coreAPI, err := api.Parse(r)
+	coreAPI, err := api.Parse(r.URL.Query())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -177,7 +178,7 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 
 	responses := make(chan index.FileInfoResponse)
 
-	if err := h.FileAPI.ListFileInfo(ctx, api.Request(coreAPI), responses); err != nil {
+	if err := h.FileAPI.ListFileInfo(ctx, coreAPI, responses); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to list files")
 		return
@@ -223,10 +224,16 @@ func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Msgf("Failed to get file info: %s", filename)
 		return
 	}
-	_, err = fmt.Fprintln(w, protojson.Format(fileInfo))
+	b, err := protojson.Marshal(fileInfo)
 	if err != nil {
-		log.Warn().Err(err).Msgf("Failed to write file info: %s", protojson.Format(fileInfo))
+		log.Warn().Err(err).Msgf("Failed to marshal file info: %s", fileInfo)
+		return
 	}
+	_, err = io.Copy(w, bytes.NewReader(b))
+	if err != nil {
+		log.Warn().Err(err).Msgf("Failed to write report")
+	}
+	_, _ = w.Write(lf)
 }
 
 func (h Handler) loadRecordByUrn(w http.ResponseWriter, r *http.Request) {
@@ -272,4 +279,130 @@ func parseStorageRef(ref string) (filename string, offset int64, err error) {
 		return
 	}
 	return
+}
+
+func (h Handler) createReport(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	coreAPI, err := api.Parse(r.Form)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	report, err := h.ReportAPI.CreateReport(ctx, coreAPI)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to generate report")
+		return
+	}
+	b, err := protojson.Marshal(report)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msgf("Failed to marshal report: %v", report)
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+	_, err = io.Copy(w, bytes.NewReader(b))
+	if err != nil {
+		log.Warn().Err(err).Msgf("Failed to write report")
+		return
+	}
+	_, _ = w.Write(lf)
+}
+
+func (h Handler) getReport(w http.ResponseWriter, r *http.Request) {
+	params := httprouter.ParamsFromContext(r.Context())
+	id := params.ByName("id")
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	report, err := h.ReportAPI.GetReport(ctx, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msgf("Failed to get report: %s", id)
+		return
+	}
+	if report == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	b, err := protojson.Marshal(report)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msgf("Failed to marshal report: %v", report)
+	}
+	_, err = io.Copy(w, bytes.NewReader(b))
+	if err != nil {
+		log.Warn().Err(err).Msgf("Failed to write report")
+		return
+	}
+	_, _ = w.Write(lf)
+}
+
+func (h Handler) listReports(w http.ResponseWriter, r *http.Request) {
+	coreAPI, err := api.Parse(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	responses := make(chan index.ReportResponse)
+
+	if err := h.ReportAPI.ListReports(ctx, coreAPI, responses); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msg("Failed to list reports")
+		return
+	}
+
+	start := time.Now()
+	count := 0
+	defer func() {
+		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
+	}()
+
+	for res := range responses {
+		if res.GetError() != nil {
+			log.Warn().Err(res.GetError()).Msg("failed report result")
+			continue
+		}
+		v, err := protojson.Marshal(res.GetReport())
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to marshal report")
+			continue
+		}
+		_, err = io.Copy(w, bytes.NewReader(v))
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to write report")
+			return
+		}
+		_, _ = w.Write(lf)
+		count++
+	}
+	_, _ = w.Write(lf)
+}
+
+func (h Handler) deleteReport(w http.ResponseWriter, r *http.Request) {
+	params := httprouter.ParamsFromContext(r.Context())
+	id := params.ByName("id")
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	err := h.ReportAPI.DeleteReport(ctx, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Error().Err(err).Msgf("Failed to delete report: %s", id)
+		return
+	}
 }

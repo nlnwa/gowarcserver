@@ -18,12 +18,14 @@ package warcserver
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/server/api"
 	"github.com/nlnwa/gowarcserver/timestamp"
+	whatwgUrl "github.com/nlnwa/whatwg-url/url"
 )
 
 type pywbJson struct {
@@ -48,29 +50,38 @@ func cdxToPywbJson(cdx *schema.Cdx) *pywbJson {
 	}
 }
 
-func searchApi(coreAPI *api.CoreAPI) *api.SearchRequest {
-	return &api.SearchRequest{
-		CoreAPI: coreAPI,
+func parseClosest(u string, closest string) (*api.SearchRequest, error) {
+	uri, err := whatwgUrl.Parse(u)
+	if err != nil {
+		return nil, err
+	}
+	return api.ClosestRequest(closest, uri), nil
+}
+
+func parseValues(values url.Values) (req *api.SearchRequest, err error) {
+	req = &api.SearchRequest{
 		FilterMap: map[string]string{
 			"status": "hsc",
 			"mime":   "mct",
 			"url":    "uri",
 		},
 	}
+	err = req.Parse(values)
+	return
 }
 
-func parseResourceRequest(r *http.Request) (string, string) {
+func parseResourceRequest(r *http.Request) (uri string, closest string) {
 	params := httprouter.ParamsFromContext(r.Context())
 
 	// closest parameter
 	p0 := params.ByName("timestamp")
 	// remove trailing 'id_'
-	closest := p0[:len(p0)-3]
+	closest = p0[:len(p0)-3]
 
 	// url parameter
 	p1 := params.ByName("url")
 	// remove leading '/'
-	uri := p1[1:]
+	uri = p1[1:]
 
 	// we must add on any query parameters
 	if q := r.URL.Query().Encode(); len(q) > 0 {
@@ -82,6 +93,6 @@ func parseResourceRequest(r *http.Request) (string, string) {
 		uri += "#" + r.URL.Fragment
 	}
 
-	return closest, uri
+	return
 
 }

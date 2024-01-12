@@ -115,7 +115,7 @@ func (db *DB) closest(ctx context.Context, request index.Request, results chan<-
 				if err != nil {
 					cdxResponse = keyvalue.CdxResponse{Error: err}
 				} else if request.Filter().Eval(cdx) {
-					cdxResponse = keyvalue.CdxResponse{Cdx: cdx}
+					cdxResponse = keyvalue.CdxResponse{Value: cdx}
 				} else {
 					iter.Next()
 					continue
@@ -194,8 +194,8 @@ func (db *DB) search(ctx context.Context, req index.Request, results chan<- inde
 						}
 						if filter.Eval(result) {
 							cdxResponse = &keyvalue.CdxResponse{
-								Key: key,
-								Cdx: result,
+								Key:   key,
+								Value: result,
 							}
 						}
 						return nil
@@ -215,7 +215,7 @@ func (db *DB) search(ctx context.Context, req index.Request, results chan<- inde
 				case <-ctx.Done():
 					results <- keyvalue.CdxResponse{Error: ctx.Err()}
 					return nil
-				case results <- cdxResponse:
+				case results <- *cdxResponse:
 					if cdxResponse.GetError() == nil {
 						count++
 					}

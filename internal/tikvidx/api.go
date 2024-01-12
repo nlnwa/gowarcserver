@@ -40,10 +40,10 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 	var it iterator
 	var err error
 	if req.Sort() == index.SortClosest {
-		it, err = newClosestIter(ctx, db.client, req)
+		it, err = newClosestIter(ctx, db.client, req, cdxPrefix)
 	} else {
 		key := keyvalue.SearchKeyWithPrefix(req, cdxPrefix)
-		it, err = newIter(ctx, key, db.client, req)
+		it, err = newIter(ctx, key, db.client, req, cdxPrefix)
 	}
 	if err != nil {
 		return err
@@ -77,8 +77,8 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 					return &keyvalue.CdxResponse{Error: err}
 				} else if req.Filter().Eval(cdx) {
 					return &keyvalue.CdxResponse{
-						Key: cdxKey,
-						Cdx: cdx,
+						Key:   cdxKey,
+						Value: cdx,
 					}
 				}
 				return nil
@@ -94,7 +94,7 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 			case <-ctx.Done():
 				res <- keyvalue.CdxResponse{Error: ctx.Err()}
 				return
-			case res <- cdxResponse:
+			case res <- *cdxResponse:
 				if cdxResponse.GetError() == nil {
 					count++
 				}
@@ -117,7 +117,7 @@ func (db *DB) GetFileInfo(_ context.Context, filename string) (*schema.FileInfo,
 
 func (db *DB) ListFileInfo(ctx context.Context, req index.Request, res chan<- index.FileInfoResponse) error {
 	key := []byte(filePrefix)
-	it, err := newIter(ctx, key, db.client, req)
+	it, err := newIter(ctx, key, db.client, req, filePrefix)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (db *DB) GetStorageRef(ctx context.Context, id string) (string, error) {
 
 func (db *DB) ListStorageRef(ctx context.Context, req index.Request, res chan<- index.IdResponse) error {
 	key := []byte(idPrefix)
-	it, err := newIter(ctx, key, db.client, req)
+	it, err := newIter(ctx, key, db.client, req, idPrefix)
 	if err != nil {
 		return err
 	}
@@ -250,6 +250,18 @@ func (db *DB) Delete(ctx context.Context) error {
 
 	cdxKey := keyvalue.KeyWithPrefix("", cdxPrefix)
 	err = db.client.DeleteRange(ctx, cdxKey, append(cdxKey, 0xff))
+	if err != nil && firstErr == nil {
+		firstErr = err
+	}
+
+	reportKey := keyvalue.KeyWithPrefix("", reportPrefix)
+	err = db.client.DeleteRange(ctx, reportKey, append(reportKey, 0xff))
+	if err != nil && firstErr == nil {
+		firstErr = err
+	}
+
+	reportDataKey := keyvalue.KeyWithPrefix("", reportDataPrefix)
+	err = db.client.DeleteRange(ctx, reportDataKey, append(reportDataKey, 0xff))
 	if err != nil && firstErr == nil {
 		firstErr = err
 	}

@@ -108,6 +108,8 @@ func (f filter) eval(c *schema.Cdx) bool {
 	result := false
 	if fieldValue, found := f.findFieldValue(c); found {
 		result = f.matcher(f.filterValue, fieldValue)
+	} else if f.filterValue == "" {
+		result = true
 	}
 	if f.invert {
 		return !result

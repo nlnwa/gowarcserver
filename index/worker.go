@@ -45,14 +45,14 @@ func NewWorkQueue(execute Worker, concurrency int) *WorkQueue {
 	return iw
 }
 
-func (iw *WorkQueue) Close() {
-	// close the queue
-	close(iw.queue)
-	// and wait for it to drain
+func (iw *WorkQueue) Wait() {
 	iw.wg.Wait()
 }
 
-// Add job to work queue
+func (iw *WorkQueue) Close() {
+	close(iw.queue)
+}
+
 func (iw *WorkQueue) Add(job string) {
 	iw.queue <- job
 }
