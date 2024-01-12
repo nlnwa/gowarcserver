@@ -28,6 +28,5 @@ func Register(h Handler, r *httprouter.Router, mw func(http.Handler) http.Handle
 	r.Handler("GET", pathPrefix+"/file", mw(http.HandlerFunc(h.listFiles)))
 	r.Handler("GET", pathPrefix+"/file/:filename", mw(http.HandlerFunc(h.getFileInfoByFilename)))
 	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(h.search)))
-	r.Handler("GET", pathPrefix+"/search", mw(http.HandlerFunc(h.search)))
 	r.Handler("GET", pathPrefix+"/record/:urn", mw(http.HandlerFunc(h.loadRecordByUrn)))
 }
