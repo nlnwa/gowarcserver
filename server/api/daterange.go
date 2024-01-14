@@ -54,6 +54,9 @@ func NewDateRange(fromstr string, tostr string) (*DateRange, error) {
 	if from > to {
 		return nil, fmt.Errorf("from date %s is after to date %s", fromstr, tostr)
 	}
+	if to < from {
+		return nil, fmt.Errorf("to date %s is before from date %s", tostr, fromstr)
+	}
 	return &DateRange{from, to}, nil
 }
 
