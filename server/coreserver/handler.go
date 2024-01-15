@@ -29,6 +29,7 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/nlnwa/gowarcserver/index"
+	"github.com/nlnwa/gowarcserver/internal/keyvalue"
 	"github.com/nlnwa/gowarcserver/loader"
 	"github.com/nlnwa/gowarcserver/server/api"
 	"github.com/nlnwa/gowarcserver/server/handlers"
@@ -39,12 +40,56 @@ import (
 var lf = []byte("\n")
 
 type Handler struct {
+	DebugAPI           keyvalue.DebugAPI
 	CdxAPI             index.CdxAPI
 	FileAPI            index.FileAPI
 	IdAPI              index.IdAPI
 	ReportAPI          index.ReportAPI
 	StorageRefResolver loader.StorageRefResolver
 	WarcLoader         loader.WarcLoader
+}
+
+func (h Handler) debug(w http.ResponseWriter, r *http.Request) {
+	if h.DebugAPI == nil {
+		http.Error(w, "Debug API not implemented", http.StatusNotImplemented)
+		return
+	}
+
+	coreAPI, err := api.Parse(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req := keyvalue.DebugRequest{
+		Key:     r.URL.Query().Get("key"),
+		Request: coreAPI,
+	}
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	response := make(chan keyvalue.CdxResponse)
+
+	if err := h.DebugAPI.Debug(ctx, req, response); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	start := time.Now()
+	count := 0
+	defer func() {
+		log.Debug().Msgf("Found %d items in %s", count, time.Since(start))
+	}()
+
+	enc := json.NewEncoder(w)
+	for res := range response {
+		err = enc.Encode(res)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to marshal result")
+			continue
+		}
+		count++
+	}
 }
 
 func (h Handler) search(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +253,6 @@ func (h Handler) listFiles(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(lf)
 		count++
 	}
-	_, _ = w.Write(lf)
 }
 
 func (h Handler) getFileInfoByFilename(w http.ResponseWriter, r *http.Request) {
@@ -389,7 +433,6 @@ func (h Handler) listReports(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(lf)
 		count++
 	}
-	_, _ = w.Write(lf)
 }
 
 func (h Handler) deleteReport(w http.ResponseWriter, r *http.Request) {

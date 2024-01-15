@@ -75,6 +75,16 @@ func MarshalReport(report *schema.Report, prefix string) (key []byte, value []by
 }
 
 // CdxKey is a wrapper around the key used in the cdx index
+// The key is a concatenation of the following parts:
+// 1. domain and path
+// 2. timestamp
+// 3. scheme, userinfo and port
+// 4. response type
+// The parts are separated by a space character.
+//
+// Example:
+//
+//	test,example,/path 20200101000000 :http: response
 type CdxKey []byte
 
 var spaceCharacter = []byte{32}
@@ -115,21 +125,37 @@ func (ck CdxKey) Unix() int64 {
 }
 
 func (ck CdxKey) SchemeAndUserInfo() string {
-	b := bytes.Split(ck, spaceCharacter)[2]
+	parts := bytes.Split(ck, spaceCharacter)
+	if len(parts) < 3 {
+		return ""
+	}
+	b := parts[2]
 	return string(b)
 }
 
 func (ck CdxKey) Port() string {
-	b := bytes.Split(ck, spaceCharacter)[2]
+	parts := bytes.Split(ck, spaceCharacter)
+	if len(parts) < 3 {
+		return ""
+	}
+	b := parts[2]
 	return string(bytes.Split(b, colonCharacter)[0])
 }
 
 func (ck CdxKey) Scheme() string {
-	b := bytes.Split(ck, spaceCharacter)[2]
+	parts := bytes.Split(ck, spaceCharacter)
+	if len(parts) < 3 {
+		return ""
+	}
+	b := parts[2]
 	return string(bytes.Split(b, colonCharacter)[1])
 }
 
 func (ck CdxKey) UserInfo() string {
-	b := bytes.Split(ck, spaceCharacter)[2]
+	parts := bytes.Split(ck, spaceCharacter)
+	if len(parts) < 3 {
+		return ""
+	}
+	b := parts[2]
 	return string(bytes.Split(b, colonCharacter)[2])
 }

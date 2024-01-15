@@ -11,9 +11,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Assert that DB implements index.ReportGenerator
-var _ index.ReportGenerator = (*DB)(nil)
-
 func (db *DB) AddTask(id string, cancel context.CancelFunc) {
 	db.wg.Add(1)
 	db.tasks[id] = func() {

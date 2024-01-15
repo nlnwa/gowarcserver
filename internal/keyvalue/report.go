@@ -47,7 +47,7 @@ func NewReportGenerator(g index.ReportGenerator) (*ReportGenerator, error) {
 // 	return structpb.NewStruct(dataMap)
 // }
 
-func mapRequest(req index.Request) (*structpb.Struct, error) {
+func mapRequestToStructPb(req index.Request) (*structpb.Struct, error) {
 	values := req.(*api.SearchRequest).Values
 	m := make(map[string]interface{}, len(values))
 	for k, v := range values {
@@ -65,7 +65,7 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 		return nil, fmt.Errorf("report generator id is empty")
 	}
 
-	query, err := mapRequest(req)
+	query, err := mapRequestToStructPb(req)
 	if err != nil {
 		return nil, err
 	}
@@ -104,9 +104,9 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 				report.Error = err.Error()
 				report.Status = schema.Report_FAILED
 			} else {
+				report.Progress = ""
 				report.Status = schema.Report_COMPLETED
 			}
-			report.Progress = ""
 			report.EndTime = timestamppb.New(time.Now())
 			report.Duration = durationpb.New(report.EndTime.AsTime().Sub(report.StartTime.AsTime()))
 
@@ -146,12 +146,14 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 			default:
 			}
 			resp = result.(CdxResponse)
-			key = resp.Key
+			key = make([]byte, len(resp.Key))
+			copy(key, resp.Key)
+			log.Debug().Str("key", string(key)).Msg("")
 			cdx = resp.Value
 
 			if tock || updateCount%r.UpdateThreshold == 0 {
 				report.Duration = durationpb.New(time.Since(report.StartTime.AsTime()))
-				report.Progress = key.String()
+				report.Progress = string(key)
 				updateCount = 0
 
 				err = r.SaveReport(ctx, report)
@@ -180,6 +182,7 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 				prevTarget = target
 				target, err = publicsuffix.EffectiveTLDPlusOne(deSurtDomain(surtDomain))
 				if err != nil {
+					err = fmt.Errorf("failed to get effective tld plus one for '%s': %w", surtDomain, err)
 					return
 				}
 				if prevTarget != target {
