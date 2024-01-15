@@ -23,9 +23,33 @@ import (
 
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/keyvalue"
+	"github.com/nlnwa/gowarcserver/loader"
 	"github.com/nlnwa/gowarcserver/schema"
 	"google.golang.org/protobuf/proto"
 )
+
+// Assert capabilities
+
+// Assert DB implements the keyvalue.DebugAPI interface.
+var _ keyvalue.DebugAPI = (*DB)(nil)
+
+// Assert DB implements the index.CdxAPI interface.
+var _ index.CdxAPI = (*DB)(nil)
+
+// Assert DB implements the index.FileAPI interface.
+var _ index.FileAPI = (*DB)(nil)
+
+// Assert DB implements the index.IdAPI interface.
+var _ index.IdAPI = (*DB)(nil)
+
+// Assert that DB implements index.ReportGenerator
+var _ index.ReportGenerator = (*DB)(nil)
+
+// Assert that DB implements loader.StorageRefResolver
+var _ loader.StorageRefResolver = (*DB)(nil)
+
+// Assert that DB implements loader.FilePathResolver
+var _ loader.FilePathResolver = (*DB)(nil)
 
 // iterator mimics tikv's internal iterator interface
 type iterator interface {
@@ -34,6 +58,51 @@ type iterator interface {
 	Value() []byte
 	Valid() bool
 	Close()
+}
+
+func (db *DB) Debug(ctx context.Context, req keyvalue.DebugRequest, res chan<- keyvalue.CdxResponse) error {
+	key := keyvalue.KeyWithPrefix(req.Key, cdxPrefix)
+
+	it, err := newIter(ctx, key, db.client, req, cdxPrefix)
+	if err != nil {
+		return err
+	}
+	if it == nil {
+		close(res)
+		return nil
+	}
+	go func() {
+		defer close(res)
+		defer it.Close()
+
+		for it.Valid() {
+			cdxResponse := func() *keyvalue.CdxResponse {
+				cdxKey := keyvalue.CdxKey(it.Key())
+				if !req.DateRange().Contains(cdxKey.Unix()) {
+					return nil
+				}
+				cdx := new(schema.Cdx)
+				if err := proto.Unmarshal(it.Value(), cdx); err != nil {
+					return &keyvalue.CdxResponse{Error: err}
+				}
+				return &keyvalue.CdxResponse{
+					Key:   cdxKey,
+					Value: cdx,
+				}
+			}()
+
+			select {
+			case <-ctx.Done():
+				return
+			case res <- *cdxResponse:
+			}
+			if err = it.Next(); err != nil {
+				res <- keyvalue.CdxResponse{Error: err}
+				return
+			}
+		}
+	}()
+	return nil
 }
 
 func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.CdxResponse) error {

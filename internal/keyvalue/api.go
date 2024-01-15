@@ -4,8 +4,12 @@ package keyvalue
 // the interfaces from the index package.
 
 import (
+	"context"
+	"encoding/json"
+
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/schema"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // IdResponse implements the index.IdResponse interface.
@@ -37,12 +41,38 @@ type CdxResponse struct {
 	Error error
 }
 
+func (cr CdxResponse) GetKey() CdxKey {
+	return cr.Key
+}
+
 func (cr CdxResponse) GetCdx() *schema.Cdx {
 	return cr.Value
 }
 
 func (cr CdxResponse) GetError() error {
 	return cr.Error
+}
+
+func (cr CdxResponse) MarshalJSON() ([]byte, error) {
+	res := &struct {
+		Key   string          `json:"key"`
+		Value json.RawMessage `json:"value,omitempty"`
+		Error string          `json:"error,omitempty"`
+	}{
+		Key: cr.Key.String(),
+	}
+	if cr.Value != nil {
+		cdx, err := protojson.Marshal(cr.Value)
+		if err != nil {
+			return nil, err
+		}
+		res.Value = cdx
+	}
+
+	if cr.Error != nil {
+		res.Error = cr.Error.Error()
+	}
+	return json.Marshal(res)
 }
 
 // Assert CdxResponse implements the index.CdxResponse interface.
@@ -81,3 +111,12 @@ func (rr ReportResponse) GetError() error {
 
 // Assert ReportResponse implements the index.ReportResponse interface.
 var _ index.ReportResponse = ReportResponse{}
+
+type DebugRequest struct {
+	Key string
+	index.Request
+}
+
+type DebugAPI interface {
+	Debug(context.Context, DebugRequest, chan<- CdxResponse) error
+}

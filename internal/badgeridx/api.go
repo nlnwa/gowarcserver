@@ -22,10 +22,34 @@ import (
 	"github.com/dgraph-io/badger/v4"
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/keyvalue"
+	"github.com/nlnwa/gowarcserver/loader"
 	"github.com/nlnwa/gowarcserver/schema"
 	"github.com/nlnwa/gowarcserver/timestamp"
 	"google.golang.org/protobuf/proto"
 )
+
+// Assert capabilities
+
+// Assert DB implements the keyvalue.DebugAPI interface.
+var _ keyvalue.DebugAPI = (*DB)(nil)
+
+// Assert DB implements the index.CdxAPI interface.
+var _ index.CdxAPI = (*DB)(nil)
+
+// Assert DB implements the index.FileAPI interface.
+var _ index.FileAPI = (*DB)(nil)
+
+// Assert DB implements the index.IdAPI interface.
+var _ index.IdAPI = (*DB)(nil)
+
+// Assert that DB implements index.ReportGenerator
+var _ index.ReportGenerator = (*DB)(nil)
+
+// Assert that DB implements loader.StorageRefResolver
+var _ loader.StorageRefResolver = (*DB)(nil)
+
+// Assert that DB implements loader.FilePathResolver
+var _ loader.FilePathResolver = (*DB)(nil)
 
 // cdxFromItem unmarshals a badger item value into a schema.Cdx.
 func cdxFromItem(item *badger.Item) (cdx *schema.Cdx, err error) {
@@ -38,6 +62,73 @@ func cdxFromItem(item *badger.Item) (cdx *schema.Cdx, err error) {
 		return nil
 	})
 	return
+}
+
+func (db *DB) Debug(ctx context.Context, req keyvalue.DebugRequest, results chan<- keyvalue.CdxResponse) error {
+	key := keyvalue.KeyWithPrefix(req.Key, "")
+
+	dateRange := req.DateRange()
+	filter := req.Filter()
+
+	go func() {
+		_ = db.CdxIndex.View(func(txn *badger.Txn) error {
+			count := 0
+			opts := badger.DefaultIteratorOptions
+			opts.PrefetchValues = false
+			opts.Prefix = key
+
+			it := txn.NewIterator(opts)
+			defer it.Close()
+			defer close(results)
+
+			for it.Seek(key); it.ValidForPrefix(key); it.Next() {
+				cdxResponse := func() (cdxResponse *keyvalue.CdxResponse) {
+					key := keyvalue.CdxKey(it.Item().Key())
+					if !dateRange.Contains(key.Unix()) {
+						return nil
+					}
+					err := it.Item().Value(func(v []byte) error {
+						result := new(schema.Cdx)
+						if err := proto.Unmarshal(v, result); err != nil {
+							return err
+						}
+						if filter.Eval(result) {
+							cdxResponse = &keyvalue.CdxResponse{
+								Key:   key,
+								Value: result,
+							}
+						}
+						return nil
+					})
+					if err != nil {
+						return &keyvalue.CdxResponse{Error: err}
+					}
+
+					return cdxResponse
+				}()
+				// skip if empty response
+				if cdxResponse == nil {
+					continue
+				}
+				// send result
+				select {
+				case <-ctx.Done():
+					results <- keyvalue.CdxResponse{Error: ctx.Err()}
+					return nil
+				case results <- *cdxResponse:
+					if cdxResponse.GetError() == nil {
+						count++
+					}
+				}
+				// stop iteration if limit is reached
+				if req.Limit() > 0 && count >= req.Limit() {
+					break
+				}
+			}
+			return nil
+		})
+	}()
+	return nil
 }
 
 // closest returns the closest cdx values in the database.

@@ -30,6 +30,9 @@ func Register(h Handler, r *httprouter.Router, mw func(http.Handler) http.Handle
 	r.Handler("GET", pathPrefix+"/cdx", mw(http.HandlerFunc(h.search)))
 	r.Handler("GET", pathPrefix+"/record/:urn", mw(http.HandlerFunc(h.loadRecordByUrn)))
 
+	// Debug handler
+	r.Handler("GET", pathPrefix+"/debug", mw(http.HandlerFunc(h.debug)))
+
 	// Create report
 	r.Handler("POST", pathPrefix+"/report", mw(http.HandlerFunc(h.createReport)))
 

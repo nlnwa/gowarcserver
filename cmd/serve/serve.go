@@ -35,6 +35,7 @@ import (
 
 	"github.com/nlnwa/gowarcserver/index"
 	"github.com/nlnwa/gowarcserver/internal/badgeridx"
+	"github.com/nlnwa/gowarcserver/internal/keyvalue"
 	"github.com/nlnwa/gowarcserver/internal/tikvidx"
 	"github.com/nlnwa/gowarcserver/loader"
 	"github.com/nlnwa/gowarcserver/server/coreserver"
@@ -119,6 +120,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 	var cdxApi index.CdxAPI
 	var idApi index.IdAPI
 	var reportApi index.ReportAPI
+	var debugApi keyvalue.DebugAPI
 	var storageRefResolver loader.StorageRefResolver
 	var filePathResolver loader.FilePathResolver
 
@@ -144,6 +146,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 		fileApi = db
 		idApi = db
 		reportApi = db
+		debugApi = db
 	case "tikv":
 		db, err := tikvidx.NewDB(
 			tikvidx.WithPDAddress(viper.GetStringSlice("tikv-pd-addr")),
@@ -163,6 +166,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 		fileApi = db
 		idApi = db
 		reportApi = db
+		debugApi = db
 	default:
 		return fmt.Errorf("unknown index format: %s", indexFormat)
 	}
@@ -245,6 +249,7 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 		IdAPI:              idApi,
 		ReportAPI:          reportApi,
 		StorageRefResolver: storageRefResolver,
+		DebugAPI:           debugApi,
 		WarcLoader:         l,
 	}, handler, mw, pathPrefix)
 

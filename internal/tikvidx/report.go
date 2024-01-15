@@ -10,9 +10,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Assert that DB implements index.ReportGenerator
-var _ index.ReportGenerator = (*DB)(nil)
-
 func (db *DB) saveReport(ctx context.Context, key []byte, report *schema.Report) error {
 	value, err := proto.Marshal(report)
 	if err != nil {

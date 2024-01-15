@@ -70,3 +70,28 @@ func TestSplitSurt(t *testing.T) {
 		})
 	}
 }
+
+// Test DeSurtDomain
+func TestDeSurtDomain(t *testing.T) {
+	tests := []struct {
+		surtDomain string
+		domain     string
+	}{
+		{
+			"test,example,",
+			"example.test",
+		},
+		{
+			"test,example,www,",
+			"www.example.test",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.surtDomain, func(t *testing.T) {
+			domain := deSurtDomain(test.surtDomain)
+			if domain != test.domain {
+				t.Errorf("want '%s', got '%s'", test.domain, domain)
+			}
+		})
+	}
+}
