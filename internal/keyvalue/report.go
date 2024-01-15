@@ -110,6 +110,8 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 			report.EndTime = timestamppb.New(time.Now())
 			report.Duration = durationpb.New(report.EndTime.AsTime().Sub(report.StartTime.AsTime()))
 
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 			err = r.SaveReport(ctx, report)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to save report")

@@ -46,13 +46,11 @@ func SplitSSURT(ssurt string) (surtHost string, schemeAndUserinfo string, path s
 }
 
 func deSurtDomain(domain string) string {
-	var sb strings.Builder
-	sb.Grow(len(domain) - 1)
+	domain = strings.Trim(domain, ",")
 	t := strings.Split(domain, ",")
+	var sb strings.Builder
+	sb.Grow(len(domain))
 	for i := len(t) - 1; i >= 0; i-- {
-		if t[i] == "" {
-			continue
-		}
 		sb.WriteString(t[i])
 		if i > 0 {
 			sb.WriteByte('.')

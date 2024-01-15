@@ -83,7 +83,7 @@ func (db *DB) Debug(ctx context.Context, req keyvalue.DebugRequest, results chan
 
 			for it.Seek(key); it.ValidForPrefix(key); it.Next() {
 				cdxResponse := func() (cdxResponse *keyvalue.CdxResponse) {
-					key := keyvalue.CdxKey(it.Item().Key())
+					key := keyvalue.CdxKey(it.Item().KeyCopy(nil))
 					if !dateRange.Contains(key.Unix()) {
 						return nil
 					}
@@ -269,7 +269,7 @@ func (db *DB) search(ctx context.Context, req index.Request, results chan<- inde
 
 			for it.Seek(key); it.ValidForPrefix(prefix); it.Next() {
 				cdxResponse := func() (cdxResponse *keyvalue.CdxResponse) {
-					key := keyvalue.CdxKey(it.Item().Key())
+					key := keyvalue.CdxKey(it.Item().KeyCopy(nil))
 					if !dateRange.Contains(key.Unix()) {
 						return nil
 					}

@@ -19,11 +19,16 @@ func (db *DB) saveReport(ctx context.Context, key []byte, report *schema.Report)
 }
 
 func (db *DB) AddTask(id string, cancel context.CancelFunc) {
+	db.wg.Add(1)
 	db.tasks[id] = cancel
 }
 
 func (db *DB) DeleteTask(id string) {
-	delete(db.tasks, id)
+	defer db.wg.Done()
+	if cancel, ok := db.tasks[id]; ok {
+		delete(db.tasks, id)
+		cancel()
+	}
 }
 
 func (db *DB) SaveReport(ctx context.Context, report *schema.Report) error {
