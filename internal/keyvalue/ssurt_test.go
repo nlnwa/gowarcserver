@@ -85,6 +85,14 @@ func TestDeSurtDomain(t *testing.T) {
 			"test,example,www,",
 			"www.example.test",
 		},
+		{
+			",test,example,",
+			"example.test",
+		},
+		{
+			",,test,example,",
+			"example.test",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.surtDomain, func(t *testing.T) {

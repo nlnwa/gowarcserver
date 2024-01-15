@@ -13,13 +13,15 @@ import (
 
 func (db *DB) AddTask(id string, cancel context.CancelFunc) {
 	db.wg.Add(1)
-	db.tasks[id] = func() {
-		cancel()
-	}
+	db.tasks[id] = cancel
 }
 
 func (db *DB) DeleteTask(id string) {
-	delete(db.tasks, id)
+	defer db.wg.Done()
+	if cancel, ok := db.tasks[id]; ok {
+		delete(db.tasks, id)
+		cancel()
+	}
 }
 
 func (db *DB) SaveReport(ctx context.Context, report *schema.Report) error {

@@ -143,7 +143,7 @@ func NewDB(options ...Option) (db *DB, err error) {
 
 func (db *DB) runValueLogGC(discardRatio float64) {
 	var wg sync.WaitGroup
-	for _, m := range []*badger.DB{db.IdIndex, db.FileIndex, db.CdxIndex} {
+	for _, m := range []*badger.DB{db.IdIndex, db.FileIndex, db.CdxIndex, db.ReportIndex} {
 		m := m
 		if m == nil {
 			continue
