@@ -148,14 +148,13 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 			default:
 			}
 			resp = result.(CdxResponse)
-			key = make([]byte, len(resp.Key))
-			copy(key, resp.Key)
-			log.Debug().Str("key", string(key)).Msg("")
+			key = resp.Key
 			cdx = resp.Value
+
+			report.Progress = string(key)
 
 			if tock || updateCount%r.UpdateThreshold == 0 {
 				report.Duration = durationpb.New(time.Since(report.StartTime.AsTime()))
-				report.Progress = string(key)
 				updateCount = 0
 
 				err = r.SaveReport(ctx, report)
@@ -181,11 +180,13 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 				reportData.NrOfDomains++
 
 				// Update target
+				domain := deSurtDomain(surtDomain)
 				prevTarget = target
-				target, err = publicsuffix.EffectiveTLDPlusOne(deSurtDomain(surtDomain))
+				target, err = publicsuffix.EffectiveTLDPlusOne(domain)
 				if err != nil {
-					err = fmt.Errorf("failed to get effective tld plus one for '%s': %w", surtDomain, err)
-					return
+					log.Warn().Err(err).Str("domain", domain).Msg("failed to get effective tld plus one")
+					err = nil
+					target = domain
 				}
 				if prevTarget != target {
 					// Increment number of targets
