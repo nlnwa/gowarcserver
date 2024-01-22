@@ -10,7 +10,7 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/nlnwa/gowarc v1.1.2
+	github.com/nlnwa/gowarc v1.2.0
 	github.com/nlnwa/whatwg-url v0.4.0
 	github.com/rs/zerolog v1.31.0
 	github.com/segmentio/kafka-go v0.4.47
