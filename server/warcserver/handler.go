@@ -68,7 +68,7 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 		}
 		switch coreAPI.Output() {
 		case api.OutputJson:
-			_, err = fmt.Fprintln(w, cdxj)
+			_, err = fmt.Fprintln(w, string(cdxj))
 		default:
 			ssu := cdx.GetSsu()
 			sts := timestamp.TimeTo14(cdx.GetSts().AsTime())
