@@ -5,7 +5,7 @@ go 1.21
 toolchain go1.21.3
 
 require (
-	github.com/bits-and-blooms/bloom/v3 v3.6.0
+	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/dgraph-io/badger/v3 v3.2103.5
 	github.com/gorilla/handlers v1.5.2
 	github.com/julienschmidt/httprouter v1.3.0
