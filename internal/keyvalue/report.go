@@ -48,7 +48,11 @@ func NewReportGenerator(g index.ReportGenerator) (*ReportGenerator, error) {
 // }
 
 func mapRequestToStructPb(req index.Request) (*structpb.Struct, error) {
-	values := req.(*api.SearchRequest).Values
+	searchReq, ok := req.(*api.SearchRequest)
+	if !ok {
+		panic("assert: req (index.Request) is not a *api.SearchRequest")
+	}
+	values := searchReq.Values
 	m := make(map[string]interface{}, len(values))
 	for k, v := range values {
 		if len(v) == 1 {
@@ -132,6 +136,7 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 			surtDomain, prevSurtDomain string
 			ts, prevTs                 time.Time
 			path, prevPath             string
+			ok                         bool
 		)
 
 		updateCount := 0
@@ -147,7 +152,10 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 				tock = true
 			default:
 			}
-			resp = result.(CdxResponse)
+			resp, ok = result.(CdxResponse)
+			if !ok {
+				panic("assert: result (index.CdxResponse) is not a keyvalue.CdxResponse")
+			}
 			key = resp.Key
 			cdx = resp.Value
 
