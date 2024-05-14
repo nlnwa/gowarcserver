@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -134,16 +135,6 @@ func (c *SearchRequest) Fields() []string {
 	return c.fields
 }
 
-// contains returns true if string e is contained in string slice s.
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
-}
-
 var schemeRegExp = regexp.MustCompile(`^[a-z][a-z0-9+\-.]+(:.*)`)
 
 func Parse(values url.Values) (req *SearchRequest, err error) {
@@ -160,7 +151,7 @@ func (c *SearchRequest) Parse(values url.Values) error {
 	// Match type
 	matchType := values.Get(ParamMatchType)
 	if matchType != "" {
-		if !contains(matchTypes, matchType) {
+		if !slices.Contains(matchTypes, matchType) {
 			return fmt.Errorf("matchType must be one of %v, got: %s", matchTypes, matchType)
 		}
 		switch matchType {
@@ -225,7 +216,7 @@ func (c *SearchRequest) Parse(values url.Values) error {
 	// Sort
 	sort := values.Get(ParamSort)
 	if sort != "" {
-		if !contains(sorts, sort) {
+		if !slices.Contains(sorts, sort) {
 			return fmt.Errorf("sort must be one of %v, was: %s", sorts, sort)
 		} else if sort == SortClosest && closest == "" {
 			sort = ""
@@ -244,7 +235,7 @@ func (c *SearchRequest) Parse(values url.Values) error {
 
 	output := values.Get(ParamOutput)
 	if output != "" {
-		if !contains(outputs, output) {
+		if !slices.Contains(outputs, output) {
 			return fmt.Errorf("output must be one of %v, was: %s", outputs, output)
 		}
 		c.output = output
