@@ -124,7 +124,7 @@ func (ck CdxKey) Unix() int64 {
 	return ck.Time().Unix()
 }
 
-func (ck CdxKey) SchemeAndUserInfo() string {
+func (ck CdxKey) PortSchemeUserInfo() string {
 	parts := bytes.Split(ck, spaceCharacter)
 	if len(parts) < 3 {
 		return ""

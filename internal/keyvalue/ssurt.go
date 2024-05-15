@@ -20,7 +20,7 @@ import (
 	"strings"
 )
 
-func SplitSSURT(ssurt string) (surtHost string, schemeAndUserinfo string, path string) {
+func SplitSSURT(ssurt string) (surtHost string, portSchemeUserInfo string, path string) {
 	i := strings.Index(ssurt, "//")
 	if i == -1 {
 		return ssurt, "", ""
@@ -38,7 +38,7 @@ func SplitSSURT(ssurt string) (surtHost string, schemeAndUserinfo string, path s
 	if j == -1 {
 		return surtHost, ssurt[i+2:], ""
 	}
-	schemeAndUserinfo = ssurt[i+2 : i+2+j]
+	portSchemeUserInfo = ssurt[i+2 : i+2+j]
 
 	path = ssurt[i+2+j:]
 

@@ -146,7 +146,7 @@ func (db *DB) closest(ctx context.Context, request index.Request, results chan<-
 	closest := ts.Unix()
 	isClosest := timestamp.CompareClosest(closest)
 	matchType := request.MatchType()
-	_, schemeAndUserInfo, _ := keyvalue.SplitSSURT(request.Ssurt())
+	_, portSchemeUserInfo, _ := keyvalue.SplitSSURT(request.Ssurt())
 
 	go func() {
 		defer close(results)
@@ -196,7 +196,7 @@ func (db *DB) closest(ctx context.Context, request index.Request, results chan<-
 				}
 				key := keyvalue.CdxKey(iter.Item().Key())
 				if matchType == index.MatchTypeVerbatim {
-					if key.SchemeAndUserInfo() != schemeAndUserInfo {
+					if key.PortSchemeUserInfo() != portSchemeUserInfo {
 						iter.Next()
 						continue
 					}
@@ -242,7 +242,7 @@ func (db *DB) Search(ctx context.Context, search index.Request, results chan<- i
 
 // search the index database.
 func (db *DB) search(ctx context.Context, req index.Request, results chan<- index.CdxResponse) error {
-	_, schemeAndUserInfo, _ := keyvalue.SplitSSURT(req.Ssurt())
+	_, portSchemeUserInfo, _ := keyvalue.SplitSSURT(req.Ssurt())
 	reverse := req.Sort() == index.SortDesc
 	prefix := keyvalue.SearchKey(req)
 
@@ -274,7 +274,7 @@ func (db *DB) search(ctx context.Context, req index.Request, results chan<- inde
 						return nil
 					}
 					if matchType == index.MatchTypeVerbatim {
-						if key.SchemeAndUserInfo() != schemeAndUserInfo {
+						if key.PortSchemeUserInfo() != portSchemeUserInfo {
 							return nil
 						}
 					}

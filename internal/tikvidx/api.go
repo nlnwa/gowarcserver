@@ -122,7 +122,7 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 		return nil
 	}
 	matchType := req.MatchType()
-	_, schemeAndUserInfo, _ := keyvalue.SplitSSURT(req.Ssurt())
+	_, portSchemeUserInfo, _ := keyvalue.SplitSSURT(req.Ssurt())
 
 	go func() {
 		defer close(res)
@@ -137,7 +137,7 @@ func (db *DB) Search(ctx context.Context, req index.Request, res chan<- index.Cd
 					return nil
 				}
 				if matchType == index.MatchTypeVerbatim {
-					if cdxKey.SchemeAndUserInfo() != schemeAndUserInfo {
+					if cdxKey.PortSchemeUserInfo() != portSchemeUserInfo {
 						return nil
 					}
 				}
