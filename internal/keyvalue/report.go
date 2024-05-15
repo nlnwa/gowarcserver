@@ -136,6 +136,7 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 			surtDomain, prevSurtDomain string
 			ts, prevTs                 time.Time
 			path, prevPath             string
+			contentType                string
 			ok                         bool
 		)
 
@@ -228,9 +229,12 @@ func (r ReportGenerator) Generate(ctx context.Context, req index.Request) (*sche
 				reportData.NrOfUrls++
 			}
 
+			// Group content type by mime type
+			contentType = strings.SplitN(cdx.Mct, ";", 2)[0]
+
 			reportData.CountByStatusCode[strconv.Itoa(int(cdx.Hsc))]++
 			reportData.CountByRecordType[cdx.Srt]++
-			reportData.CountByContentType[cdx.Mct]++
+			reportData.CountByContentType[contentType]++
 			reportData.CountByScheme[key.Scheme()]++
 			reportData.ContentLength += uint64(cdx.Cle)
 			reportData.PayloadLength += uint64(cdx.Ple)
