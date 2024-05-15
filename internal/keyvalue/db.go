@@ -75,32 +75,80 @@ func MarshalReport(report *schema.Report, prefix string) (key []byte, value []by
 }
 
 // CdxKey is a wrapper around the key used in the cdx index
-// The key is a concatenation of the following parts:
-// 1. domain and path
-// 2. timestamp
-// 3. scheme, userinfo and port
-// 4. response type
-// The parts are separated by a space character.
+// The key consists of the following parts separated by a space character:
+// 1. surt domain and path (<surt domain>/<path>)
+// 2. timestamp (14 digits)
+// 3. port, scheme and userinfo (port:scheme@userinfo:)
+// 4. response type (response)
 //
 // Example:
 //
-//	test,example,/path 20200101000000 :http: response
+//	test,example,/path 20200101000000 8080:http@user:password: response
 type CdxKey []byte
 
-var spaceCharacter = []byte{32}
-var colonCharacter = []byte{58}
-var slashCharacter = []byte{47}
+// byte constants used in the key
+var (
+	spaceCharacter = []byte{32} // ' '
+	colonCharacter = []byte{58} // ':'
+	slashCharacter = []byte{47} // '/'
+	atCharacter    = []byte{64} // '@'
+)
+
+func (ck CdxKey) domainPath() []byte {
+	parts := bytes.Split(ck, spaceCharacter)
+	return parts[0]
+}
+
+func (ck CdxKey) timestamp() []byte {
+	parts := bytes.Split(ck, spaceCharacter)
+	return parts[1]
+}
+
+func (ck CdxKey) portSchemeUserInfo() []byte {
+	parts := bytes.Split(ck, spaceCharacter)
+	if len(parts) < 3 {
+		return nil
+	}
+	return parts[2]
+}
+
+func (ck CdxKey) responseType() []byte {
+	parts := bytes.Split(ck, spaceCharacter)
+	if len(parts) < 4 {
+		return nil
+	}
+	return parts[3]
+}
+
+func (ck CdxKey) port() []byte {
+	return bytes.Split(ck.portSchemeUserInfo(), colonCharacter)[0]
+}
+
+func (ck CdxKey) schemeUserInfo() []byte {
+	portSchemeUserInfo := ck.portSchemeUserInfo()
+	if portSchemeUserInfo == nil {
+		return nil
+	}
+
+	portAndSchemeAndUserInfo := bytes.SplitN(ck.portSchemeUserInfo(), colonCharacter, 2)
+	if len(portAndSchemeAndUserInfo) < 2 {
+		return nil
+	}
+	schemeUserInfo := portAndSchemeAndUserInfo[1]
+	return bytes.TrimRight(schemeUserInfo, ":")
+}
 
 func (ck CdxKey) String() string {
 	return string(ck)
 }
 
-func (ck CdxKey) DomainAndPath() []byte {
-	return bytes.Split(ck, spaceCharacter)[0]
+func (ck CdxKey) Domain() string {
+	b := ck.domainPath()
+	return string(bytes.Split(b, slashCharacter)[0])
 }
 
 func (ck CdxKey) Path() string {
-	b := ck.DomainAndPath()
+	b := ck.domainPath()
 	i := bytes.Index(b, slashCharacter)
 	if i == -1 {
 		return ""
@@ -108,14 +156,8 @@ func (ck CdxKey) Path() string {
 	return string(b[i:])
 }
 
-func (ck CdxKey) Domain() string {
-	b := ck.DomainAndPath()
-	return string(bytes.Split(b, slashCharacter)[0])
-}
-
 func (ck CdxKey) Time() time.Time {
-	b := bytes.Split(ck, spaceCharacter)[1]
-	t, _ := timestamp.Parse(string(b))
+	t, _ := timestamp.Parse(string(ck.timestamp()))
 	return t
 }
 
@@ -124,38 +166,40 @@ func (ck CdxKey) Unix() int64 {
 	return ck.Time().Unix()
 }
 
-func (ck CdxKey) PortSchemeUserInfo() string {
-	parts := bytes.Split(ck, spaceCharacter)
-	if len(parts) < 3 {
-		return ""
-	}
-	b := parts[2]
-	return string(b)
+func (ck CdxKey) Port() string {
+	return string(ck.port())
 }
 
-func (ck CdxKey) Port() string {
-	parts := bytes.Split(ck, spaceCharacter)
-	if len(parts) < 3 {
+func (ck CdxKey) PortSchemeUserInfo() string {
+	portSchemeUserInfo := ck.portSchemeUserInfo()
+	if portSchemeUserInfo == nil {
 		return ""
 	}
-	b := parts[2]
-	return string(bytes.Split(b, colonCharacter)[0])
+	return string(portSchemeUserInfo)
 }
 
 func (ck CdxKey) Scheme() string {
-	parts := bytes.Split(ck, spaceCharacter)
-	if len(parts) < 3 {
+	schemeUserInfo := ck.schemeUserInfo()
+	if schemeUserInfo == nil {
 		return ""
 	}
-	b := parts[2]
-	return string(bytes.Split(b, colonCharacter)[1])
+	scheme := bytes.Split(schemeUserInfo, atCharacter)[0]
+	return string(scheme)
 }
 
 func (ck CdxKey) UserInfo() string {
-	parts := bytes.Split(ck, spaceCharacter)
-	if len(parts) < 3 {
+	schemeUserInfo := ck.schemeUserInfo()
+	if schemeUserInfo == nil {
 		return ""
 	}
-	b := parts[2]
-	return string(bytes.Split(b, colonCharacter)[2])
+	schemeAndUserInfo := bytes.Split(schemeUserInfo, atCharacter)
+	if len(schemeAndUserInfo) < 2 {
+		return ""
+	}
+	userInfo := schemeAndUserInfo[1]
+	return string(userInfo)
+}
+
+func (ck CdxKey) ResponseType() string {
+	return string(ck.responseType())
 }
