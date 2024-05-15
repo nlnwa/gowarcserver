@@ -111,7 +111,7 @@ func (h Handler) resolveRevisit(ctx context.Context, targetURI string, closest s
 }
 
 func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
-	closest, uri := parseResourceRequest(r)
+	uri, closest := parseResourceRequest(r)
 
 	closestAPI, err := parseClosest(uri, closest)
 	if err != nil {
