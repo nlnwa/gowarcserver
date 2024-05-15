@@ -135,6 +135,10 @@ func (c *SearchRequest) Fields() []string {
 	return c.fields
 }
 
+func (c *SearchRequest) SetLimit(limit int) {
+	c.limit = limit
+}
+
 var schemeRegExp = regexp.MustCompile(`^[a-z][a-z0-9+\-.]+(:.*)`)
 
 func Parse(values url.Values) (req *SearchRequest, err error) {

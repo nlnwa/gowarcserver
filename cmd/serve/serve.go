@@ -60,6 +60,9 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().String("path-prefix", "", "path prefix for all server endpoints")
 	cmd.Flags().Bool("log-requests", false, "log incoming http requests")
 
+	// warcserver API options
+	cmd.Flags().Int("warcserver-prefix-max-records", 1000, "limit number of responses for prefix searches (warcserver)")
+
 	// index options
 	cmd.Flags().StringP("index-source", "s", "file", `index source: "file" or "kafka"`)
 	cmd.Flags().StringP("index-format", "o", "badger", `index format: "badger", "tikv"`)
@@ -240,6 +243,9 @@ func serveCmd(_ *cobra.Command, _ []string) error {
 		FileAPI:    fileApi,
 		IdAPI:      idApi,
 		WarcLoader: l,
+		Config: &warcserver.Config{
+			PrefixSearchLimit: viper.GetInt("warcserver-prefix-max-records"),
+		},
 	}, handler, mw, pathPrefix+"/warcserver")
 
 	// register core API

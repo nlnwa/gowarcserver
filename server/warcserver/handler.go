@@ -20,11 +20,16 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type Config struct {
+	PrefixSearchLimit int
+}
+
 type Handler struct {
 	CdxAPI     index.CdxAPI
 	FileAPI    index.FileAPI
 	IdAPI      index.IdAPI
 	WarcLoader loader.WarcLoader
+	Config     *Config
 }
 
 func (h Handler) index(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +37,12 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+
+	// limit the number of results when prefix searching
+	if coreAPI.MatchType() == index.MatchTypePrefix &&
+		coreAPI.Limit() == 0 {
+		coreAPI.SetLimit(h.Config.PrefixSearchLimit)
 	}
 
 	start := time.Now()
