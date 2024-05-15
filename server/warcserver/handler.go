@@ -123,7 +123,7 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 	defer func() {
-		log.Debug().Dur("time", time.Since(start)).Msgf("Fetched resource")
+		log.Debug().Str("duration", time.Since(start).String()).Msg("Fetched resource")
 	}()
 
 	ctx, cancelQuery := context.WithTimeout(r.Context(), 10*time.Second)
