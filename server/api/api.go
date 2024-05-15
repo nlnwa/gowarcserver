@@ -257,6 +257,7 @@ func (c *SearchRequest) Parse(values url.Values) error {
 func ClosestRequest(closest string, url *whatwgUrl.Url) *SearchRequest {
 	return &SearchRequest{
 		whatwgUrl: url,
+		ssurt:     surt.UrlToSsurt(url),
 		limit:     10,
 		sort:      index.SortClosest,
 		closest:   closest,
