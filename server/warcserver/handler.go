@@ -165,6 +165,11 @@ func (h Handler) resource(w http.ResponseWriter, r *http.Request) {
 		}
 		break
 	}
+	if res == nil {
+		http.NotFound(w, r)
+		return
+
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
