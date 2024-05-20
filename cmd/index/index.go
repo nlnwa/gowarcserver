@@ -153,7 +153,7 @@ func indexCmd(_ *cobra.Command, _ []string) error {
 	queue := index.NewWorkQueue(indexer,
 		viper.GetInt("index-workers"),
 	)
-	defer queue.Close()
+	defer queue.Wait()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
