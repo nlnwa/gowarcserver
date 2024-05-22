@@ -84,7 +84,7 @@ func parseResourceRequest(r *http.Request) (uri string, closest string) {
 	uri = p1[1:]
 
 	// we must add on any query parameters
-	if q := r.URL.Query().Encode(); len(q) > 0 {
+	if q := r.URL.RawQuery; len(q) > 0 {
 		uri += "?" + q
 	}
 	// and fragment
@@ -94,5 +94,4 @@ func parseResourceRequest(r *http.Request) (uri string, closest string) {
 	}
 
 	return
-
 }
