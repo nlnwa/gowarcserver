@@ -139,6 +139,10 @@ func (c *SearchRequest) SetLimit(limit int) {
 	c.limit = limit
 }
 
+func (c *SearchRequest) SetMatchType(matchType index.MatchType) {
+	c.matchType = matchType
+}
+
 var schemeRegExp = regexp.MustCompile(`^[a-z][a-z0-9+\-.]+(:.*)`)
 
 func Parse(values url.Values) (req *SearchRequest, err error) {
@@ -265,6 +269,6 @@ func ClosestRequest(closest string, url *whatwgUrl.Url) *SearchRequest {
 		limit:     10,
 		sort:      index.SortClosest,
 		closest:   closest,
-		matchType: index.MatchTypeExact,
+		matchType: index.MatchTypeVerbatim,
 	}
 }
