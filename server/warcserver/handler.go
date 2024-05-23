@@ -45,6 +45,11 @@ func (h Handler) index(w http.ResponseWriter, r *http.Request) {
 		coreAPI.SetLimit(h.Config.PrefixSearchLimit)
 	}
 
+	if coreAPI.Sort() == index.SortClosest &&
+		coreAPI.MatchType() == index.MatchTypeExact {
+		coreAPI.SetMatchType(index.MatchTypeVerbatim)
+	}
+
 	start := time.Now()
 	count := 0
 	defer func() {
