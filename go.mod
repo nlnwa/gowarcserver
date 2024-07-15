@@ -18,7 +18,7 @@ require (
 	github.com/spf13/viper v1.19.0
 	github.com/tikv/client-go/v2 v2.0.8-0.20240515031315-c40432e3abcc
 	golang.org/x/net v0.27.0
-	google.golang.org/protobuf v1.34.1
+	google.golang.org/protobuf v1.34.2
 )
 
 require (
