@@ -11,7 +11,7 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/nlnwa/gowarc v1.6.0
-	github.com/nlnwa/whatwg-url v0.4.1
+	github.com/nlnwa/whatwg-url v0.5.0
 	github.com/rs/zerolog v1.33.0
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/spf13/cobra v1.8.1
