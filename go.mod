@@ -6,7 +6,7 @@ toolchain go1.22.2
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
-	github.com/dgraph-io/badger/v4 v4.3.1
+	github.com/dgraph-io/badger/v4 v4.5.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/julienschmidt/httprouter v1.3.0
@@ -18,7 +18,7 @@ require (
 	github.com/spf13/viper v1.19.0
 	github.com/tikv/client-go/v2 v2.0.8-0.20240515031315-c40432e3abcc
 	golang.org/x/net v0.34.0
-	google.golang.org/protobuf v1.36.2
+	google.golang.org/protobuf v1.36.3
 )
 
 require (
@@ -29,7 +29,7 @@ require (
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cznic/mathutil v0.0.0-20181122101859-297441e03548 // indirect
-	github.com/dgraph-io/ristretto v1.0.0 // indirect
+	github.com/dgraph-io/ristretto/v2 v2.1.0 // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -39,11 +39,11 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.1.2 // indirect
-	github.com/google/flatbuffers v24.3.25+incompatible // indirect
+	github.com/google/flatbuffers v24.12.23+incompatible // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/klauspost/compress v1.17.10 // indirect
+	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
