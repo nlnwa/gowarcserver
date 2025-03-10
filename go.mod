@@ -1,8 +1,7 @@
 module github.com/nlnwa/gowarcserver
 
 go 1.21.0
-
-toolchain go1.22.2
+toolchain go1.23.7
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
@@ -17,7 +16,7 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	github.com/tikv/client-go/v2 v2.0.8-0.20240515031315-c40432e3abcc
-	golang.org/x/net v0.34.0
+	golang.org/x/net v0.37.0
 	google.golang.org/protobuf v1.36.2
 )
 
@@ -80,9 +79,9 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240515191416-fc5f0ca64291 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240515191416-fc5f0ca64291 // indirect
 	google.golang.org/grpc v1.64.1 // indirect
