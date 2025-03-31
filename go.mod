@@ -2,7 +2,7 @@ module github.com/nlnwa/gowarcserver
 
 go 1.21.0
 
-toolchain go1.22.2
+toolchain go1.24.1
 
 require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
@@ -11,7 +11,7 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/nlnwa/gowarc v1.6.0
-	github.com/nlnwa/whatwg-url v0.5.0
+	github.com/nlnwa/whatwg-url v0.6.2
 	github.com/rs/zerolog v1.33.0
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/spf13/cobra v1.8.1
@@ -23,7 +23,7 @@ require (
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.13.0 // indirect
+	github.com/bits-and-blooms/bitset v1.20.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudfoundry/gosigar v1.3.58 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
